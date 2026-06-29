@@ -6,6 +6,7 @@ import { MenuModule } from './menu/menu.module'
 import { OrdersModule } from './orders/orders.module'
 import { TablesModule } from './tables/tables.module'
 import { WebsocketModule } from './websocket/websocket.module'
+import { PaymentsModule } from './payments/payments.module'
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { WebsocketModule } from './websocket/websocket.module'
     OrdersModule,
     TablesModule,
     WebsocketModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}
