@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  MANAGER
+  STAFF
+  USER
+  GUEST
+}
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+}
+
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  PREPARING
+  READY
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  APPLE_PAY
+  GOOGLE_PAY
+  CHARGE_TO_ROOM
+}
+
+enum TableStatus {
+  EMPTY
+  OCCUPIED
+  BILL_PENDING
+  DIRTY
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(GUEST)
+  phone        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders Order[]
+}
+
+model MenuCategory {
+  id        String   @id @default(uuid())
+  name      String
+  nameAr    String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  items MenuItem[]
+}
+
+model MenuItem {
+  id           String   @id @default(uuid())
+  categoryId   String
+  name         String
+  nameAr       String?
+  description  String?
+  price        Decimal  @db.Decimal(10, 2)
+  imageUrl     String?
+  isAvailable  Boolean  @default(true)
+  prepTimeMins Int      @default(15)
+  isSpecialDay Boolean  @default(false)
+  specialLabel String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  category   MenuCategory @relation(fields: [categoryId], references: [id])
+  orderItems OrderItem[]
+}
+
+model RestaurantTable {
+  id          String      @id @default(uuid())
+  tableNumber Int         @unique
+  capacity    Int         @default(4)
+  status      TableStatus @default(EMPTY)
+  qrCode      String?     @unique
+  updatedAt   DateTime    @updatedAt
+
+  orders Order[]
+}
+
+model Order {
+  id            String         @id @default(uuid())
+  type          OrderType
+  tableId       String?
+  userId        String?
+  tokenNumber   Int?
+  status        OrderStatus    @default(PENDING)
+  subtotal      Decimal        @db.Decimal(10, 2)
+  vatAmount     Decimal        @db.Decimal(10, 2)
+  total         Decimal        @db.Decimal(10, 2)
+  paymentStatus PaymentStatus  @default(UNPAID)
+  paymentMethod PaymentMethod?
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  table   RestaurantTable? @relation(fields: [tableId], references: [id])
+  user    User?            @relation(fields: [userId], references: [id])
+  items   OrderItem[]
+  payment Payment?
+}
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  orderId    String
+  menuItemId String
+  quantity   Int
+  unitPrice  Decimal @db.Decimal(10, 2)
+  notes      String?
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem @relation(fields: [menuItemId], references: [id])
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  orderId        String        @unique
+  stripeIntentId String?       @unique
+  amount         Decimal       @db.Decimal(10, 2)
+  currency       String        @default("AED")
+  status         PaymentStatus @default(UNPAID)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  order Order @relation(fields: [orderId], references: [id])
+}
