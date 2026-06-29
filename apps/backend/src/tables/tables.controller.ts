@@ -14,6 +14,12 @@ export class TablesController {
     return this.tables.getAll()
   }
 
+  // Public — guest scans QR, we look up table by QR code
+  @Get('qr/:qrCode')
+  getByQrCode(@Param('qrCode') qrCode: string) {
+    return this.tables.getByQrCode(qrCode)
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'MANAGER', 'STAFF')
   @Patch(':id/status')

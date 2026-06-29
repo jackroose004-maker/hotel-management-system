@@ -10,6 +10,14 @@ export class TablesService {
     return this.prisma.restaurantTable.findMany({ orderBy: { tableNumber: 'asc' } })
   }
 
+  getByQrCode(qrCode: string) {
+    return this.prisma.restaurantTable.findUnique({ where: { qrCode } })
+  }
+
+  getById(id: string) {
+    return this.prisma.restaurantTable.findUnique({ where: { id } })
+  }
+
   updateStatus(id: string, status: TableStatus) {
     return this.prisma.restaurantTable.update({ where: { id }, data: { status } })
   }
