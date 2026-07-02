@@ -27,6 +27,17 @@ export class CreateOrderDto {
   @IsOptional()
   notes?: string
 
+  // Device-generated token that identifies one person's tab at a table.
+  // Each device/phone that scans the QR generates its own UUID → their personal bill.
+  @IsString()
+  @IsOptional()
+  guestTabToken?: string
+
+  // Takeaway: phone number to call/SMS when order is ready
+  @IsString()
+  @IsOptional()
+  contactPhone?: string
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)

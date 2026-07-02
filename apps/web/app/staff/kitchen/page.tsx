@@ -1,8 +1,8 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { ChefHat, Clock, Utensils, Package } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { ChefHat, Clock, Utensils, Package, RefreshCw, Flame } from 'lucide-react'
 import api from '@/lib/api'
+import { notify } from '@/lib/notify'
 import { getSocket } from '@/lib/socket'
 
 interface Order {
@@ -11,21 +11,119 @@ interface Order {
   items: { quantity: number; notes?: string; menuItem: { name: string; prepTimeMins: number } }[]
 }
 
+function useElapsed(createdAt: string) {
+  const [mins, setMins] = useState(() => Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000))
+  useEffect(() => {
+    const t = setInterval(() => setMins(Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)), 30000)
+    return () => clearInterval(t)
+  }, [createdAt])
+  return { mins, late: mins > 20 }
+}
+
+function OrderTicket({ order, onUpdate }: { order: Order; onUpdate: (id: string, status: string) => void }) {
+  const { mins, late } = useElapsed(order.createdAt)
+  const isPreparing = order.status === 'PREPARING'
+
+  return (
+    <div className={`group bg-[var(--card-bg)] rounded-2xl border overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col ${
+      late        ? 'border-red-200 dark:border-red-900'
+      : isPreparing ? 'border-orange-200 dark:border-orange-900'
+      : 'border-gray-200 dark:border-[var(--card-border)]'
+    }`}>
+
+      {/* Colour strip */}
+      <div className={`h-1 flex-shrink-0 ${late ? 'bg-red-400' : isPreparing ? 'bg-orange-400' : 'bg-yellow-300 dark:bg-yellow-500'}`} />
+
+      {/* Ticket header */}
+      <div className={`flex items-center justify-between px-4 py-3 flex-shrink-0 ${
+        late ? 'bg-red-50 dark:bg-red-900/20'
+        : isPreparing ? 'bg-orange-50 dark:bg-orange-900/20'
+        : 'bg-gray-50 dark:bg-gray-800/50'
+      }`}>
+        <div className="flex items-center gap-2">
+          {order.type === 'DINE_IN'
+            ? <Utensils size={13} className="text-orange-500 flex-shrink-0" />
+            : <Package size={13} className="text-blue-500 flex-shrink-0" />
+          }
+          <span className="font-bold text-gray-900 dark:text-white text-sm">
+            {order.type === 'DINE_IN' ? `Table ${order.table?.tableNumber}` : `Token #${order.tokenNumber}`}
+          </span>
+        </div>
+        <div className={`flex items-center gap-1.5 text-xs font-bold ${late ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>
+          {late && <Flame size={12} className="text-red-500" />}
+          <Clock size={10} />
+          {mins}m ago
+        </div>
+      </div>
+
+      {/* Items */}
+      <div className="px-4 py-3 space-y-2 flex-1">
+        {order.items.map((item, i) => (
+          <div key={i} className="flex items-start gap-2.5">
+            <span className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-[11px] font-extrabold px-2 py-0.5 rounded-md flex-shrink-0 min-w-[28px] text-center">
+              {item.quantity}×
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900 dark:text-white leading-tight">{item.menuItem.name}</p>
+              {item.notes && <p className="text-xs text-orange-500 dark:text-orange-400 mt-0.5">↳ {item.notes}</p>}
+            </div>
+          </div>
+        ))}
+        {order.notes && (
+          <div className="flex items-start gap-2 text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800 rounded-lg px-2.5 py-2 mt-1">
+            <span className="font-bold flex-shrink-0">Note:</span> {order.notes}
+          </div>
+        )}
+      </div>
+
+      {/* Action */}
+      <div className="px-4 pb-4 flex-shrink-0">
+        {(order.status === 'PENDING' || order.status === 'ACCEPTED') && (
+          <button onClick={() => onUpdate(order.id, 'PREPARING')}
+            className="w-full bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm shadow-orange-200 dark:shadow-none">
+            Start Preparing
+          </button>
+        )}
+        {isPreparing && (
+          <button onClick={() => onUpdate(order.id, 'READY')}
+            className="w-full bg-green-500 hover:bg-green-600 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+            Ready to Serve ✓
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function KitchenPage() {
   const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const load = () => api.get('/orders/active').then(r => setOrders(
-    r.data.filter((o: Order) => ['PENDING', 'ACCEPTED', 'PREPARING'].includes(o.status))
-  ))
+  const load = () => {
+    setLoading(true)
+    api.get('/orders/active')
+      .then(r => setOrders(r.data.filter((o: Order) => ['ACCEPTED', 'PREPARING'].includes(o.status))))
+      .finally(() => setLoading(false))
+  }
 
   useEffect(() => { load() }, [])
 
   useEffect(() => {
     const s = getSocket()
-    s.on('order:new', (o: Order) => setOrders(p => [o, ...p]))
+    // Only add to kitchen when order reaches ACCEPTED (manager approved)
+    s.on('order:new', (o: Order) => {
+      if (o.status === 'ACCEPTED') {
+        setOrders(p => [o, ...p])
+        const label = o.type === 'DINE_IN' ? `Table ${o.table?.tableNumber}` : `Takeaway #${o.tokenNumber}`
+        notify.info(`New order in kitchen — ${label}`, `🍳 New Order`, { icon: '🍳' })
+      }
+    })
     s.on('order:updated', (o: Order) => {
-      if (['DELIVERED', 'CANCELLED', 'READY'].includes(o.status)) {
+      if (['DELIVERED', 'CANCELLED', 'READY', 'PENDING'].includes(o.status)) {
         setOrders(p => p.filter(x => x.id !== o.id))
+      } else if (o.status === 'ACCEPTED') {
+        // Manager just approved a cash order — add it now
+        setOrders(p => p.some(x => x.id === o.id) ? p.map(x => x.id === o.id ? o : x) : [o, ...p])
       } else {
         setOrders(p => p.map(x => x.id === o.id ? o : x))
       }
@@ -37,112 +135,77 @@ export default function KitchenPage() {
     await api.patch(`/orders/${id}/status`, { status })
     if (status === 'READY') {
       setOrders(p => p.filter(o => o.id !== id))
-      toast.success('Order marked ready — notifying team!')
+      notify.order.ready('Order')
     } else {
       setOrders(p => p.map(o => o.id === id ? { ...o, status } : o))
     }
   }
 
-  const elapsed = (createdAt: string) => {
-    const mins = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
-    return { mins, late: mins > 20 }
-  }
+  // Sort: late first → pending before preparing → oldest first
+  const sorted = [...orders].sort((a, b) => {
+    const aMin = Math.floor((Date.now() - new Date(a.createdAt).getTime()) / 60000)
+    const bMin = Math.floor((Date.now() - new Date(b.createdAt).getTime()) / 60000)
+    const aLate = aMin > 20 ? 1 : 0
+    const bLate = bMin > 20 ? 1 : 0
+    if (bLate !== aLate) return bLate - aLate
+    return bMin - aMin
+  })
 
-  const dineIn = orders.filter(o => o.type === 'DINE_IN')
-  const takeaway = orders.filter(o => o.type === 'TAKEAWAY')
-
-  const OrderCard = ({ order }: { order: Order }) => {
-    const { mins, late } = elapsed(order.createdAt)
-    return (
-      <div className={`bg-white rounded-xl border-2 p-4 ${late ? 'border-red-300' : order.status === 'PREPARING' ? 'border-orange-300' : 'border-gray-200'}`}>
-        <div className="flex justify-between items-start mb-3">
-          <div>
-            <div className="font-bold text-gray-900 text-sm">
-              {order.type === 'DINE_IN' ? `Table ${order.table?.tableNumber}` : `Token #${order.tokenNumber}`}
-            </div>
-            <div className={`text-xs flex items-center gap-1 mt-0.5 ${late ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>
-              <Clock size={11} /> {mins}m {late ? '— LATE!' : ''}
-            </div>
-          </div>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${order.status === 'PREPARING' ? 'bg-orange-100 text-orange-700' : 'bg-yellow-100 text-yellow-700'}`}>
-            {order.status}
-          </span>
-        </div>
-
-        <div className="space-y-1.5 mb-4">
-          {order.items.map((item, i) => (
-            <div key={i} className="flex items-start gap-2">
-              <span className="bg-gray-100 text-gray-700 text-xs font-bold px-1.5 py-0.5 rounded">{item.quantity}×</span>
-              <div>
-                <div className="text-sm font-medium text-gray-800">{item.menuItem.name}</div>
-                {item.notes && <div className="text-xs text-orange-500">Note: {item.notes}</div>}
-              </div>
-            </div>
-          ))}
-          {order.notes && <div className="text-xs text-orange-600 border-t pt-2 mt-2">Order note: {order.notes}</div>}
-        </div>
-
-        <div className="flex gap-2">
-          {order.status === 'PENDING' && (
-            <button onClick={() => updateStatus(order.id, 'PREPARING')}
-              className="flex-1 bg-orange-500 text-white py-2 rounded-lg text-xs font-bold hover:bg-orange-600">
-              Start Cooking 🍳
-            </button>
-          )}
-          {order.status === 'PREPARING' && (
-            <button onClick={() => updateStatus(order.id, 'READY')}
-              className="flex-1 bg-green-500 text-white py-2 rounded-lg text-xs font-bold hover:bg-green-600">
-              Mark Ready ✓
-            </button>
-          )}
-          {order.status === 'ACCEPTED' && (
-            <button onClick={() => updateStatus(order.id, 'PREPARING')}
-              className="flex-1 bg-orange-500 text-white py-2 rounded-lg text-xs font-bold hover:bg-orange-600">
-              Start Cooking 🍳
-            </button>
-          )}
-        </div>
-      </div>
-    )
-  }
+  const lateCount     = orders.filter(o => Math.floor((Date.now() - new Date(o.createdAt).getTime()) / 60000) > 20).length
+  const preparingCount = orders.filter(o => o.status === 'PREPARING').length
+  const pendingCount  = orders.filter(o => ['PENDING', 'ACCEPTED'].includes(o.status)).length
 
   return (
-    <div className="p-6 h-full">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <ChefHat size={22} className="text-orange-500" />
-          <h1 className="text-xl font-bold text-gray-900">Kitchen Display</h1>
+    <div className="flex flex-col flex-1">
+
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Kitchen Display</h1>
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            <span className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-full">{orders.length} active</span>
+            {pendingCount > 0 && <span className="text-[11px] font-semibold text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 px-2 py-0.5 rounded-full">{pendingCount} waiting</span>}
+            {preparingCount > 0 && <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded-full">{preparingCount} cooking</span>}
+            {lateCount > 0 && <span className="text-[11px] font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded-full">{lateCount} late</span>}
+          </div>
         </div>
-        <div className="flex gap-3 text-sm">
-          <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full font-medium">{orders.length} active</span>
-          <button onClick={load} className="text-gray-400 hover:text-gray-700 text-xs">Refresh</button>
-        </div>
+        <button onClick={load}
+          className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white transition-colors">
+          <RefreshCw size={14} />
+        </button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Dine-In */}
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Utensils size={14} className="text-orange-500" />
-            <h2 className="font-semibold text-gray-700 text-sm">Dine-In ({dineIn.length})</h2>
-          </div>
-          <div className="space-y-3">
-            {dineIn.length === 0 && <div className="text-gray-300 text-sm text-center py-8 border-2 border-dashed rounded-xl">No dine-in orders</div>}
-            {dineIn.map(o => <OrderCard key={o.id} order={o} />)}
-          </div>
-        </div>
+      {/* Board */}
+      <div className="p-4 sm:p-6">
 
-        {/* Takeaway */}
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <Package size={14} className="text-blue-500" />
-            <h2 className="font-semibold text-gray-700 text-sm">Takeaway ({takeaway.length})</h2>
+        {/* Skeleton */}
+        {loading && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 animate-pulse">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="bg-[var(--card-bg)] rounded-2xl border border-gray-200 dark:border-[var(--card-border)] h-48" />
+            ))}
           </div>
-          <div className="space-y-3">
-            {takeaway.length === 0 && <div className="text-gray-300 text-sm text-center py-8 border-2 border-dashed rounded-xl">No takeaway orders</div>}
-            {takeaway.map(o => <OrderCard key={o.id} order={o} />)}
+        )}
+
+        {/* Empty */}
+        {!loading && orders.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 gap-4 bg-[var(--card-bg)] rounded-2xl border border-dashed border-green-200 dark:border-[var(--card-border)]">
+            <div className="w-16 h-16 rounded-2xl bg-green-50 dark:bg-green-900/20 flex items-center justify-center">
+              <ChefHat size={28} className="text-green-400 dark:text-green-600" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Kitchen is all clear</p>
+              <p className="text-xs text-gray-400 mt-1 max-w-[240px]">No tickets in the queue. Orders accepted by staff will appear here automatically.</p>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Ticket grid — single unified stream, sorted by urgency */}
+        {!loading && sorted.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {sorted.map(o => <OrderTicket key={o.id} order={o} onUpdate={updateStatus} />)}
+          </div>
+        )}
       </div>
     </div>
   )

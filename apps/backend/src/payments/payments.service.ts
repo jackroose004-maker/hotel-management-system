@@ -86,19 +86,85 @@ export class PaymentsService {
     return { received: true }
   }
 
-  async markCashPaid(orderId: string) {
+  // Guest selects "Pay Cash" — records intent, keeps order PENDING for manager approval
+  async registerCashOrder(orderId: string) {
+    const existingOrder = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+    await this.prisma.payment.upsert({
+      where: { orderId },
+      update: { amount: existingOrder.total },
+      create: { orderId, amount: existingOrder.total, currency: 'AED', status: 'UNPAID' },
+    })
+    const order = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { paymentMethod: 'CASH' },
+      include: { items: { include: { menuItem: true } }, table: true },
+    })
+    return order
+  }
+
+  // Settle every unpaid cash order at a table in one shot (one-tap for staff)
+  async settleAllCashForTable(tableId: string) {
+    const unpaid = await this.prisma.order.findMany({
+      where: { tableId, status: 'DELIVERED', paymentStatus: 'UNPAID', paymentMethod: 'CASH' },
+      select: { id: true, total: true },
+    })
+    if (!unpaid.length) return { settled: 0, total: 0 }
+
+    await this.prisma.$transaction([
+      ...unpaid.map(o => this.prisma.payment.upsert({
+        where: { orderId: o.id },
+        update: { status: 'PAID', amount: o.total },
+        create: { orderId: o.id, amount: o.total, currency: 'AED', status: 'PAID' },
+      })),
+      ...unpaid.map(o => this.prisma.order.update({
+        where: { id: o.id },
+        data: { paymentStatus: 'PAID' },
+      })),
+      this.prisma.restaurantTable.update({
+        where: { id: tableId },
+        data: { status: 'DIRTY' },
+      }),
+    ])
+
+    const total = unpaid.reduce((s, o) => s + Number(o.total), 0)
+    return { settled: unpaid.length, total }
+  }
+
+  // Manager settles cash payment after delivery
+  async settleCashPayment(orderId: string) {
+    const existingOrder = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } })
     const [payment, order] = await this.prisma.$transaction([
       this.prisma.payment.upsert({
         where: { orderId },
-        update: { status: 'PAID' },
-        create: { orderId, amount: 0, currency: 'AED', status: 'PAID' },
+        update: { status: 'PAID', amount: existingOrder.total },
+        create: { orderId, amount: existingOrder.total, currency: 'AED', status: 'PAID' },
       }),
       this.prisma.order.update({
         where: { id: orderId },
-        data: { paymentStatus: 'PAID', paymentMethod: 'CASH', status: 'ACCEPTED' },
+        data: { paymentStatus: 'PAID' },
         include: { items: { include: { menuItem: true } }, table: true },
       }),
     ])
+
+    // After settling, check if any other orders for this table are still unpaid
+    if (existingOrder.tableId) {
+      const stillUnpaid = await this.prisma.order.count({
+        where: {
+          tableId: existingOrder.tableId,
+          id: { not: orderId },
+          status: 'DELIVERED',
+          paymentStatus: 'UNPAID',
+        },
+      })
+      if (stillUnpaid === 0) {
+        // All bills settled — table is now clearing
+        await this.prisma.restaurantTable.update({
+          where: { id: existingOrder.tableId },
+          data: { status: 'DIRTY' },
+        })
+      }
+    }
+
     return { payment, order }
   }
 }

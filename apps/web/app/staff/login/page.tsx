@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { UtensilsCrossed } from 'lucide-react'
+import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
@@ -11,6 +11,7 @@ export default function StaffLogin() {
   const setAuth = useAuthStore(s => s.setAuth)
   const [form, setForm] = useState({ email: '', password: '' })
   const [loading, setLoading] = useState(false)
+  const [showPw, setShowPw] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -22,7 +23,7 @@ export default function StaffLogin() {
         return
       }
       setAuth(data.user, data.token)
-      toast.success(`Welcome, ${data.user.name}!`)
+      toast.success(`Welcome back, ${data.user.name}!`)
       router.push('/staff/orders')
     } catch {
       toast.error('Invalid email or password')
@@ -32,34 +33,151 @@ export default function StaffLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-orange-500 rounded-xl mb-4">
-            <UtensilsCrossed className="text-white" size={22} />
+    <div className="min-h-screen bg-[#0a0a0a] flex overflow-hidden">
+
+      {/* ── Left panel — decorative ───────────────────────── */}
+      <div className="hidden lg:flex flex-col flex-1 relative overflow-hidden bg-[#0f0f0f]">
+
+        {/* Ambient glow */}
+        <div className="absolute -top-32 -left-32 w-[520px] h-[520px] rounded-full bg-orange-500/10 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-orange-600/8 blur-[100px] pointer-events-none" />
+
+        {/* Grid overlay */}
+        <div className="absolute inset-0 opacity-[0.03]"
+          style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
+
+        {/* Content */}
+        <div className="relative z-10 flex flex-col h-full px-12 py-12">
+          {/* Logo */}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-5 h-5 text-white">
+                <path d="M3 11l19-9-9 19-2-8-8-2z" />
+              </svg>
+            </div>
+            <span className="text-white font-bold text-lg tracking-tight">Al Manzil</span>
           </div>
-          <h1 className="text-xl font-bold text-white">Staff Login</h1>
-          <p className="text-gray-400 text-sm mt-1">Al Manzil Hotel — Dubai</p>
+
+          {/* Centre copy */}
+          <div className="flex-1 flex flex-col justify-center max-w-sm">
+            <div className="inline-flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 rounded-full px-3 py-1 mb-6 w-fit">
+              <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+              <span className="text-orange-400 text-xs font-medium">Staff Portal</span>
+            </div>
+            <h2 className="text-4xl font-extrabold text-white leading-tight mb-4">
+              Run the floor<br />
+              <span className="text-orange-500">seamlessly.</span>
+            </h2>
+            <p className="text-gray-500 text-sm leading-relaxed">
+              Manage orders, tables, and bookings in real time — built for the pace of Dubai hospitality.
+            </p>
+          </div>
+
+          {/* Feature list */}
+          <div className="grid grid-cols-2 gap-3 pb-2">
+            {[
+              ['Live Orders', 'Real-time kitchen updates'],
+              ['Table Control', 'Status at a glance'],
+              ['Bookings', 'Reservation management'],
+              ['Analytics', 'Revenue & insights'],
+            ].map(([title, desc]) => (
+              <div key={title} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3.5">
+                <div className="text-white text-sm font-semibold mb-0.5">{title}</div>
+                <div className="text-gray-600 text-xs">{desc}</div>
+              </div>
+            ))}
+          </div>
         </div>
-        <form onSubmit={submit} className="bg-gray-800 rounded-2xl p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5">Email</label>
-            <input type="email" required value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-              placeholder="staff@hotel.com"
-              className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-orange-500 placeholder-gray-500" />
+      </div>
+
+      {/* ── Right panel — form ────────────────────────────── */}
+      <div className="flex flex-col items-center justify-center w-full lg:w-[440px] px-6 py-12 relative">
+
+        {/* Mobile logo */}
+        <div className="flex items-center gap-2 mb-10 lg:hidden">
+          <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-4 h-4 text-white">
+              <path d="M3 11l19-9-9 19-2-8-8-2z" />
+            </svg>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1.5">Password</label>
-            <input type="password" required value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-              placeholder="••••••••"
-              className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-orange-500 placeholder-gray-500" />
+          <span className="text-white font-bold">Al Manzil</span>
+        </div>
+
+        <div className="w-full max-w-sm">
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold text-white mb-1">Welcome back</h1>
+            <p className="text-gray-500 text-sm">Sign in to your staff account</p>
           </div>
-          <button type="submit" disabled={loading}
-            className="w-full bg-orange-500 text-white py-2.5 rounded-lg font-semibold text-sm hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
-        <p className="text-center text-xs text-gray-600 mt-4">Demo: owner@hotel.com / owner123</p>
+
+          <form onSubmit={submit} className="space-y-4">
+            {/* Email */}
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-2">Email address</label>
+              <input
+                type="email" required autoComplete="email"
+                value={form.email}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="staff@almanzil.ae"
+                className="w-full bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.14] focus:border-orange-500 text-white rounded-xl px-4 py-3 text-sm outline-none transition-colors placeholder-gray-600"
+              />
+            </div>
+
+            {/* Password */}
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-2">Password</label>
+              <div className="relative">
+                <input
+                  type={showPw ? 'text' : 'password'} required autoComplete="current-password"
+                  value={form.password}
+                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  placeholder="••••••••"
+                  className="w-full bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.14] focus:border-orange-500 text-white rounded-xl px-4 py-3 pr-11 text-sm outline-none transition-colors placeholder-gray-600"
+                />
+                <button type="button" onClick={() => setShowPw(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                  {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            {/* Submit */}
+            <button
+              type="submit" disabled={loading}
+              className="w-full mt-2 relative overflow-hidden bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
+            >
+              {loading ? (
+                <><Loader2 size={16} className="animate-spin" /> Signing in…</>
+              ) : (
+                'Sign In'
+              )}
+            </button>
+          </form>
+
+          {/* Demo creds */}
+          <div className="mt-8 bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
+            <p className="text-xs font-medium text-gray-500 mb-2.5">Demo credentials</p>
+            <div className="space-y-1.5">
+              {[
+                ['Owner', 'owner@hotel.com', 'owner123'],
+                ['Manager', 'manager@hotel.com', 'manager123'],
+              ].map(([role, email, pw]) => (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => setForm({ email, password: pw })}
+                  className="w-full flex items-center justify-between text-left px-3 py-2 rounded-lg hover:bg-white/[0.05] transition-colors group"
+                >
+                  <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">{email}</span>
+                  <span className="text-[10px] font-medium text-orange-500/70 bg-orange-500/10 px-2 py-0.5 rounded-full">{role}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-center text-xs text-gray-700 mt-6">
+            © 2024 Al Manzil · Dubai
+          </p>
+        </div>
       </div>
     </div>
   )

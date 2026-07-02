@@ -1,5 +1,6 @@
 'use client'
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 export interface CartItem {
   menuItemId: string
@@ -29,38 +30,47 @@ interface CartStore {
 
 const VAT = 0.05
 
-export const useCartStore = create<CartStore>((set, get) => ({
-  items: [],
-  orderType: 'DINE_IN',
-  tableId: undefined,
+export const useCartStore = create<CartStore>()(
+  persist(
+    (set, get) => ({
+      items: [],
+      orderType: 'DINE_IN',
+      tableId: undefined,
 
-  setOrderType: type => set({ orderType: type }),
-  setTableId: id => set({ tableId: id }),
+      setOrderType: type => set({ orderType: type }),
+      setTableId: id => set({ tableId: id }),
 
-  addItem: item => set(state => {
-    const exists = state.items.find(i => i.menuItemId === item.menuItemId)
-    if (exists) {
-      return { items: state.items.map(i => i.menuItemId === item.menuItemId ? { ...i, quantity: i.quantity + 1 } : i) }
+      addItem: item => set(state => {
+        const exists = state.items.find(i => i.menuItemId === item.menuItemId)
+        if (exists) {
+          return { items: state.items.map(i => i.menuItemId === item.menuItemId ? { ...i, quantity: i.quantity + 1 } : i) }
+        }
+        return { items: [...state.items, { ...item, quantity: 1 }] }
+      }),
+
+      removeItem: id => set(state => ({ items: state.items.filter(i => i.menuItemId !== id) })),
+
+      updateQty: (id, delta) => set(state => ({
+        items: state.items
+          .map(i => i.menuItemId === id ? { ...i, quantity: i.quantity + delta } : i)
+          .filter(i => i.quantity > 0)
+      })),
+
+      updateNotes: (id, notes) => set(state => ({
+        items: state.items.map(i => i.menuItemId === id ? { ...i, notes } : i)
+      })),
+
+      clear: () => set({ items: [], tableId: undefined }),
+
+      subtotal: () => get().items.reduce((s, i) => s + i.price * i.quantity, 0),
+      vat: () => Math.round(get().subtotal() * VAT * 100) / 100,
+      total: () => Math.round((get().subtotal() + get().vat()) * 100) / 100,
+      maxPrepTime: () => get().items.reduce((max, i) => Math.max(max, i.prepTimeMins), 0),
+    }),
+    {
+      name: 'almanzil-cart',
+      // Only persist items and orderType — tableId is session-specific (from QR/booking)
+      partialize: state => ({ items: state.items, orderType: state.orderType }),
     }
-    return { items: [...state.items, { ...item, quantity: 1 }] }
-  }),
-
-  removeItem: id => set(state => ({ items: state.items.filter(i => i.menuItemId !== id) })),
-
-  updateQty: (id, delta) => set(state => ({
-    items: state.items
-      .map(i => i.menuItemId === id ? { ...i, quantity: i.quantity + delta } : i)
-      .filter(i => i.quantity > 0)
-  })),
-
-  updateNotes: (id, notes) => set(state => ({
-    items: state.items.map(i => i.menuItemId === id ? { ...i, notes } : i)
-  })),
-
-  clear: () => set({ items: [] }),
-
-  subtotal: () => get().items.reduce((s, i) => s + i.price * i.quantity, 0),
-  vat: () => Math.round(get().subtotal() * VAT * 100) / 100,
-  total: () => Math.round((get().subtotal() + get().vat()) * 100) / 100,
-  maxPrepTime: () => get().items.reduce((max, i) => Math.max(max, i.prepTimeMins), 0),
-}))
+  )
+)

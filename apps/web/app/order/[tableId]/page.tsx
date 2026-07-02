@@ -9,13 +9,28 @@ import { getSocket } from '@/lib/socket'
 import { useCartStore } from '@/store/cart'
 import StripePaymentForm from '@/components/StripePaymentForm'
 
+function FoodImage({ src, alt, className }: { src?: string; alt: string; className: string }) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) {
+    return (
+      <div className={`${className} bg-gradient-to-br from-orange-100 to-amber-100 flex items-center justify-center flex-shrink-0`}>
+        <UtensilsCrossed size={20} className="text-orange-300" />
+      </div>
+    )
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt={alt} className={`${className} object-cover flex-shrink-0`} onError={() => setFailed(true)} />
+  )
+}
+
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '')
 
 type View = 'menu' | 'cart' | 'payment' | 'tracking'
 
 interface MenuItem { id: string; name: string; description?: string; price: number; prepTimeMins: number; isAvailable: boolean; imageUrl?: string }
 interface Category { id: string; name: string; items: MenuItem[] }
-interface Table { id: string; tableNumber: number }
+interface Table { id: string; tableNumber: number; name?: string | null }
 interface Order {
   id: string; status: string; tokenNumber?: number; total: number
   vatAmount: number; subtotal: number; type: string; paymentStatus: string
@@ -25,10 +40,10 @@ interface Order {
 const STATUS_STEP: Record<string, number> = { PENDING: 0, ACCEPTED: 1, PREPARING: 2, READY: 3, DELIVERED: 4 }
 
 const STEPS = [
-  { label: 'Received', icon: Clock },
+  { label: 'Order Received', icon: Clock },
   { label: 'Confirmed', icon: CheckCircle },
-  { label: 'Cooking', icon: ChefHat },
-  { label: 'Ready!', icon: Bike },
+  { label: 'Being Prepared', icon: ChefHat },
+  { label: 'Ready to Serve', icon: Bike },
 ]
 
 export default function OrderPage({ params }: { params: Promise<{ tableId: string }> }) {
@@ -60,16 +75,21 @@ export default function OrderPage({ params }: { params: Promise<{ tableId: strin
     if (!order) return
     const socket = getSocket()
     const handler = (updated: Order) => {
-      if (updated.id === order.id) {
-        setOrder(updated)
-        if (updated.status === 'READY') toast.success('🎉 Your order is ready!')
-        if (updated.status === 'ACCEPTED' && order.status === 'PENDING') toast('✅ Order confirmed by kitchen!')
-      }
+      if (updated.id !== order.id) return
+      setOrder(updated)
+      if (updated.status === 'ACCEPTED' && order.status === 'PENDING')
+        toast.success('✅ Your order has been confirmed!')
+      if (updated.status === 'PREPARING')
+        toast('👨‍🍳 Chef is now preparing your order', { icon: '🍳' })
+      if (updated.status === 'READY')
+        toast.success('🎉 Your order is ready!')
+      if (updated.status === 'CANCELLED')
+        toast.error('❌ Your order was cancelled. Please speak to a staff member.')
     }
     socket.on('order:updated', handler)
     socket.on('order:ready', handler)
     return () => { socket.off('order:updated', handler); socket.off('order:ready', handler) }
-  }, [order?.id])
+  }, [order?.id, order?.status])
 
   // Place order (creates it in backend, returns order + clientSecret for Stripe)
   const placeOrder = async (payWithCard: boolean) => {
@@ -85,16 +105,15 @@ export default function OrderPage({ params }: { params: Promise<{ tableId: strin
       cart.clear()
 
       if (payWithCard) {
-        // Get Stripe clientSecret for this order
         const { data } = await api.post(`/payments/create-intent/${newOrder.id}`)
         setClientSecret(data.clientSecret)
         setView('payment')
       } else {
-        // Cash — go straight to tracking
-        await api.post(`/payments/cash/${newOrder.id}`)
-        setOrder({ ...newOrder, paymentStatus: 'PAID', status: 'ACCEPTED' })
+        // Cash — register intent, stays PENDING until manager approves
+        const { data: cashOrder } = await api.post(`/payments/cash/${newOrder.id}`)
+        setOrder(cashOrder)
         setView('tracking')
-        toast.success('Order placed! Pay cash at the counter.')
+        toast.success('Order placed! A staff member will confirm shortly.')
       }
     } catch {
       toast.error('Could not place order. Try again.')
@@ -182,7 +201,7 @@ export default function OrderPage({ params }: { params: Promise<{ tableId: strin
             <span className="font-bold text-sm">Al Manzil</span>
           </div>
           <div className="text-sm text-gray-400">
-            {table ? `Table ${table.tableNumber}` : order.tokenNumber ? `Token #${order.tokenNumber}` : ''}
+            {table ? table.name ?? `Table ${table.tableNumber}` : order.tokenNumber ? `Token #${order.tokenNumber}` : ''}
           </div>
         </div>
 
@@ -190,25 +209,37 @@ export default function OrderPage({ params }: { params: Promise<{ tableId: strin
           {/* Status hero */}
           <div className="text-center mb-8">
             <div className={`text-5xl mb-3 ${order.status === 'READY' ? 'animate-bounce' : ''}`}>
-              {order.status === 'PENDING' && '⏳'}
+              {order.status === 'PENDING' && '📋'}
               {order.status === 'ACCEPTED' && '✅'}
-              {order.status === 'PREPARING' && '🍳'}
+              {order.status === 'PREPARING' && '👨‍🍳'}
               {order.status === 'READY' && '🎉'}
               {order.status === 'DELIVERED' && '😊'}
+              {order.status === 'CANCELLED' && '❌'}
             </div>
             <h1 className="text-xl font-bold text-gray-900">
-              {order.status === 'PENDING' && 'Order received!'}
-              {order.status === 'ACCEPTED' && 'Order confirmed by kitchen'}
-              {order.status === 'PREPARING' && 'Cooking your food...'}
-              {order.status === 'READY' && 'Your order is ready! 🎉'}
-              {order.status === 'DELIVERED' && 'Enjoy your meal! 😊'}
+              {order.status === 'PENDING' && 'Order Received'}
+              {order.status === 'ACCEPTED' && 'Order Confirmed'}
+              {order.status === 'PREPARING' && 'Being Prepared'}
+              {order.status === 'READY' && 'Ready to Serve!'}
+              {order.status === 'DELIVERED' && 'Enjoy Your Meal!'}
+              {order.status === 'CANCELLED' && 'Order Cancelled'}
             </h1>
             <p className="text-gray-400 text-sm mt-1">
-              {order.status === 'PREPARING' && "Hang tight, it won't be long"}
-              {order.status === 'READY' && (order.type === 'DINE_IN' ? 'Your waiter is on the way' : 'Please collect at the counter')}
-              {order.paymentStatus === 'PAID' && <span className="text-green-500 text-xs block mt-1">✓ Payment confirmed</span>}
-              {order.paymentStatus === 'UNPAID' && order.status === 'ACCEPTED' && <span className="text-orange-500 text-xs block mt-1">Cash payment — please pay the waiter</span>}
+              {order.status === 'PENDING' && (order.paymentStatus === 'UNPAID'
+                ? 'Awaiting staff approval — cash payment at checkout'
+                : 'Payment confirmed, sending to kitchen...')}
+              {order.status === 'ACCEPTED' && 'Your order is in the kitchen queue'}
+              {order.status === 'PREPARING' && "Our chef is cooking your food — won't be long!"}
+              {order.status === 'READY' && (order.type === 'DINE_IN' ? 'Your waiter is on the way to your table' : 'Please collect at the counter')}
+              {order.status === 'DELIVERED' && 'Thank you for dining with us'}
+              {order.status === 'CANCELLED' && 'Please speak to a staff member at the counter'}
             </p>
+            {order.paymentStatus === 'PAID' && (
+              <span className="inline-block text-green-600 text-xs font-semibold bg-green-50 border border-green-200 px-3 py-1 rounded-full mt-2">✓ Payment Confirmed</span>
+            )}
+            {order.paymentStatus === 'UNPAID' && order.status !== 'PENDING' && (
+              <span className="inline-block text-amber-600 text-xs font-semibold bg-amber-50 border border-amber-200 px-3 py-1 rounded-full mt-2">💵 Pay Cash at Checkout</span>
+            )}
           </div>
 
           {/* Progress steps */}
@@ -281,7 +312,7 @@ export default function OrderPage({ params }: { params: Promise<{ tableId: strin
         <div className="bg-white border-b px-4 h-14 flex items-center gap-3 sticky top-0 z-10">
           <button onClick={() => setView('menu')} className="text-gray-400 hover:text-gray-700"><ArrowLeft size={20} /></button>
           <span className="font-semibold">Review Order</span>
-          {table && <span className="ml-auto text-xs bg-orange-50 text-orange-600 px-2.5 py-1 rounded-full">Table {table.tableNumber}</span>}
+          {table && <span className="ml-auto text-xs bg-orange-50 text-orange-600 px-2.5 py-1 rounded-full">{table.name ?? `Table ${table.tableNumber}`}</span>}
         </div>
 
         <div className="flex-1 max-w-md mx-auto w-full px-4 py-4">
@@ -297,7 +328,7 @@ export default function OrderPage({ params }: { params: Promise<{ tableId: strin
               ))}
             </div>
             <p className="text-xs text-gray-400 mt-2 text-center">
-              {cart.orderType === 'DINE_IN' && table ? `Food served to Table ${table.tableNumber}` : 'Token number given · WhatsApp alert when ready'}
+              {cart.orderType === 'DINE_IN' && table ? `Food served to ${table.name ?? `Table ${table.tableNumber}`}` : 'Token number given · WhatsApp alert when ready'}
             </p>
           </div>
 
@@ -395,7 +426,7 @@ export default function OrderPage({ params }: { params: Promise<{ tableId: strin
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {table && <span className="text-xs bg-orange-50 text-orange-600 px-2.5 py-1 rounded-full font-medium">Table {table.tableNumber}</span>}
+            {table && <span className="text-xs bg-orange-50 text-orange-600 px-2.5 py-1 rounded-full font-medium">{table.name ?? `Table ${table.tableNumber}`}</span>}
             <button onClick={() => setView('cart')} className="relative p-1">
               <ShoppingCart size={22} className="text-gray-700" />
               {totalQty > 0 && (
@@ -428,9 +459,7 @@ export default function OrderPage({ params }: { params: Promise<{ tableId: strin
                 const qty = cart.items.find(i => i.menuItemId === item.id)?.quantity ?? 0
                 return (
                   <div key={item.id} className={`bg-white rounded-2xl border p-4 flex gap-3 transition-all ${!item.isAvailable ? 'opacity-40' : 'hover:border-orange-200'}`}>
-                    {item.imageUrl && (
-                      <img src={item.imageUrl} alt={item.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" />
-                    )}
+                    <FoodImage src={item.imageUrl} alt={item.name} className="w-20 h-20 rounded-xl" />
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-gray-900 text-sm">{item.name}</div>
                       {item.description && <p className="text-xs text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">{item.description}</p>}

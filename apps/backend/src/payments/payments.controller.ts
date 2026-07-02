@@ -1,36 +1,40 @@
-import { Controller, Post, Body, Param, Headers, Req, UseGuards } from '@nestjs/common'
+import { Controller, Post, Body, Param, Headers, Req } from '@nestjs/common'
 import { PaymentsService } from './payments.service'
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { RolesGuard } from '../common/guards/roles.guard'
-import { Roles } from '../common/decorators/roles.decorator'
 
 @Controller('payments')
 export class PaymentsController {
   constructor(private payments: PaymentsService) {}
 
-  // Guest creates payment intent after order is placed
   @Post('create-intent/:orderId')
   createIntent(@Param('orderId') orderId: string) {
     return this.payments.createIntent(orderId)
   }
 
-  // Called by frontend after stripe.confirmPayment() succeeds
   @Post('confirm/:orderId')
   confirmPayment(@Param('orderId') orderId: string, @Body('paymentIntentId') piId: string) {
     return this.payments.confirmPayment(orderId, piId)
   }
 
-  // Stripe webhook — raw body needed for signature verification
   @Post('webhook')
   webhook(@Req() req: any, @Headers('stripe-signature') sig: string) {
     return this.payments.handleWebhook(req.rawBody, sig)
   }
 
-  // Staff marks an order as cash paid
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  // Guest selects "Pay Cash" — records intent, keeps PENDING for manager approval
   @Post('cash/:orderId')
-  cashPaid(@Param('orderId') orderId: string) {
-    return this.payments.markCashPaid(orderId)
+  registerCash(@Param('orderId') orderId: string) {
+    return this.payments.registerCashOrder(orderId)
+  }
+
+  // Manager settles cash payment (called when guest pays at counter/checkout)
+  @Post('cash-settle/:orderId')
+  settleCash(@Param('orderId') orderId: string) {
+    return this.payments.settleCashPayment(orderId)
+  }
+
+  // Settle ALL unpaid cash orders for a table in one tap
+  @Post('table/:tableId/settle-all-cash')
+  settleTableCash(@Param('tableId') tableId: string) {
+    return this.payments.settleAllCashForTable(tableId)
   }
 }
