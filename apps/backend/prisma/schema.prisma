@@ -97,6 +97,7 @@ model User {
   googleId     String?  @unique @map("google_id")
   avatarUrl    String?  @map("avatar_url")
   role         Role     @default(GUEST)
+  isActive     Boolean  @default(true) @map("is_active")
   phone        String?
   dietaryTags           String  @default("") @map("dietary_tags")
   notifOrderUpdates     Boolean @default(true) @map("notif_order_updates")
@@ -586,6 +587,7 @@ model RestaurantSettings {
   id                  String   @id @default(uuid())
   restaurantName      String   @default("Al Manzil") @map("restaurant_name")
   tagline             String?
+  heroConfig          Json?    @map("hero_config")
   phone               String?
   address             String?
   logoUrl             String?  @map("logo_url")

@@ -48,6 +48,10 @@ function LoginForm() {
     setError('')
   }
 
+  function switchTab(t: 'login' | 'signup') {
+    setTab(t); setError('')
+  }
+
   function handleGoogleLogin() {
     const state = btoa(JSON.stringify({ redirect }))
     window.location.href = `${BACKEND}/api/v1/auth/google?state=${state}`
@@ -216,7 +220,7 @@ function LoginForm() {
           {/* Tab switcher */}
           <div className="flex bg-white/5 lg:bg-gray-100 dark:bg-white/5 rounded-2xl p-1 mb-5">
             {(['login', 'signup'] as const).map(t => (
-              <button key={t} onClick={() => { setTab(t); setError('') }}
+              <button key={t} onClick={() => switchTab(t)}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                   tab === t
                     ? 'bg-orange-500 text-white shadow-sm'
@@ -277,7 +281,7 @@ function LoginForm() {
             )}
 
             <button type="submit" disabled={loading}
-              className="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-50 transition-all shadow-lg shadow-orange-500/20 hover:shadow-orange-500/30 hover:scale-[1.01] active:scale-100 mt-1">
+              className="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-orange-500/20 hover:shadow-orange-500/30 hover:scale-[1.01] active:scale-100 mt-1">
               {loading
                 ? (tab === 'login' ? 'Signing in…' : 'Creating account…')
                 : (tab === 'login' ? 'Sign In' : 'Create Free Account')}

@@ -14,6 +14,7 @@ import { ActivityLogModule } from './activity-log/activity-log.module'
 import { NotificationsModule } from './notifications/notifications.module'
 import { BillsModule } from './bills/bills.module'
 import { ReportsModule } from './reports/reports.module'
+import { UsersModule } from './users/users.module'
 import { LoggerMiddleware } from './common/middleware/logger.middleware'
 
 @Module({
@@ -33,6 +34,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware'
     NotificationsModule,
     BillsModule,
     ReportsModule,
+    UsersModule,
   ],
 })
 export class AppModule implements NestModule {

@@ -39,7 +39,6 @@ export class NotificationsService {
     return { count }
   }
 
-  // Device token management
   async upsertDeviceToken(userId: string, token: string, platform: string, userAgent?: string) {
     return this.prisma.deviceToken.upsert({
       where: { token },

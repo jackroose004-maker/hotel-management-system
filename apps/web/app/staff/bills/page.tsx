@@ -471,9 +471,9 @@ export default function BillsPage() {
   const todayRevenue = closed.reduce((s, c) => s + Number(c.summary.total), 0)
 
   const TABS = [
-    { key: 'active'   as const, label: 'Active',    icon: Receipt, count: active.length },
-    { key: 'takeaway' as const, label: 'Takeaway',  icon: Package, count: takeaway.length },
-    { key: 'today'   as const, label: 'History',   icon: History, count: closed.length },
+    { key: 'active'   as const, label: 'Dine-in',   icon: Receipt, count: active.length },
+    { key: 'today'    as const, label: 'Closed',     icon: History, count: closed.length },
+    { key: 'takeaway' as const, label: 'Takeaway',   icon: Package, count: takeaway.length },
   ]
 
   return (
@@ -484,7 +484,10 @@ export default function BillsPage() {
         style={{ backgroundColor: 'var(--header-bg)', borderColor: 'var(--header-border)' }}>
         {/* Title row */}
         <div className="flex items-center justify-between gap-2 mb-3">
-          <h1 className="text-lg font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>Bills & Invoices</h1>
+          <div>
+            <h1 className="text-lg font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>Bills & Payment</h1>
+            <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Collect cash · print receipts · close tables</p>
+          </div>
           <button onClick={load}
             className="p-2 rounded-xl transition-colors flex-shrink-0"
             style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
@@ -547,32 +550,41 @@ export default function BillsPage() {
           </div>
         )}
 
-        {/* Active — 2-col grid on large screens */}
+        {/* Dine-in active — tables with open sessions (guests still seated, payment pending) */}
         {!loading && tab === 'active' && (
-          active.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4 rounded-2xl border border-dashed"
-              style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
-                style={{ backgroundColor: 'var(--brand-light)' }}>
-                <Receipt size={24} style={{ color: 'var(--brand)' }} />
+          <>
+            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+              Tables where guests are currently seated and have unpaid or partially-paid orders.
+            </p>
+            {active.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-4 rounded-2xl border border-dashed"
+                style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                  style={{ backgroundColor: 'var(--brand-light)' }}>
+                  <Receipt size={24} style={{ color: 'var(--brand)' }} />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>No active dine-in bills</p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Bills appear here when guests place dine-in orders.</p>
+                </div>
               </div>
-              <div className="text-center">
-                <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>No active bills</p>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Bills appear when dine-in orders are placed.</p>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                {active.map(e => (
+                  <ActiveTableCard key={e.table.id} entry={e} onSettleCash={settleCash} busySession={busySession} />
+                ))}
               </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              {active.map(e => (
-                <ActiveTableCard key={e.table.id} entry={e} onSettleCash={settleCash} busySession={busySession} />
-              ))}
-            </div>
-          )
+            )}
+          </>
         )}
 
-        {/* Takeaway — 3-col grid */}
+        {/* Takeaway — card-paid, already settled */}
         {!loading && tab === 'takeaway' && (
-          takeaway.length === 0 ? (
+          <>
+          <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+            Today's takeaway orders — all paid by card at checkout.
+          </p>
+          {takeaway.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 gap-4 rounded-2xl border border-dashed"
               style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
               <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ backgroundColor: 'var(--muted-bg)' }}>
@@ -584,12 +596,17 @@ export default function BillsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {takeaway.map(e => <TakeawayCard key={e.tokenNumber} entry={e} />)}
             </div>
-          )
+          )}
+          </>
         )}
 
-        {/* History — 3-col grid */}
+        {/* Closed sessions — tables where the session ended (payment collected, table freed) */}
         {!loading && tab === 'today' && (
-          closed.length === 0 ? (
+          <>
+          <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+            Sessions that have been closed today — payment collected and table freed.
+          </p>
+          {closed.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 gap-4 rounded-2xl border border-dashed"
               style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
               <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
@@ -619,7 +636,8 @@ export default function BillsPage() {
                 {closed.map(s => <ClosedSessionCard key={s.sessionId} s={s} />)}
               </div>
             </div>
-          )
+          )}
+          </>
         )}
       </div>
     </div>

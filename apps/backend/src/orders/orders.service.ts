@@ -182,6 +182,16 @@ export class OrdersService {
     return updated
   }
 
+  async guestCancel(id: string) {
+    const order = await this.getById(id)
+    if (order.status !== 'PENDING') throw new BadRequestException('Order can only be cancelled while pending')
+    return this.prisma.order.update({
+      where: { id },
+      data: { status: 'CANCELLED', cancelledAt: new Date() },
+      include: { items: { include: { menuItem: true } }, table: true },
+    })
+  }
+
   async getAnalytics(period: string) {
     const now = new Date()
     const days = period === 'today' ? 1 : period === '30d' ? 30 : 7

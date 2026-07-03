@@ -114,4 +114,11 @@ export class OrdersController {
   updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto, @Request() req) {
     return this.orders.updateStatus(id, dto, req.user?.id)
   }
+
+  // Guest self-cancel — only allowed while order is still PENDING
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post(':id/cancel')
+  guestCancel(@Param('id') id: string) {
+    return this.orders.guestCancel(id)
+  }
 }

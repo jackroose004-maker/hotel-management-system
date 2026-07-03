@@ -60,6 +60,8 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.passwordHash)
     if (!valid) throw new UnauthorizedException('Invalid credentials')
 
+    if (!user.isActive) throw new UnauthorizedException('This account has been deactivated. Contact your manager.')
+
     const { passwordHash: _, ...result } = user
     return { user: result, token: this.signToken(user.id, user.email, user.role) }
   }

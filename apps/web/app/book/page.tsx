@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { QRCodeCanvas } from 'qrcode.react'
+import ForceDark from '@/components/ForceDark'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
@@ -192,7 +193,8 @@ export default function BookPage() {
 
   if (step === 'done' && booking) {
     return (
-      <div className="min-h-screen bg-gray-950 flex flex-col">
+      <div className="min-h-screen bg-[#080808] flex flex-col">
+        <ForceDark />
         <div className="px-4 py-4 flex items-center gap-3">
           <Link href="/" className="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center">
             <ArrowLeft size={16} className="text-white" />
@@ -208,7 +210,7 @@ export default function BookPage() {
 
           {/* Ticket card */}
           <div ref={ticketRef} className="w-full max-w-sm bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden mb-4">
-            <div className="bg-orange-500 px-5 py-3 flex items-center justify-between">
+            <div className="bg-amber-500 px-5 py-3 flex items-center justify-between">
               <span className="font-bold text-white">Al Manzil Hotel</span>
               <span className="text-orange-100 text-sm">Booking confirmed</span>
             </div>
@@ -245,14 +247,14 @@ export default function BookPage() {
 
           {/* Pre-order food prompt — only if no order yet */}
           {!preOrder && booking.table?.id && (
-            <div className="w-full max-w-sm bg-gray-900 border border-orange-500/30 rounded-2xl p-4 mb-4">
+            <div className="w-full max-w-sm bg-gray-900 border border-amber-500/30 rounded-2xl p-4 mb-4">
               <div className="text-white font-bold text-sm mb-1">🍛 Pre-order your food?</div>
               <p className="text-gray-400 text-xs mb-3 leading-relaxed">
                 Skip the wait — order now and your meal will be ready when you arrive. Card payment required.
               </p>
               <Link
                 href={`/menu?tableId=${booking.table.id}&bookingId=${booking.id}`}
-                className="flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-400 text-white font-bold py-3 rounded-xl text-sm transition-colors">
+                className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-white font-bold py-3 rounded-xl text-sm transition-colors">
                 Yes, order food now →
               </Link>
             </div>
@@ -261,13 +263,13 @@ export default function BookPage() {
           {/* Print / Download button */}
           <button onClick={printTicket}
             className="w-full max-w-sm flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white font-semibold py-3.5 rounded-2xl text-sm mb-4 transition-colors">
-            <Printer size={16} className="text-orange-400" />
+            <Printer size={16} className="text-amber-400" />
             Print / Save as PDF
           </button>
 
-          <div className="w-full max-w-sm bg-orange-500/10 border border-orange-500/20 rounded-xl p-3 mb-6 flex gap-2 text-left">
-            <AlertTriangle size={14} className="text-orange-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-orange-300 leading-relaxed">Arrive within 15 minutes of your slot. Table may be released after that.</p>
+          <div className="w-full max-w-sm bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 mb-6 flex gap-2 text-left">
+            <AlertTriangle size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-300 leading-relaxed">Arrive within 15 minutes of your slot. Table may be released after that.</p>
           </div>
 
           <div className="w-full max-w-sm flex flex-col gap-3">
@@ -276,7 +278,7 @@ export default function BookPage() {
               View &amp; manage my bookings
             </Link>
             <button onClick={() => { setStep('pick'); setSelected(null); setBooking(null); setQrDataUrl(''); setQrText(''); setPreOrder(null) }}
-              className="text-orange-400 text-sm font-medium hover:text-orange-300">
+              className="text-amber-400 text-sm font-medium hover:text-amber-300">
               Make another booking
             </button>
           </div>
@@ -288,7 +290,8 @@ export default function BookPage() {
   // ── CONFIRM ───────────────────────────────────────────────────────────────
   if (step === 'confirm') {
     return (
-      <div className="min-h-screen bg-gray-950 flex flex-col">
+      <div className="min-h-screen bg-[#080808] flex flex-col">
+        <ForceDark />
         <div className="px-4 py-4 flex items-center gap-3 border-b border-gray-800">
           <button onClick={() => setStep('pick')} className="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center">
             <ArrowLeft size={16} className="text-white" />
@@ -298,15 +301,15 @@ export default function BookPage() {
 
         <div className="flex-1 px-4 py-6 max-w-lg mx-auto w-full space-y-4">
           {/* Selected slot summary */}
-          <div className="bg-orange-500/10 border border-orange-500/30 rounded-2xl p-4 flex items-center gap-3">
-            <div className="w-12 h-12 bg-orange-500 rounded-xl flex items-center justify-center flex-shrink-0">
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center flex-shrink-0">
               <CalendarDays size={20} className="text-white" />
             </div>
             <div>
               <div className="font-bold text-white text-sm">
                 {date.toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long' })}
               </div>
-              <div className="text-orange-400 font-semibold">{selected && slotLabel(selected)}</div>
+              <div className="text-amber-400 font-semibold">{selected && slotLabel(selected)}</div>
             </div>
           </div>
 
@@ -317,7 +320,7 @@ export default function BookPage() {
             </div>
             <div className="flex items-center justify-between">
               <button onClick={() => setPartySize(Math.max(1, partySize - 1))}
-                className="w-11 h-11 rounded-full border border-gray-700 flex items-center justify-center text-gray-300 hover:border-orange-500 hover:text-orange-500 transition-colors text-lg font-bold">
+                className="w-11 h-11 rounded-full border border-gray-700 flex items-center justify-center text-gray-300 hover:border-amber-500 hover:text-amber-500 transition-colors text-lg font-bold">
                 −
               </button>
               <div className="text-center">
@@ -325,7 +328,7 @@ export default function BookPage() {
                 <div className="text-gray-400 text-xs mt-0.5">{partySize === 1 ? 'guest' : 'guests'}</div>
               </div>
               <button onClick={() => setPartySize(Math.min(12, partySize + 1))}
-                className="w-11 h-11 rounded-full border border-gray-700 flex items-center justify-center text-gray-300 hover:border-orange-500 hover:text-orange-500 transition-colors text-lg font-bold">
+                className="w-11 h-11 rounded-full border border-gray-700 flex items-center justify-center text-gray-300 hover:border-amber-500 hover:text-amber-500 transition-colors text-lg font-bold">
                 +
               </button>
             </div>
@@ -355,7 +358,7 @@ export default function BookPage() {
           )}
 
           <button onClick={confirmBooking} disabled={submitting}
-            className="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-4 rounded-2xl text-base disabled:opacity-50 transition-colors shadow-xl shadow-orange-500/20">
+            className="w-full bg-amber-500 hover:bg-amber-400 text-white font-bold py-4 rounded-2xl text-base disabled:opacity-50 transition-colors shadow-xl shadow-orange-500/20">
             {submitting ? 'Reserving your table...' : `Confirm for ${partySize} ${partySize === 1 ? 'guest' : 'guests'}`}
           </button>
         </div>
@@ -365,7 +368,8 @@ export default function BookPage() {
 
   // ── PICK ──────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col">
+    <div className="min-h-screen bg-[#080808] flex flex-col">
+      <ForceDark />
       {/* Hero header */}
       <div className="relative overflow-hidden">
         <div className="absolute inset-0">
@@ -396,7 +400,7 @@ export default function BookPage() {
               <button key={i} onClick={() => setDate(d)}
                 className={`flex-shrink-0 w-14 py-2.5 rounded-xl flex flex-col items-center gap-0.5 transition-all border ${
                   isSelected
-                    ? 'bg-orange-500 border-orange-500 shadow-lg shadow-orange-500/30'
+                    ? 'bg-amber-500 border-orange-500 shadow-lg shadow-amber-500/30'
                     : 'bg-gray-900 border-gray-800 hover:border-gray-600'
                 }`}>
                 <span className={`text-[10px] font-medium ${isSelected ? 'text-orange-100' : 'text-gray-500'}`}>
@@ -415,7 +419,7 @@ export default function BookPage() {
       <div className="flex-1 px-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-white text-sm flex items-center gap-2">
-            <Clock size={14} className="text-orange-400" />
+            <Clock size={14} className="text-amber-400" />
             {date.toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'short' })}
           </h2>
           {!loading && availableCount > 0 && (
@@ -463,22 +467,22 @@ export default function BookPage() {
         {/* Info cards below slots */}
         <div className="mt-6 grid grid-cols-2 gap-3 pb-8">
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <UtensilsCrossed size={18} className="text-orange-400 mb-2" />
+            <UtensilsCrossed size={18} className="text-amber-400 mb-2" />
             <div className="text-white font-semibold text-sm">Kerala Cuisine</div>
             <div className="text-gray-500 text-xs mt-0.5 leading-relaxed">Authentic South Indian dishes made fresh daily</div>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <Clock size={18} className="text-orange-400 mb-2" />
+            <Clock size={18} className="text-amber-400 mb-2" />
             <div className="text-white font-semibold text-sm">Table Held</div>
             <div className="text-gray-500 text-xs mt-0.5 leading-relaxed">We hold your table for 15 minutes after slot time</div>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <Users size={18} className="text-orange-400 mb-2" />
+            <Users size={18} className="text-amber-400 mb-2" />
             <div className="text-white font-semibold text-sm">Up to 12 Guests</div>
             <div className="text-gray-500 text-xs mt-0.5 leading-relaxed">Groups welcome — mention it in special requests</div>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <CalendarDays size={18} className="text-orange-400 mb-2" />
+            <CalendarDays size={18} className="text-amber-400 mb-2" />
             <div className="text-white font-semibold text-sm">Free to Cancel</div>
             <div className="text-gray-500 text-xs mt-0.5 leading-relaxed">Cancel anytime from your account before the slot</div>
           </div>

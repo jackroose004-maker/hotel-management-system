@@ -16,6 +16,7 @@ export class SettingsService {
   async update(dto: Partial<{
     restaurantName: string
     tagline: string
+    heroConfig: Record<string, any>
     phone: string
     address: string
     logoUrl: string

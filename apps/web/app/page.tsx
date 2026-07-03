@@ -1,454 +1,67 @@
 'use client'
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
-import { UtensilsCrossed, Clock, Star, MapPin, Moon, Sun, ChevronRight, Menu, X, Phone } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { gsap } from 'gsap'
+import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import Lenis from 'lenis'
+import { UtensilsCrossed, Star, Clock, ArrowRight, Phone, MapPin, ChevronDown, CalendarDays, User } from 'lucide-react'
 import AccountNavLink from '@/components/AccountNavLink'
+import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
-interface MenuItem {
-  id: string
-  name: string
-  description: string
-  price: string
-  imageUrl?: string
-  prepTimeMins: number
-}
+const FALLBACK_VIDEO  = 'https://assets.mixkit.co/videos/preview/mixkit-chef-seasoning-food-in-a-restaurant-kitchen-43235-large.mp4'
+const FALLBACK_POSTER = 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1920&q=90'
 
+interface MenuItem { id: string; name: string; description?: string; price: string; prepTimeMins: number; imageUrl?: string }
+interface HeroConfig {
+  line1?: string; line2?: string; subtext?: string; videoUrl?: string; posterUrl?: string
+  ctaLabel?: string; ctaSecondaryLabel?: string; badgeText?: string
+  dishesHeadline?: string; dishesSubtext?: string
+  customDishes?: Array<{ name: string; desc: string; price: string; time: string; img: string }>
+  relayTagline?: string; relayHeadline?: string; relayHeadlinePart2?: string
+  ambienceTagline?: string; ambienceHeadline?: string; ambienceHeadlinePart2?: string; ambienceDesc?: string
+  reviewsHeadline?: string
+  ambienceImg1?: string; ambienceImg2?: string; ambienceImg3?: string; ambienceImg4?: string
+}
 interface RestaurantSettings {
-  restaurantName: string
-  tagline: string | null
-  phone: string | null
-  address: string | null
-  logoUrl: string | null
-  openTime: string
-  closeTime: string
+  restaurantName: string; tagline: string | null; phone: string | null
+  address: string | null; logoUrl: string | null; openTime: string; closeTime: string
+  heroConfig?: HeroConfig | null
 }
 
-// A few hero food images from Unsplash for the rotating hero
-const HERO_IMAGES = [
-  'https://images.unsplash.com/photo-1630383249896-424e482df921?w=1400&q=85',
-  'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=1400&q=85',
-  'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=1400&q=85',
+const DISHES_FALLBACK = [
+  { name: 'Malabar Biriyani',  desc: 'Fragrant basmati with tender chicken & caramelised onions', price: '55', time: 25, img: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=700&q=80' },
+  { name: 'Masala Dosa',       desc: 'Crispy golden crepe, spiced potato filling, fresh chutneys',  price: '22', time: 12, img: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=700&q=80' },
+  { name: 'Appam & Stew',      desc: 'Lacy rice pancakes with velvety coconut milk stew',           price: '28', time: 15, img: 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=700&q=80' },
+  { name: 'Kerala Fish Curry', desc: 'Spiced red curry with wild-caught fish & kudampuli',           price: '48', time: 20, img: 'https://images.unsplash.com/photo-1626508035297-0e8a5f53700b?w=700&q=80' },
+  { name: 'Prawn Fry',         desc: 'Crispy prawns in Kerala masala with fresh curry leaves',      price: '65', time: 18, img: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=700&q=80' },
+  { name: 'Puttu & Kadala',    desc: 'Steamed rice cylinders with black chickpea curry',            price: '22', time: 10, img: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=700&q=80' },
+]
+
+const SHOWCASE_FALLBACK = [
+  { name: 'Malabar Biriyani',  img: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=1600&q=85' },
+  { name: 'Kerala Fish Curry', img: 'https://images.unsplash.com/photo-1626508035297-0e8a5f53700b?w=1600&q=85' },
+  { name: 'Masala Dosa',       img: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=1600&q=85' },
+  { name: 'Prawn Fry',         img: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=1600&q=85' },
 ]
 
 const TESTIMONIALS = [
-  { name: 'Arjun Nair', text: 'Best Kerala food outside of home. The Appam & Stew is absolutely perfect.', stars: 5, avatar: 'AN' },
-  { name: 'Sarah K.', text: 'Ordered via QR, food arrived in 15 minutes. Masala Dosa was crispy and delicious!', stars: 5, avatar: 'SK' },
-  { name: 'Mohammed Al-Rashid', text: 'The Malabar Biriyani is unreal. Coming back every week for sure.', stars: 5, avatar: 'MA' },
+  { name: 'Arjun Nair',          text: 'Best Kerala food outside of home. The Appam & Stew is absolutely perfect — I come every week.', stars: 5 },
+  { name: 'Sarah K.',             text: 'Ordered via QR, food arrived in 15 min. Masala Dosa was crispy and delicious. Super smooth experience.', stars: 5 },
+  { name: 'Mohammed Al-Rashid',   text: 'The Malabar Biriyani is unreal. Fragrant, rich, and generous portions. Easily the best in Dubai.', stars: 5 },
+  { name: 'Priya Menon',          text: 'Feels like eating at my grandmother\'s. The fish curry brings me right back to Kerala every time.', stars: 5 },
+  { name: 'James Thornton',       text: 'Stumbled in on a work trip — left absolutely hooked. The prawn moilee was outstanding. Will be back.', stars: 5 },
+  { name: 'Fatima Al-Zaabi',      text: 'Intimate setting, warm service, and food that tastes like it was made with real love. Highly recommend.', stars: 5 },
 ]
 
-export default function LandingPage() {
-  const { dark, toggle } = useThemeStore()
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [heroIdx, setHeroIdx] = useState(0)
-  const [featuredItems, setFeaturedItems] = useState<MenuItem[]>([])
-  const [scrolled, setScrolled] = useState(false)
-  const [cfg, setCfg] = useState<RestaurantSettings>({
-    restaurantName: 'Al Manzil',
-    tagline: 'Kerala & South Indian Cuisine',
-    phone: null,
-    address: 'Dubai, UAE',
-    logoUrl: null,
-    openTime: '07:00',
-    closeTime: '23:00',
-  })
-
-  useEffect(() => {
-    const t = setInterval(() => setHeroIdx(i => (i + 1) % HERO_IMAGES.length), 5000)
-    return () => clearInterval(t)
-  }, [])
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20)
-    window.addEventListener('scroll', onScroll)
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  useEffect(() => {
-    // Fetch restaurant settings
-    fetch(`${API}/settings`)
-      .then(r => r.json())
-      .then(json => { const s = json?.data ?? json; if (s?.restaurantName) setCfg(s) })
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    // Fetch a few popular items from the menu API
-    fetch(`${API}/menu/items`)
-      .then(r => r.json())
-      .then(json => {
-        const items: MenuItem[] = json?.data ?? json ?? []
-        // Pick 6 items with images
-        const withImg = items.filter((i: MenuItem) => i.imageUrl).slice(0, 6)
-        setFeaturedItems(withImg.length >= 4 ? withImg : items.slice(0, 6))
-      })
-      .catch(() => {})
-  }, [])
-
-  return (
-    <div className="min-h-screen bg-white dark:bg-gray-950 transition-colors">
-
-      {/* ─── Nav ─── */}
-      <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${
-        scrolled
-          ? 'bg-white/95 dark:bg-gray-950/95 backdrop-blur shadow-sm border-b border-gray-100 dark:border-gray-800'
-          : 'bg-transparent'
-      }`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            {cfg.logoUrl
-              ? <img src={cfg.logoUrl} alt={cfg.restaurantName} className="w-8 h-8 rounded-lg object-cover" />
-              : <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center"><UtensilsCrossed size={16} className="text-white" /></div>
-            }
-            <span className={`font-bold text-lg transition-colors ${scrolled ? 'text-gray-900 dark:text-white' : 'text-white'}`}>
-              {cfg.restaurantName}
-            </span>
-          </Link>
-
-          {/* Desktop nav */}
-          <div className="hidden md:flex items-center gap-1">
-            {[
-              { href: '/menu', label: 'Menu' },
-              { href: '/book', label: 'Reserve' },
-            ].map(item => (
-              <Link key={item.href} href={item.href}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  scrolled
-                    ? 'text-gray-600 dark:text-gray-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/20'
-                    : 'text-white/80 hover:text-white hover:bg-white/10'
-                }`}>
-                {item.label}
-              </Link>
-            ))}
-            <div className={`text-sm transition-colors ${scrolled ? '' : '[&_a]:text-white/80 [&_a:hover]:text-white'}`}>
-              <AccountNavLink />
-            </div>
-          </div>
-
-          {/* Right actions */}
-          <div className="flex items-center gap-2">
-            <button onClick={toggle}
-              className={`p-2 rounded-full transition-colors ${
-                scrolled
-                  ? 'hover:bg-gray-100 dark:hover:bg-gray-800'
-                  : 'hover:bg-white/10'
-              }`}>
-              {dark
-                ? <Sun size={18} className="text-yellow-400" />
-                : <Moon size={18} className={scrolled ? 'text-gray-500' : 'text-white'} />}
-            </button>
-            <Link href="/menu"
-              className="hidden sm:block bg-orange-500 hover:bg-orange-600 text-white px-5 py-2 rounded-full text-sm font-semibold transition-colors shadow-lg shadow-orange-500/30">
-              Order Now
-            </Link>
-            {/* Mobile hamburger */}
-            <button onClick={() => setMobileMenuOpen(v => !v)}
-              className={`md:hidden p-2 rounded-lg transition-colors ${scrolled ? 'hover:bg-gray-100 dark:hover:bg-gray-800' : 'hover:bg-white/10'}`}>
-              {mobileMenuOpen
-                ? <X size={20} className={scrolled ? 'text-gray-700 dark:text-gray-300' : 'text-white'} />
-                : <Menu size={20} className={scrolled ? 'text-gray-700 dark:text-gray-300' : 'text-white'} />}
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile menu drawer */}
-        {mobileMenuOpen && (
-          <div className="md:hidden bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 px-4 py-4 space-y-1 shadow-xl">
-            <Link href="/menu" onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center justify-between px-4 py-3 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-orange-900/20 hover:text-orange-600 font-medium">
-              View Menu <ChevronRight size={16} />
-            </Link>
-            <Link href="/book" onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center justify-between px-4 py-3 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-orange-900/20 hover:text-orange-600 font-medium">
-              Reserve a Table <ChevronRight size={16} />
-            </Link>
-            <Link href="/account" onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center justify-between px-4 py-3 rounded-xl text-gray-700 dark:text-gray-300 hover:bg-orange-50 dark:hover:bg-orange-900/20 hover:text-orange-600 font-medium">
-              My Account <ChevronRight size={16} />
-            </Link>
-            <div className="pt-2 border-t border-gray-100 dark:border-gray-800">
-              <Link href="/menu" onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-xl font-semibold transition-colors">
-                Order Now
-              </Link>
-            </div>
-          </div>
-        )}
-      </nav>
-
-      {/* ─── Hero ─── */}
-      <section className="relative h-screen min-h-[600px] max-h-[900px] overflow-hidden">
-        {/* Background images */}
-        {HERO_IMAGES.map((src, i) => (
-          <div key={src}
-            className="absolute inset-0 transition-opacity duration-1000"
-            style={{ opacity: i === heroIdx ? 1 : 0 }}>
-            <img src={src} alt="" className="w-full h-full object-cover" />
-          </div>
-        ))}
-        {/* Gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/50 to-black/20" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-
-        {/* Content */}
-        <div className="relative h-full flex items-center">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 w-full">
-            <div className="max-w-2xl">
-              <div className="inline-flex items-center gap-2 bg-orange-500/20 backdrop-blur-sm border border-orange-500/30 text-orange-300 px-3 py-1.5 rounded-full text-xs font-medium mb-6">
-                <span className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse" />
-                {cfg.tagline ?? 'Kerala & South Indian Cuisine'} · {cfg.address ?? 'Dubai, UAE'}
-              </div>
-              <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-white leading-[1.05] mb-6">
-                Authentic<br />
-                <span className="text-orange-400">Kerala Flavours</span><br />
-                <span className="text-3xl sm:text-4xl lg:text-5xl font-normal text-white/80">in the heart of Dubai</span>
-              </h1>
-              <p className="text-white/70 text-lg sm:text-xl mb-8 leading-relaxed max-w-lg">
-                From crispy Masala Dosa to fragrant Malabar Biriyani — every dish is made fresh, with love, and ready in minutes.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-3 mb-10">
-                <Link href="/menu"
-                  className="bg-orange-500 hover:bg-orange-400 text-white px-8 py-4 rounded-2xl font-bold text-lg text-center transition-all shadow-2xl shadow-orange-500/40 hover:shadow-orange-400/50 hover:scale-[1.02] active:scale-100">
-                  Order Now
-                </Link>
-                <Link href="/book"
-                  className="bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 text-white px-8 py-4 rounded-2xl font-semibold text-lg text-center transition-all">
-                  Reserve a Table
-                </Link>
-              </div>
-              <div className="flex items-center gap-6 text-sm text-white/60">
-                <div className="flex items-center gap-1.5">
-                  <Star size={14} className="text-yellow-400 fill-yellow-400" />
-                  <span className="text-white font-medium">4.8</span> rated
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Clock size={14} />
-                  Avg 18 min
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <MapPin size={14} />
-                  Dubai, UAE
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Dot indicators */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-2">
-          {HERO_IMAGES.map((_, i) => (
-            <button key={i} onClick={() => setHeroIdx(i)}
-              className={`rounded-full transition-all ${i === heroIdx ? 'w-6 h-2 bg-orange-400' : 'w-2 h-2 bg-white/40 hover:bg-white/60'}`} />
-          ))}
-        </div>
-      </section>
-
-      {/* ─── Social proof strip ─── */}
-      <section className="bg-orange-500 py-4 overflow-hidden">
-        <div className="flex gap-12 whitespace-nowrap animate-[marquee_20s_linear_infinite]">
-          {[...Array(3)].map((_, rep) => (
-            <div key={rep} className="flex gap-12 flex-shrink-0">
-              {['🍛 Kerala Sadya', '🥞 Appam & Stew', '🍖 Malabar Biriyani', '☕ Sulaimani Tea', '🐟 Fish Curry', '🥗 Aviyal', '🫓 Parotta & Curry', '🍚 Ghee Rice'].map(item => (
-                <span key={item} className="text-white font-medium text-sm">{item}</span>
-              ))}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ─── Featured Dishes ─── */}
-      <section className="py-20 bg-white dark:bg-gray-950">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="text-center mb-12">
-            <div className="inline-block text-orange-500 text-sm font-semibold uppercase tracking-wider mb-3">Our Specialities</div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white mb-4">
-              Dishes you'll dream about
-            </h2>
-            <p className="text-gray-500 dark:text-gray-400 text-lg max-w-xl mx-auto">
-              Every dish made from scratch with authentic Kerala spices. No shortcuts, no compromises.
-            </p>
-          </div>
-
-          {featuredItems.length > 0 ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {featuredItems.map((item, i) => (
-                <FoodCard key={item.id} item={item} featured={i === 0} />
-              ))}
-            </div>
-          ) : (
-            // Fallback static cards while loading
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {STATIC_DISHES.map((dish, i) => (
-                <StaticDishCard key={dish.name} dish={dish} featured={i === 0} />
-              ))}
-            </div>
-          )}
-
-          <div className="text-center mt-10">
-            <Link href="/menu"
-              className="inline-flex items-center gap-2 bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-8 py-4 rounded-2xl font-bold hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors">
-              See Full Menu <ChevronRight size={18} />
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ─── How it works ─── */}
-      <section className="py-20 bg-gray-50 dark:bg-gray-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="text-center mb-14">
-            <div className="inline-block text-orange-500 text-sm font-semibold uppercase tracking-wider mb-3">Simple &amp; Fast</div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white">Order in 4 easy steps</h2>
-          </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { step: '01', emoji: '📱', title: 'Scan QR', desc: 'Scan the code on your table — no app download needed, works on any phone' },
-              { step: '02', emoji: '🍛', title: 'Pick Your Meal', desc: 'Browse Kerala classics, add items with a tap, customize your order' },
-              { step: '03', emoji: '⚡', title: 'Live Tracking', desc: 'Watch your order go from kitchen to table in real time' },
-              { step: '04', emoji: '💳', title: 'Pay Your Way', desc: 'Card, Apple Pay, or cash at the counter — your choice' },
-            ].map(f => (
-              <div key={f.step}
-                className="relative bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-100 dark:border-gray-700 hover:border-orange-200 dark:hover:border-orange-700 hover:shadow-lg hover:shadow-orange-50 dark:hover:shadow-none transition-all group">
-                <div className="text-5xl mb-4">{f.emoji}</div>
-                <div className="absolute top-5 right-5 text-4xl font-black text-gray-100 dark:text-gray-700 group-hover:text-orange-100 dark:group-hover:text-orange-900/30 transition-colors select-none">
-                  {f.step}
-                </div>
-                <h3 className="font-bold text-gray-900 dark:text-white mb-2 text-lg">{f.title}</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Testimonials ─── */}
-      <section className="py-20 bg-white dark:bg-gray-950">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="text-center mb-12">
-            <div className="inline-block text-orange-500 text-sm font-semibold uppercase tracking-wider mb-3">Reviews</div>
-            <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 dark:text-white">What our guests say</h2>
-          </div>
-          <div className="grid sm:grid-cols-3 gap-6">
-            {TESTIMONIALS.map(t => (
-              <div key={t.name} className="bg-gray-50 dark:bg-gray-900 rounded-2xl p-6 border border-gray-100 dark:border-gray-800">
-                <div className="flex gap-0.5 mb-3">
-                  {Array.from({ length: t.stars }).map((_, i) => (
-                    <Star key={i} size={14} className="text-yellow-400 fill-yellow-400" />
-                  ))}
-                </div>
-                <p className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed mb-4">&ldquo;{t.text}&rdquo;</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center text-xs font-bold text-orange-600 dark:text-orange-400">
-                    {t.avatar}
-                  </div>
-                  <span className="font-semibold text-sm text-gray-800 dark:text-gray-200">{t.name}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Big CTA banner ─── */}
-      <section className="relative py-24 overflow-hidden">
-        <div className="absolute inset-0">
-          <img src="https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=1400&q=80"
-            alt="" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-black/75" />
-        </div>
-        <div className="relative max-w-3xl mx-auto px-4 sm:px-6 text-center">
-          <h2 className="text-4xl sm:text-5xl font-bold text-white mb-4 leading-tight">
-            Hungry? Your table is ready.
-          </h2>
-          <p className="text-white/70 text-lg mb-8">
-            Order online for dine-in or takeaway. Fresh Kerala food, ready in minutes.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/menu"
-              className="bg-orange-500 hover:bg-orange-400 text-white px-10 py-4 rounded-2xl font-bold text-lg transition-all shadow-2xl shadow-orange-500/40 hover:scale-[1.02] active:scale-100">
-              Order Now
-            </Link>
-            <Link href="/book"
-              className="bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/30 text-white px-10 py-4 rounded-2xl font-semibold text-lg transition-all">
-              Book a Table
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Footer ─── */}
-      <footer className="bg-gray-900 text-gray-400">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-12">
-          <div className="grid sm:grid-cols-3 gap-8 mb-8">
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-7 h-7 bg-orange-500 rounded-lg flex items-center justify-center">
-                  <UtensilsCrossed size={14} className="text-white" />
-                </div>
-                <span className="font-bold text-white text-base">{cfg.restaurantName}</span>
-              </div>
-              <p className="text-sm leading-relaxed mb-4">
-                {cfg.tagline ?? 'Authentic Kerala & South Indian cuisine'}. Open {fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)} daily.
-              </p>
-              {cfg.phone && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Phone size={14} />
-                  <span>{cfg.phone}</span>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <div className="font-semibold text-white mb-3 text-sm">Quick Links</div>
-              <div className="space-y-2 text-sm">
-                <Link href="/menu" className="block hover:text-orange-400 transition-colors">Our Menu</Link>
-                <Link href="/book" className="block hover:text-orange-400 transition-colors">Reserve a Table</Link>
-                <Link href="/account" className="block hover:text-orange-400 transition-colors">My Account</Link>
-                <Link href="/staff/login" className="block hover:text-gray-300 transition-colors text-gray-600">Staff Portal</Link>
-              </div>
-            </div>
-
-            <div>
-              <div className="font-semibold text-white mb-3 text-sm">Find Us</div>
-              <div className="text-sm space-y-1 mb-4">
-                <div>{cfg.restaurantName}</div>
-                <div>{cfg.address ?? 'Dubai, United Arab Emirates'}</div>
-                <div className="mt-2 text-orange-400 font-medium">Open {fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)} · 7 days a week</div>
-              </div>
-              <div className="flex gap-3">
-                <a href="#" className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center hover:bg-orange-500 transition-colors text-sm font-bold text-white">
-                  IG
-                </a>
-                <a href="#" className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center hover:bg-orange-500 transition-colors text-sm font-bold text-white">
-                  FB
-                </a>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-gray-800 pt-6 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs">
-            <span>© 2026 {cfg.restaurantName} · {cfg.address ?? 'Dubai, UAE'}</span>
-            <span className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-              5% VAT included on all prices
-            </span>
-          </div>
-        </div>
-      </footer>
-
-      {/* Marquee keyframes */}
-      <style>{`
-        @keyframes marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-33.333%); }
-        }
-      `}</style>
-    </div>
-  )
-}
+const AMBIENCE = [
+  'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=1400&q=90',  // warm dim restaurant interior
+  'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&q=88', // fine dining table
+  'https://images.unsplash.com/photo-1578474846132-4be0e60b7952?w=900&q=88', // candle close-up
+  'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=90', // restaurant wide shot
+]
 
 function fmtTime(t: string) {
   const [h, m] = t.split(':').map(Number)
@@ -457,123 +70,1145 @@ function fmtTime(t: string) {
   return m === 0 ? `${h12}${suffix}` : `${h12}:${String(m).padStart(2, '0')}${suffix}`
 }
 
-// Dynamic food card from API
-function FoodCard({ item, featured }: { item: MenuItem; featured: boolean }) {
-  const [imgFailed, setImgFailed] = useState(false)
+// ── Full-bleed food showcase — premium auto-fade ──────────────────────────────
+function FoodShowcase({ items }: { items: { name: string; img: string }[] }) {
+  const [idx, setIdx] = useState(0)
+  const [prev, setPrev] = useState<number | null>(null)
+  const [fading, setFading] = useState(false)
+  const count = items.length
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setFading(true)
+      setTimeout(() => {
+        setPrev(idx)
+        setIdx(i => (i + 1) % count)
+        setFading(false)
+      }, 700)
+    }, 5000)
+    return () => clearInterval(t)
+  }, [idx, count])
+
   return (
-    <Link href="/menu"
-      className={`group relative overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800 hover:border-orange-200 dark:hover:border-orange-700 hover:shadow-xl hover:shadow-orange-50 dark:hover:shadow-orange-900/10 transition-all ${
-        featured ? 'sm:col-span-2 lg:col-span-1' : ''
-      }`}>
-      <div className={`relative overflow-hidden ${featured ? 'h-64' : 'h-48'}`}>
-        {item.imageUrl && !imgFailed ? (
-          <img src={item.imageUrl} alt={item.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-            onError={() => setImgFailed(true)} />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-orange-100 to-amber-100 dark:from-orange-900/30 dark:to-amber-900/30 flex items-center justify-center">
-            <UtensilsCrossed size={40} className="text-orange-300" />
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-        <div className="absolute bottom-3 left-4 right-4">
-          <div className="text-white font-bold text-lg leading-tight">{item.name}</div>
-          <div className="text-white/70 text-xs mt-0.5 line-clamp-1">{item.description}</div>
-        </div>
-      </div>
-      <div className="p-4 flex items-center justify-between bg-white dark:bg-gray-900">
+    <div style={{ position: 'relative', height: '62vh', minHeight: 480, overflow: 'hidden', backgroundColor: '#000' }}>
+      {/* Outgoing image */}
+      {prev !== null && (
+        <img key={`prev-${prev}`} src={items[prev].img} alt=""
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: fading ? 0 : 1, transition: 'opacity 0.8s ease', zIndex: 1 }} />
+      )}
+      {/* Incoming image */}
+      <img key={`curr-${idx}`} src={items[idx].img} alt={items[idx].name}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: fading ? 0.3 : 1, transition: 'opacity 0.8s ease', zIndex: 2, filter: 'brightness(0.55) saturate(0.85)' }} />
+
+      {/* Gradient */}
+      <div style={{ position: 'absolute', inset: 0, zIndex: 3, background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.15) 55%, transparent 100%)' }} />
+
+      {/* Bottom content */}
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 4, padding: '0 48px 44px' }}
+        className="flex items-end justify-between">
         <div>
-          <div className="font-bold text-gray-900 dark:text-white">AED {item.price}</div>
-          <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-            <Clock size={11} /> ~{item.prepTimeMins} min
-          </div>
+          <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', marginBottom: 10 }}>
+            Featured Dish · {idx + 1} / {count}
+          </p>
+          <h3 style={{ color: '#fff', fontSize: 'clamp(1.8rem,4vw,3rem)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.02em' }}>
+            {items[idx].name}
+          </h3>
         </div>
-        <div className="bg-orange-500 text-white text-xs font-semibold px-3 py-1.5 rounded-full group-hover:bg-orange-600 transition-colors">
-          Order →
-        </div>
+        <Link href="/menu"
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 24px', borderRadius: 12, fontWeight: 700, fontSize: 13, color: '#000', backgroundColor: '#f59e0b', textDecoration: 'none', flexShrink: 0 }}>
+          View Menu <ArrowRight size={14} />
+        </Link>
       </div>
-    </Link>
+
+      {/* Progress bar */}
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, backgroundColor: 'rgba(255,255,255,0.08)', zIndex: 5 }}>
+        <div style={{ height: '100%', backgroundColor: '#f59e0b', width: `${((idx + 1) / count) * 100}%`, transition: 'width 5s linear' }} />
+      </div>
+    </div>
   )
 }
 
-// Static fallback dishes for before API loads
-const STATIC_DISHES = [
-  {
-    name: 'Masala Dosa',
-    desc: 'Crispy crepe with spiced potato filling, sambar & chutneys',
-    price: '22',
-    time: 12,
-    img: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=600&q=80',
-  },
-  {
-    name: 'Malabar Biriyani',
-    desc: 'Fragrant basmati rice with tender chicken, fried onions & raita',
-    price: '55',
-    time: 25,
-    img: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=600&q=80',
-  },
-  {
-    name: 'Appam & Stew',
-    desc: 'Lacy rice pancakes with coconut milk stew & vegetables',
-    price: '28',
-    time: 15,
-    img: 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=600&q=80',
-  },
-  {
-    name: 'Fish Curry',
-    desc: 'Spiced Kerala red fish curry with coconut oil & kudampuli',
-    price: '48',
-    time: 20,
-    img: 'https://images.unsplash.com/photo-1626508035297-0e8a5f53700b?w=600&q=80',
-  },
-  {
-    name: 'Puttu & Kadala',
-    desc: 'Steamed rice cylinders with black chickpea curry',
-    price: '22',
-    time: 10,
-    img: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=600&q=80',
-  },
-  {
-    name: 'Kerala Prawn Fry',
-    desc: 'Crispy prawns in Kerala masala with curry leaves',
-    price: '65',
-    time: 18,
-    img: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=600&q=80',
-  },
-]
-
-function StaticDishCard({ dish, featured }: { dish: typeof STATIC_DISHES[0]; featured: boolean }) {
+// ── Dish Card — 3D float + rich hover ────────────────────────────────────────
+function DishCard({ name, desc, price, time, img, index }: {
+  name: string; desc: string; price: string; time: number; img: string; index?: number
+}) {
+  const cardRef  = useRef<HTMLDivElement>(null)
+  const imgRef   = useRef<HTMLImageElement>(null)
   const [imgFailed, setImgFailed] = useState(false)
+  const [hovered,   setHovered]   = useState(false)
+
+  const onMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const el = cardRef.current; if (!el) return
+    el.style.animationPlayState = 'paused'
+    const r = el.getBoundingClientRect()
+    const x = (e.clientX - r.left) / r.width  - 0.5
+    const y = (e.clientY - r.top)  / r.height - 0.5
+    el.style.transform = `perspective(900px) rotateY(${x * 18}deg) rotateX(${-y * 12}deg) scale(1.06) translateY(-10px)`
+    el.style.transition = 'transform 0.1s ease, box-shadow 0.1s ease'
+    el.style.boxShadow = `0 32px 64px rgba(0,0,0,0.7), 0 0 0 1.5px rgba(245,158,11,0.5), ${x * 12}px ${y * -12}px 40px rgba(245,158,11,0.14)`
+    // Subtle image parallax counter-move
+    if (imgRef.current) {
+      imgRef.current.style.transform = `scale(1.1) translate(${x * -8}px, ${y * -6}px)`
+      imgRef.current.style.transition = 'transform 0.15s ease'
+    }
+  }, [])
+
+  const onEnter = useCallback(() => {
+    setHovered(true)
+    const el = cardRef.current; if (!el) return
+    el.style.animationPlayState = 'paused'
+  }, [])
+
+  const onLeave = useCallback(() => {
+    setHovered(false)
+    const el = cardRef.current; if (!el) return
+    el.style.transform = ''
+    el.style.boxShadow = ''
+    el.style.transition = 'transform 0.55s cubic-bezier(0.25,0.46,0.45,0.94), box-shadow 0.55s ease'
+    if (imgRef.current) {
+      imgRef.current.style.transform = 'scale(1) translate(0,0)'
+      imgRef.current.style.transition = 'transform 0.55s ease'
+    }
+    setTimeout(() => { if (cardRef.current) cardRef.current.style.animationPlayState = 'running' }, 600)
+  }, [])
+
+  const floatDelay = (index ?? 0) * 0.4
+
   return (
-    <Link href="/menu"
-      className="group relative overflow-hidden rounded-2xl border border-gray-100 dark:border-gray-800 hover:border-orange-200 dark:hover:border-orange-700 hover:shadow-xl hover:shadow-orange-50 dark:hover:shadow-orange-900/10 transition-all">
-      <div className={`relative overflow-hidden ${featured ? 'h-64' : 'h-48'}`}>
-        {!imgFailed ? (
-          <img src={dish.img} alt={dish.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-            onError={() => setImgFailed(true)} />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-orange-100 to-amber-100 dark:from-orange-900/30 dark:to-amber-900/30 flex items-center justify-center">
-            <UtensilsCrossed size={40} className="text-orange-300" />
+    <div ref={cardRef} className="dish-card"
+      style={{
+        borderRadius: 20,
+        backgroundColor: '#0f0f0f',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+        transformOrigin: 'center bottom',
+        willChange: 'transform, box-shadow',
+        animation: `cardFloat3d 6s ease-in-out infinite ${floatDelay}s`,
+        cursor: 'pointer',
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+      onMouseMove={onMove} onMouseEnter={onEnter} onMouseLeave={onLeave}>
+
+      {/* Hover gold shimmer layer */}
+      <div style={{
+        position: 'absolute', inset: 0, zIndex: 4, pointerEvents: 'none',
+        opacity: hovered ? 1 : 0,
+        transition: 'opacity 0.35s ease',
+        background: 'linear-gradient(135deg, rgba(245,158,11,0.07) 0%, transparent 55%, rgba(245,158,11,0.04) 100%)',
+      }} />
+
+      <Link href="/menu" style={{ textDecoration: 'none', display: 'block' }}>
+        {/* Image area */}
+        <div style={{ aspectRatio: '16/10', overflow: 'hidden', position: 'relative' }}>
+          {!imgFailed
+            ? <img ref={imgRef} src={img} alt={name}
+                className="w-full h-full object-cover"
+                style={{ transition: 'transform 0.55s ease', willChange: 'transform' }}
+                onError={() => setImgFailed(true)} />
+            : <div className="w-full h-full flex items-center justify-center" style={{ background: '#1a1000' }}>
+                <UtensilsCrossed size={32} className="text-amber-900/40" />
+              </div>
+          }
+
+          {/* Always-on gradient */}
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.1) 50%, transparent 100%)' }} />
+
+          {/* Slide-up CTA overlay on hover */}
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 3,
+            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            padding: '0 16px 20px',
+            transform: hovered ? 'translateY(0)' : 'translateY(100%)',
+            transition: 'transform 0.38s cubic-bezier(0.34,1.56,0.64,1)',
+          }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              backgroundColor: '#f59e0b', color: '#000',
+              fontWeight: 800, fontSize: 12, letterSpacing: '0.04em',
+              padding: '9px 20px', borderRadius: 100,
+              boxShadow: '0 4px 20px rgba(245,158,11,0.5)',
+              width: '100%', justifyContent: 'center',
+            }}>
+              Order Now <ArrowRight size={12} />
+            </div>
+          </div>
+
+          {/* Price badge */}
+          <div style={{
+            position: 'absolute', top: 14, right: 14, zIndex: 5,
+            backgroundColor: '#f59e0b', color: '#000',
+            fontWeight: 800, fontSize: 12, padding: '4px 12px', borderRadius: 20,
+            transform: hovered ? 'scale(1.1)' : 'scale(1)',
+            transition: 'transform 0.3s cubic-bezier(0.34,1.56,0.64,1)',
+            boxShadow: hovered ? '0 4px 16px rgba(245,158,11,0.5)' : 'none',
+          }}>AED {price}</div>
+        </div>
+
+        {/* Card body */}
+        <div style={{ padding: '16px 18px 18px', position: 'relative', zIndex: 2 }}>
+          <h3 style={{
+            color: '#f5f3ef', fontWeight: 700, fontSize: 15, lineHeight: 1.3, marginBottom: 6,
+            transform: hovered ? 'translateX(4px)' : 'translateX(0)',
+            transition: 'transform 0.3s ease',
+          }}>{name}</h3>
+          <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, lineHeight: 1.65 }}>{desc}</p>
+          <div className="flex items-center gap-1.5 mt-4" style={{ color: 'rgba(255,255,255,0.22)', fontSize: 11 }}>
+            <Clock size={10} /> {time} min
+          </div>
+        </div>
+      </Link>
+    </div>
+  )
+}
+
+// ── Flip Review Card — front: quote / back: full review ──────────────────────
+function ReviewCard({ t, i, dark }: {
+  t: typeof TESTIMONIALS[0]; i: number; dark: boolean
+}) {
+  const [flipped, setFlipped] = useState(false)
+
+  const cardBg = dark
+    ? 'linear-gradient(145deg, rgba(30,24,16,0.95) 0%, rgba(20,16,8,0.98) 100%)'
+    : 'linear-gradient(145deg, rgba(255,252,245,0.97) 0%, rgba(255,248,230,0.95) 100%)'
+  const border = dark ? '1px solid rgba(245,158,11,0.18)' : '1px solid rgba(245,158,11,0.22)'
+  const textMain = dark ? '#f5f3ef' : '#1a1714'
+  const textMuted = dark ? 'rgba(245,243,239,0.45)' : 'rgba(26,23,20,0.45)'
+
+  const sharedCard: React.CSSProperties = {
+    position: 'absolute', inset: 0, borderRadius: 22,
+    background: cardBg, border,
+    backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+    padding: '26px 24px 22px',
+    display: 'flex', flexDirection: 'column',
+    boxShadow: dark ? '0 12px 48px rgba(0,0,0,0.6), inset 0 1px 0 rgba(245,158,11,0.08)' : '0 8px 32px rgba(0,0,0,0.09)',
+    overflow: 'hidden',
+  }
+
+  return (
+    <div
+      style={{ width: 'clamp(240px, 75vw, 300px)', height: 210, flexShrink: 0, perspective: 900, cursor: 'pointer' }}
+      onClick={() => setFlipped(f => !f)}>
+      <div style={{
+        position: 'relative', width: '100%', height: '100%',
+        transformStyle: 'preserve-3d',
+        transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+        transition: 'transform 0.6s cubic-bezier(0.34,1.1,0.64,1)',
+      }}>
+
+        {/* ── FRONT ── */}
+        <div style={sharedCard}>
+          {/* Gold bar top */}
+          <div style={{ position: 'absolute', top: 0, left: 24, right: 24, height: 2, background: 'linear-gradient(to right, transparent, #f59e0b, transparent)' }} />
+          {/* Watermark */}
+          <div style={{ position: 'absolute', bottom: 8, right: 16, fontSize: 96, lineHeight: 1, color: 'rgba(245,158,11,0.06)', fontFamily: 'Georgia,serif', userSelect: 'none', pointerEvents: 'none' }}>&rdquo;</div>
+
+          <div style={{ display: 'flex', gap: 2, marginBottom: 12 }}>
+            {[...Array(t.stars)].map((_, si) => (
+              <Star key={si} size={11} style={{ color: '#f59e0b', fill: '#f59e0b', filter: 'drop-shadow(0 0 3px rgba(245,158,11,0.7))' }} />
+            ))}
+          </div>
+          <p style={{ color: textMain, fontSize: 13.5, lineHeight: 1.68, fontStyle: 'italic', flex: 1 }}>
+            &ldquo;{t.text.length > 90 ? t.text.slice(0, 88) + '…' : t.text}&rdquo;
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
+            <span style={{ color: textMuted, fontSize: 11, fontWeight: 600 }}>{t.name}</span>
+            <span style={{ color: 'rgba(245,158,11,0.5)', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em' }}>TAP TO FLIP →</span>
+          </div>
+        </div>
+
+        {/* ── BACK ── */}
+        <div style={{ ...sharedCard, transform: 'rotateY(180deg)', justifyContent: 'space-between' }}>
+          <div style={{ position: 'absolute', top: 0, left: 24, right: 24, height: 2, background: 'linear-gradient(to right, transparent, #f59e0b, transparent)' }} />
+
+          {/* Avatar + name */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
+              background: `conic-gradient(from ${i * 55}deg, #f59e0b, #fcd34d, #f59e0b)`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 0 0 2.5px rgba(245,158,11,0.25), 0 4px 16px rgba(245,158,11,0.4)',
+              fontSize: 17, fontWeight: 900, color: '#000',
+            }}>{t.name[0]}</div>
+            <div>
+              <p style={{ color: textMain, fontWeight: 800, fontSize: 14 }}>{t.name}</p>
+              <p style={{ color: 'rgba(245,158,11,0.7)', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', marginTop: 2 }}>Verified Guest</p>
+            </div>
+          </div>
+
+          {/* Full quote */}
+          <p style={{ color: textMain, fontSize: 13, lineHeight: 1.72, fontStyle: 'italic', flex: 1, margin: '14px 0' }}>
+            &ldquo;{t.text}&rdquo;
+          </p>
+
+          {/* Stars */}
+          <div style={{ display: 'flex', gap: 3 }}>
+            {[...Array(t.stars)].map((_, si) => (
+              <Star key={si} size={12} style={{ color: '#f59e0b', fill: '#f59e0b' }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+export default function LandingPage() {
+  const { dark } = useThemeStore()
+  const { user, token } = useAuthStore()
+  const pal = dark ? {
+    bg: '#0c0c0c', bg2: '#080808', bg3: '#101010',
+    text: '#f5f3ef', muted: 'rgba(245,243,239,0.45)', faint: 'rgba(245,243,239,0.18)',
+    border: 'rgba(255,255,255,0.07)', card: '#141414',
+  } : {
+    bg: '#f9f6f2', bg2: '#f2ede6', bg3: '#ede8e0',
+    text: '#1a1714', muted: 'rgba(26,23,20,0.5)', faint: 'rgba(26,23,20,0.22)',
+    border: 'rgba(26,23,20,0.1)', card: '#fff',
+  }
+
+  const [cfg, setCfg] = useState<RestaurantSettings>({
+    restaurantName: 'Al Manzil', tagline: 'Kerala & South Indian Cuisine',
+    phone: null, address: 'Dubai, UAE', logoUrl: null, openTime: '07:00', closeTime: '23:00',
+    heroConfig: null,
+  })
+  const [dishes,     setDishes]     = useState<typeof DISHES_FALLBACK>(DISHES_FALLBACK)
+  const [showcase,   setShowcase]   = useState<typeof SHOWCASE_FALLBACK>(SHOWCASE_FALLBACK)
+  const [reviewIdx,  setReviewIdx]  = useState(0)
+  const [scrolled,   setScrolled]   = useState(false)
+  const [navOpen,    setNavOpen]    = useState(false)
+
+  const heroRef        = useRef<HTMLDivElement>(null)
+  const videoRef       = useRef<HTMLVideoElement>(null)
+  const lenisRef       = useRef<Lenis | null>(null)
+  const scrollLockY    = useRef(0)
+  const heroTextRef    = useRef<HTMLDivElement>(null)
+  const heroBadgeRef   = useRef<HTMLDivElement>(null)
+  const heroCtaRef     = useRef<HTMLDivElement>(null)
+  const dishGridRef    = useRef<HTMLDivElement>(null)
+  const dishHeadRef    = useRef<HTMLDivElement>(null)
+  const relayRef       = useRef<HTMLDivElement>(null)
+  const ambienceRef    = useRef<HTMLDivElement>(null)
+  const reviewsRef     = useRef<HTMLDivElement>(null)
+  const ctaRef         = useRef<HTMLDivElement>(null)
+
+  // Smooth scroll
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger)
+    const lenis = new Lenis({ lerp: 0.13, smoothWheel: true, wheelMultiplier: 1.2 })
+    lenisRef.current = lenis
+    lenis.on('scroll', ScrollTrigger.update)
+    gsap.ticker.add((time) => { lenis.raf(time * 1000) })
+    gsap.ticker.lagSmoothing(0)
+    return () => {
+      lenis.destroy()
+      lenisRef.current = null
+    }
+  }, [])
+
+  // Lock page scroll while mobile nav is open
+  useEffect(() => {
+    if (!navOpen) return
+
+    scrollLockY.current = window.scrollY
+    lenisRef.current?.stop()
+    document.documentElement.style.overflow = 'hidden'
+    document.body.style.overflow = 'hidden'
+    document.body.style.position = 'fixed'
+    document.body.style.top = `-${scrollLockY.current}px`
+    document.body.style.left = '0'
+    document.body.style.right = '0'
+    document.body.style.width = '100%'
+
+    return () => {
+      document.documentElement.style.overflow = ''
+      document.body.style.overflow = ''
+      document.body.style.position = ''
+      document.body.style.top = ''
+      document.body.style.left = ''
+      document.body.style.right = ''
+      document.body.style.width = ''
+      window.scrollTo(0, scrollLockY.current)
+      lenisRef.current?.scrollTo(scrollLockY.current, { immediate: true })
+      lenisRef.current?.start()
+    }
+  }, [navOpen])
+
+  // GSAP entrance + scroll animations
+  useEffect(() => {
+    const kill = () => ScrollTrigger.getAll().forEach(t => t.kill())
+
+    // ── Hero video parallax
+    if (videoRef.current && heroRef.current) {
+      gsap.to(videoRef.current, {
+        scale: 1.12, yPercent: 16, ease: 'none',
+        scrollTrigger: { trigger: heroRef.current, start: 'top top', end: 'bottom top', scrub: true },
+      })
+    }
+
+    // ── Hero entrance
+    if (heroBadgeRef.current) gsap.fromTo(heroBadgeRef.current, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.7, delay: 0.3, ease: 'power3.out' })
+    if (heroTextRef.current) {
+      gsap.fromTo(heroTextRef.current.querySelectorAll('.hero-line'),
+        { y: 70, opacity: 0 }, { y: 0, opacity: 1, duration: 1.0, stagger: 0.14, ease: 'power4.out', delay: 0.5 })
+    }
+    if (heroCtaRef.current) gsap.fromTo(heroCtaRef.current, { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.8, delay: 1.1, ease: 'power3.out' })
+
+    // ── Dishes headline
+    if (dishHeadRef.current) {
+      gsap.fromTo(dishHeadRef.current.children,
+        { y: 32, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.8, stagger: 0.12, ease: 'power3.out',
+          scrollTrigger: { trigger: dishHeadRef.current, start: 'top 82%', once: true } })
+    }
+
+    // ── Dish cards stagger
+    if (dishGridRef.current) {
+      gsap.fromTo(dishGridRef.current.querySelectorAll('.dish-card'),
+        { y: 60, opacity: 0, scale: 0.96 },
+        { y: 0, opacity: 1, scale: 1, duration: 0.7, stagger: 0.09, ease: 'power3.out',
+          clearProps: 'transform',
+          scrollTrigger: { trigger: dishGridRef.current, start: 'top 78%', once: true } })
+    }
+
+    // ── Food relay center text
+    if (relayRef.current) {
+      gsap.fromTo(relayRef.current.querySelectorAll('.relay-el'),
+        { y: 40, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.9, stagger: 0.15, ease: 'power3.out',
+          scrollTrigger: { trigger: relayRef.current, start: 'top 60%', once: true } })
+    }
+
+    // ── Reviews section
+    if (reviewsRef.current) {
+      gsap.fromTo(reviewsRef.current.querySelectorAll('.reviews-head'),
+        { y: 28, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.8, stagger: 0.1, ease: 'power3.out',
+          scrollTrigger: { trigger: reviewsRef.current, start: 'top 82%', once: true } })
+    }
+
+    // ── Ambience photos stagger in
+    if (ambienceRef.current) {
+      gsap.fromTo(ambienceRef.current.querySelectorAll('.amb-el'),
+        { y: 40, opacity: 0, scale: 0.97 },
+        { y: 0, opacity: 1, scale: 1, duration: 0.85, stagger: 0.08, ease: 'power3.out',
+          scrollTrigger: { trigger: ambienceRef.current, start: 'top 75%', once: true } })
+    }
+
+    return kill
+  }, [])
+
+  useEffect(() => {
+    const fn = () => setScrolled(window.scrollY > 60)
+    window.addEventListener('scroll', fn, { passive: true })
+    return () => window.removeEventListener('scroll', fn)
+  }, [])
+
+  useEffect(() => {
+    const t = setInterval(() => setReviewIdx(i => (i + 1) % TESTIMONIALS.length), 5500)
+    return () => clearInterval(t)
+  }, [])
+
+  useEffect(() => {
+    fetch(`${API}/settings`).then(r => r.json())
+      .then(j => {
+        const s = j?.data ?? j
+        if (s?.restaurantName) {
+          setCfg(s)
+          const cd = s?.heroConfig?.customDishes
+          if (cd?.length >= 1) setDishes(cd.map((d: any) => ({ ...d, time: Number(d.time) || 15 })))
+        }
+      }).catch(() => {})
+    fetch(`${API}/menu/items`).then(r => r.json())
+      .then(j => {
+        const items: MenuItem[] = j?.data ?? j ?? []
+        const withImg = items.filter(i => i.imageUrl)
+        if (withImg.length >= 3) setShowcase(withImg.slice(0, 6).map(i => ({ name: i.name, img: i.imageUrl! })))
+        // Only use API dishes if admin hasn't set custom dishes in heroConfig
+        const top = withImg.slice(0, 6)
+        if (top.length >= 4) setDishes(top.map(i => ({ name: i.name, desc: i.description ?? '', price: i.price, time: i.prepTimeMins, img: i.imageUrl! })))
+      }).catch(() => {})
+    // If heroConfig has custom dishes, those override API dishes — applied after settings load
+  }, [])
+
+  return (
+    <div style={{ backgroundColor: pal.bg, color: pal.text, fontFamily: "'Inter', system-ui, sans-serif" }}>
+
+      {/* ── Navbar ── */}
+      <nav className="fixed top-0 w-full z-50 transition-all duration-400"
+        style={{
+          backgroundColor: scrolled ? (dark ? 'rgba(12,12,12,0.95)' : 'rgba(249,246,242,0.95)') : 'transparent',
+          backdropFilter: scrolled ? 'blur(20px)' : 'none',
+          borderBottom: scrolled ? `1px solid ${pal.border}` : '1px solid transparent',
+        }}>
+        <div style={{ padding: '0 clamp(1.5rem,6vw,8rem)' }} className="h-[68px] flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5">
+            {cfg.logoUrl
+              ? <img src={cfg.logoUrl} alt={cfg.restaurantName} className="w-11 h-11 rounded-xl object-cover" style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.4)' }} />
+              : <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#f59e0b', boxShadow: '0 2px 12px rgba(245,158,11,0.4)' }}><UtensilsCrossed size={16} className="text-black" /></div>
+            }
+            <span className="font-black text-sm tracking-tight" style={{ color: scrolled ? pal.text : '#fff' }}>{cfg.restaurantName}</span>
+          </Link>
+
+          {/* Desktop nav links */}
+          <div className="hidden md:flex items-center gap-1">
+            {/* Menu — plain text link */}
+            <Link href="/menu"
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+              style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.62)' }}
+              onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
+              onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.62)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
+              Menu
+            </Link>
+
+            {/* Reserve — bordered pill with calendar icon, clearly a booking action */}
+            <Link href="/book"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200"
+              style={{
+                color: scrolled ? pal.text : '#fff',
+                border: scrolled ? `1px solid ${pal.border}` : '1px solid rgba(255,255,255,0.22)',
+                backgroundColor: 'transparent',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.1)'; e.currentTarget.style.borderColor = scrolled ? pal.text : '#fff' }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.borderColor = scrolled ? pal.border : 'rgba(255,255,255,0.22)' }}>
+              <CalendarDays size={13} style={{ opacity: 0.8 }} />
+              Book a Table
+            </Link>
+
+            {/* Account — avatar pill: shows name when logged in, "Sign In" when not */}
+            {token && user ? (
+              <Link href="/account"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold transition-all duration-200"
+                style={{ backgroundColor: scrolled ? pal.bg3 : 'rgba(255,255,255,0.1)', color: scrolled ? pal.text : '#fff' }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = scrolled ? pal.border : 'rgba(255,255,255,0.18)'}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.1)'}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 900, color: '#000' }}>
+                  {user.name?.[0]?.toUpperCase() ?? '?'}
+                </div>
+                {user.name?.split(' ')[0]}
+              </Link>
+            ) : (
+              <Link href="/login"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
+                style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.62)' }}
+                onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.62)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
+                <User size={13} style={{ opacity: 0.7 }} />
+                Sign In
+              </Link>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            {/* Order Now pill — always visible on md+ */}
+            <Link href="/menu"
+              className="hidden md:flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-bold transition-all duration-200"
+              style={{ backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 2px 16px rgba(245,158,11,0.28)' }}
+              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 24px rgba(245,158,11,0.45)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+              onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 16px rgba(245,158,11,0.28)'; e.currentTarget.style.transform = 'translateY(0)' }}>
+              Order Now
+            </Link>
+            {/* Hamburger mobile */}
+            <button onClick={() => setNavOpen(v => !v)} className="md:hidden p-2.5 rounded-lg transition-colors"
+              style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.7)', backgroundColor: navOpen ? (scrolled ? pal.bg3 : 'rgba(255,255,255,0.1)') : 'transparent' }}>
+              <div className="w-5 flex flex-col gap-[5px]">
+                <span className={`h-[1.5px] bg-current rounded transition-all duration-300 ${navOpen ? 'rotate-45 translate-y-[6.5px]' : ''}`} />
+                <span className={`h-[1.5px] bg-current rounded transition-all duration-300 ${navOpen ? 'opacity-0 scale-x-0' : ''}`} />
+                <span className={`h-[1.5px] bg-current rounded transition-all duration-300 ${navOpen ? '-rotate-45 -translate-y-[6.5px]' : ''}`} />
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile sidebar — fixed right drawer */}
+        {navOpen && (
+          <div
+            className="md:hidden fixed inset-0 z-[100]"
+            onClick={() => setNavOpen(false)}
+            onTouchMove={e => { if (e.target === e.currentTarget) e.preventDefault() }}
+          >
+            {/* Matte frosted backdrop */}
+            <div
+              className="absolute inset-0"
+              style={{
+                backgroundColor: 'rgba(6, 5, 4, 0.78)',
+                backdropFilter: 'blur(16px) saturate(110%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(110%)',
+              }}
+            />
+            {/* Drawer panel */}
+            <div
+              className="absolute top-0 right-0 bottom-0 w-[min(18rem,88vw)] flex flex-col shadow-2xl animate-[slideInRight_0.28s_ease-out]"
+              style={{
+                backgroundColor: dark ? '#0c0c0c' : '#f9f6f2',
+                borderLeft: `1px solid ${pal.border}`,
+                boxShadow: '-8px 0 40px rgba(0,0,0,0.35)',
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+
+              {/* Header */}
+              <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: pal.border }}>
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#f59e0b' }}>
+                    <UtensilsCrossed size={14} className="text-black" />
+                  </div>
+                  <span className="font-black text-sm" style={{ color: pal.text }}>{cfg.restaurantName}</span>
+                </div>
+                <button onClick={() => setNavOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
+                  style={{ color: pal.muted, backgroundColor: pal.bg3 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+
+              {/* Nav links */}
+              <nav className="flex-1 p-5 space-y-1">
+                {[
+                  { href: '/menu',    label: 'Menu',         icon: '🍽️' },
+                  { href: '/book',    label: 'Book a Table', icon: '📅' },
+                  { href: token ? '/account' : '/login', label: token && user ? user.name?.split(' ')[0] ?? 'My Account' : 'Sign In', icon: '👤' },
+                ].map(n => (
+                  <Link key={n.href} href={n.href} onClick={() => setNavOpen(false)}
+                    className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all"
+                    style={{ color: pal.text }}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = pal.bg3}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    <span>{n.icon}</span>
+                    {n.label}
+                    <ArrowRight size={13} className="ml-auto" style={{ color: '#f59e0b' }} />
+                  </Link>
+                ))}
+              </nav>
+
+              {/* CTA block */}
+              <div className="p-5 space-y-3 border-t" style={{ borderColor: pal.border }}>
+                <Link href="/menu" onClick={() => setNavOpen(false)}
+                  className="flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm w-full"
+                  style={{ backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 4px 20px rgba(245,158,11,0.35)' }}>
+                  Order Now <ArrowRight size={13} />
+                </Link>
+                <Link href="/book" onClick={() => setNavOpen(false)}
+                  className="flex items-center justify-center gap-2 py-3 rounded-2xl font-semibold text-sm w-full"
+                  style={{ border: `1px solid ${pal.border}`, color: pal.muted }}>
+                  <CalendarDays size={13} /> Reserve a Table
+                </Link>
+              </div>
+            </div>
           </div>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-        <div className="absolute bottom-3 left-4 right-4">
-          <div className="text-white font-bold text-lg leading-tight">{dish.name}</div>
-          <div className="text-white/70 text-xs mt-0.5 line-clamp-1">{dish.desc}</div>
+      </nav>
+
+      {/* ══════════════════════════════════════
+          HERO
+      ══════════════════════════════════════ */}
+      <section ref={heroRef} className="relative flex flex-col items-center justify-center overflow-hidden" style={{ height: '100svh', minHeight: 680 }}>
+        <div className="absolute inset-0 overflow-hidden">
+          <video ref={videoRef} autoPlay muted loop playsInline poster={FALLBACK_POSTER}
+            className="w-full h-full object-cover"
+            style={{ opacity: 0.5, filter: 'saturate(0.7) brightness(0.85)', transformOrigin: 'center center', willChange: 'transform' }}>
+            <source src={cfg.heroConfig?.videoUrl || FALLBACK_VIDEO} type="video/mp4" />
+          </video>
         </div>
-      </div>
-      <div className="p-4 flex items-center justify-between bg-white dark:bg-gray-900">
-        <div>
-          <div className="font-bold text-gray-900 dark:text-white">AED {dish.price}</div>
-          <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-            <Clock size={11} /> ~{dish.time} min
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.1) 45%, rgba(0,0,0,0.4) 75%, rgba(0,0,0,0.98) 100%)' }} />
+
+        {/* Floating ambient orbs */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 1 }}>
+          <div style={{
+            position: 'absolute', width: 600, height: 600, borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(245,158,11,0.12) 0%, transparent 70%)',
+            top: '-10%', left: '-8%',
+            animation: 'orbFloat1 18s ease-in-out infinite',
+          }} />
+          <div style={{
+            position: 'absolute', width: 480, height: 480, borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(245,158,11,0.08) 0%, transparent 70%)',
+            bottom: '10%', right: '-5%',
+            animation: 'orbFloat2 22s ease-in-out infinite',
+          }} />
+          <div style={{
+            position: 'absolute', width: 300, height: 300, borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(251,191,36,0.1) 0%, transparent 70%)',
+            top: '40%', left: '40%',
+            animation: 'orbFloat1 14s ease-in-out infinite reverse',
+          }} />
+        </div>
+
+        <div className="relative z-10 text-center flex flex-col items-center" style={{ padding: '0 clamp(1.5rem,8vw,10rem)', width: '100%' }}>
+          <div ref={heroBadgeRef} className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold mb-10 opacity-0"
+            style={{ backgroundColor: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.28)', color: '#f59e0b', backdropFilter: 'blur(10px)' }}>
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#f59e0b' }} />
+            {cfg.heroConfig?.badgeText || `Now Open · ${cfg.address ?? 'Dubai, UAE'}`}
+          </div>
+
+          <div ref={heroTextRef}>
+            <h1 className="hero-line font-black leading-none opacity-0"
+              style={{ fontSize: 'clamp(3.8rem,11vw,9rem)', color: '#fff', letterSpacing: '-0.035em', lineHeight: 0.92 }}>
+              {cfg.heroConfig?.line1 || 'Taste of'}
+            </h1>
+            <h1 className="hero-line font-black leading-none opacity-0"
+              style={{ fontSize: 'clamp(3.8rem,11vw,9rem)', color: '#f59e0b', letterSpacing: '-0.035em', lineHeight: 0.92, fontStyle: 'italic' }}>
+              {cfg.heroConfig?.line2 || 'Kerala'}
+            </h1>
+            <p className="hero-line mt-6 font-light opacity-0"
+              style={{ fontSize: 'clamp(1rem,2.2vw,1.3rem)', color: 'rgba(255,255,255,0.48)', letterSpacing: '0.01em' }}>
+              {cfg.heroConfig?.subtext || cfg.tagline || 'Authentic South Indian cuisine · Dubai'}
+            </p>
+          </div>
+
+          <div ref={heroCtaRef} className="flex flex-row gap-2.5 items-center justify-center mt-10 opacity-0 flex-wrap">
+            <Link href="/menu"
+              className="flex items-center gap-2 rounded-2xl font-bold"
+              style={{ backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 8px 40px rgba(245,158,11,0.38)', padding: 'clamp(10px,2.5vw,16px) clamp(20px,5vw,32px)', fontSize: 'clamp(13px,3.5vw,16px)' }}>
+              {cfg.heroConfig?.ctaLabel || 'Order Now'} <ArrowRight size={14} />
+            </Link>
+            <Link href="/book"
+              className="flex items-center gap-2 rounded-2xl font-medium"
+              style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.82)', backdropFilter: 'blur(12px)', padding: 'clamp(10px,2.5vw,16px) clamp(16px,4vw,32px)', fontSize: 'clamp(13px,3.5vw,16px)' }}
+              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.13)' }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)' }}>
+              {cfg.heroConfig?.ctaSecondaryLabel || 'Reserve a Table'}
+            </Link>
+          </div>
+
+          {/* Stats */}
+          <div className="flex items-center gap-8 mt-14"
+            style={{ opacity: 0, animation: 'fadeUp 0.7s ease forwards 1.5s' }}>
+            {[
+              { value: '4.8', label: '500+ reviews', sub: true },
+              { value: '18m', label: 'Avg prep time', sub: false },
+              { value: fmtTime(cfg.openTime), label: 'Opens daily', sub: false },
+            ].map((s, i) => (
+              <div key={i} className="flex items-center gap-8">
+                {i > 0 && <div style={{ width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' }} />}
+                <div className="text-center">
+                  <p className="font-black text-xl leading-none" style={{ color: '#fff' }}>{s.value}</p>
+                  {s.sub && <div className="flex gap-0.5 justify-center my-1">{[...Array(5)].map((_, j) => <Star key={j} size={9} style={{ color: '#f59e0b', fill: '#f59e0b' }} />)}</div>}
+                  <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.28)' }}>{s.label}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-        <div className="bg-orange-500 text-white text-xs font-semibold px-3 py-1.5 rounded-full group-hover:bg-orange-600 transition-colors">
-          Order →
+
+        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5"
+          style={{ opacity: 0, animation: 'fadeUp 0.6s ease forwards 2s' }}>
+          <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 600, letterSpacing: '0.2em', textTransform: 'uppercase' }}>Scroll</span>
+          <ChevronDown size={14} style={{ color: 'rgba(255,255,255,0.25)', animation: 'bobY 2.5s ease-in-out infinite' }} />
         </div>
-      </div>
-    </Link>
+      </section>
+
+      {/* ══════════════════════════════════════
+          DIAGONAL STREAMING GALLERY
+      ══════════════════════════════════════ */}
+      {(() => {
+        const galleryItems = showcase.length >= 4 ? showcase : SHOWCASE_FALLBACK
+        // Repeat enough times so strips never gap
+        const row = [...galleryItems, ...galleryItems, ...galleryItems, ...galleryItems, ...galleryItems]
+        const strips = [
+          { top: '-12%', height: 'clamp(120px,16vh,200px)', speed: 150, reverse: false,  blur: 0    },
+          { top:  '20%', height: 'clamp(160px,21vh,260px)', speed: 110, reverse: true,   blur: 0    },
+          { top:  '56%', height: 'clamp(140px,18vh,220px)', speed: 135, reverse: false,  blur: 0    },
+          { top:  '86%', height: 'clamp(110px,14vh,180px)', speed: 125, reverse: true,   blur: 0    },
+        ]
+        return (
+          <section ref={relayRef} style={{ position: 'relative', height: '90vh', minHeight: 560, backgroundColor: '#060504', overflow: 'hidden' }}>
+
+            {/* subtle grain texture overlay */}
+            <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.85\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'0.04\'/%3E%3C/svg%3E")', opacity: 0.4, pointerEvents: 'none', zIndex: 1 }} />
+
+            {strips.map((s, si) => (
+              <div key={si} style={{ position: 'absolute', top: s.top, left: '-22%', width: '144%', transform: 'rotate(-9deg)', zIndex: 0 }}>
+                <div style={{ display: 'flex', gap: 12, animation: `marqueeX ${s.speed}s linear infinite ${s.reverse ? 'reverse' : ''}`, width: 'max-content' }}>
+                  {row.map((item, i) => (
+                    <div key={`${si}-${i}`} className="flex-shrink-0 relative overflow-hidden group"
+                      style={{
+                        width: si === 1 ? 'clamp(200px,22vw,310px)' : si === 2 ? 'clamp(180px,20vw,270px)' : 'clamp(160px,18vw,240px)',
+                        height: s.height,
+                        borderRadius: 16,
+                        boxShadow: '0 16px 48px rgba(0,0,0,0.8)',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                      }}>
+                      <img src={item.img} alt={item.name}
+                        className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110"
+                        style={{ filter: `saturate(${si === 1 ? 0.75 : 0.55}) brightness(${si === 1 ? 0.8 : 0.65})` }} />
+                      {/* Gold shimmer on hover */}
+                      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+                        style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.12) 0%, transparent 60%, rgba(245,158,11,0.06) 100%)' }} />
+                      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-400"
+                        style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 55%)' }} />
+                      <p className="absolute bottom-0 left-0 right-0 px-4 py-3 text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity duration-400"
+                        style={{ color: '#fff', letterSpacing: '0.04em' }}>{item.name}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {/* Deep radial vignette — frames the centre text */}
+            <div style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none', background: 'radial-gradient(ellipse 52% 58% at 50% 50%, rgba(6,5,4,0.88) 0%, rgba(6,5,4,0.55) 48%, rgba(6,5,4,0.12) 70%, transparent 90%)' }} />
+
+            {/* Edge vignettes */}
+            <div style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none', background: 'linear-gradient(to right, rgba(6,5,4,0.7) 0%, transparent 18%, transparent 82%, rgba(6,5,4,0.7) 100%)' }} />
+            <div style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none', background: 'linear-gradient(to bottom, rgba(6,5,4,0.6) 0%, transparent 20%, transparent 80%, rgba(6,5,4,0.6) 100%)' }} />
+
+            {/* Centre content */}
+            <div style={{ position: 'absolute', inset: 0, zIndex: 3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ textAlign: 'center' }}>
+                {/* Eyebrow with lines */}
+                <div className="relay-el" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginBottom: 20 }}>
+                  <span style={{ flex: 1, maxWidth: 40, height: 1, backgroundColor: 'rgba(245,158,11,0.4)' }} />
+                  <p style={{ color: '#f59e0b', fontSize: 10, letterSpacing: '0.26em', textTransform: 'uppercase', fontWeight: 700 }}>{cfg.heroConfig?.relayTagline || "The Kitchen's Finest"}</p>
+                  <span style={{ flex: 1, maxWidth: 40, height: 1, backgroundColor: 'rgba(245,158,11,0.4)' }} />
+                </div>
+
+                <h2 className="relay-el" style={{ color: '#faf9f5', fontSize: 'clamp(2.6rem,7vw,5.5rem)', fontWeight: 900, lineHeight: 1.04, letterSpacing: '-0.025em', marginBottom: 8 }}>
+                  {cfg.heroConfig?.relayHeadline || 'Made fresh,'}
+                </h2>
+                <h2 className="relay-el" style={{
+                  fontSize: 'clamp(2.6rem,7vw,5.5rem)', fontWeight: 900, lineHeight: 1.04, letterSpacing: '-0.025em', marginBottom: 32,
+                  backgroundImage: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 45%, rgba(245,158,11,0.35) 100%)',
+                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+                }}>
+                  {cfg.heroConfig?.relayHeadlinePart2 || 'every single day.'}
+                </h2>
+
+                <Link className="relay-el" href="/menu"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', borderRadius: 100, fontWeight: 700, fontSize: 14, backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 0 0 1px rgba(245,158,11,0.3), 0 8px 48px rgba(245,158,11,0.42)', letterSpacing: '0.01em', textDecoration: 'none', transition: 'transform 0.2s, box-shadow 0.2s' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 0 0 1px rgba(245,158,11,0.4), 0 12px 56px rgba(245,158,11,0.55)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 0 0 1px rgba(245,158,11,0.3), 0 8px 48px rgba(245,158,11,0.42)' }}>
+                  Explore Menu <ArrowRight size={15} />
+                </Link>
+              </div>
+            </div>
+          </section>
+        )
+      })()}
+
+      {/* ══════════════════════════════════════
+          SIGNATURE DISHES
+      ══════════════════════════════════════ */}
+      <section style={{ backgroundColor: pal.bg, padding: 'clamp(3rem,8vh,6rem) clamp(1.5rem,6vw,8rem)' }}>
+        <div ref={dishHeadRef} className="flex items-end justify-between mb-10 gap-4">
+          <div>
+            <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 10 }}>{cfg.heroConfig?.dishesSubtext || 'Signature Dishes'}</p>
+            <h2 style={{ color: pal.text, fontSize: 'clamp(1.8rem,4vw,3rem)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.025em' }}>
+              {cfg.heroConfig?.dishesHeadline || "Dishes you'll dream about."}
+            </h2>
+          </div>
+          <Link href="/menu" className="flex items-center gap-2 text-sm font-semibold flex-shrink-0"
+            style={{ color: '#f59e0b' }}>
+            Full Menu <ArrowRight size={14} />
+          </Link>
+        </div>
+        <div ref={dishGridRef}>
+          {/* Mobile: horizontal scroll snap */}
+          <div className="md:hidden -mx-4 px-4">
+            <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory" style={{ scrollbarWidth: 'none' }}>
+              {dishes.map((d, i) => (
+                <div key={d.name} className="snap-start flex-shrink-0" style={{ width: 'clamp(240px, 72vw, 300px)' }}>
+                  <DishCard {...d} index={i} />
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Desktop: grid */}
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {dishes.map((d, i) => <DishCard key={d.name} {...d} index={i} />)}
+          </div>
+        </div>
+      </section>
+
+
+      {/* ══════════════════════════════════════
+          AMBIENCE + LOCATION — editorial mosaic
+      ══════════════════════════════════════ */}
+      {(() => {
+        const imgs = [
+          cfg.heroConfig?.ambienceImg1 || AMBIENCE[0],
+          cfg.heroConfig?.ambienceImg2 || AMBIENCE[1],
+          cfg.heroConfig?.ambienceImg3 || AMBIENCE[2],
+          cfg.heroConfig?.ambienceImg4 || AMBIENCE[3],
+        ]
+        return (
+      <section ref={ambienceRef} className="px-4 sm:px-6 lg:px-[clamp(1.5rem,5vw,6rem)]" style={{ backgroundColor: '#060606', paddingTop: 'clamp(4rem,9vh,6rem)', paddingBottom: 'clamp(4rem,9vh,6rem)' }}>
+
+        {/* Headline above photos */}
+        <div className="amb-el text-center mb-8 md:mb-12 px-1">
+          <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 14 }}>{cfg.heroConfig?.ambienceTagline || 'The Space'}</p>
+          <h2 style={{ color: '#fff', fontSize: 'clamp(1.75rem,8vw,3.8rem)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.03em' }}>
+            {cfg.heroConfig?.ambienceHeadline || 'Come for the food.'}<br />
+            <span style={{
+              backgroundImage: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 55%, #f59e0b 100%)',
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+            }}>{cfg.heroConfig?.ambienceHeadlinePart2 || 'Stay for the feeling.'}</span>
+          </h2>
+        </div>
+
+        {/* Photo grid — mobile: 2x2, desktop: left tall + right stacked 3 */}
+        <div className="amb-el mb-4 md:mb-2.5">
+          <div className="md:hidden grid grid-cols-2 gap-2.5">
+            {imgs.map((src, i) => (
+              <div key={i} className="group relative overflow-hidden aspect-[4/5]" style={{ borderRadius: 14 }}>
+                <img src={src} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ filter: 'brightness(0.78) saturate(0.85)' }} />
+              </div>
+            ))}
+          </div>
+          {/* Desktop: left tall portrait + right 3 stacked */}
+          <div className="hidden md:flex gap-2.5" style={{ height: 'clamp(340px,52vh,520px)' }}>
+            <div className="group flex-shrink-0 relative overflow-hidden" style={{ width: '52%', borderRadius: 18 }}>
+              <img src={imgs[0]} alt="restaurant" className="w-full h-full object-cover transition-all duration-700 group-hover:scale-[1.03]"
+                style={{ filter: 'brightness(0.82) saturate(0.85)' }} />
+              <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 45%)' }} />
+            </div>
+            <div className="flex flex-col gap-2.5 flex-1">
+              {imgs.slice(1).map((src, i) => (
+                <div key={i} className="group relative overflow-hidden flex-1" style={{ borderRadius: 18 }}>
+                  <img src={src} alt="" className="w-full h-full object-cover transition-all duration-700 group-hover:scale-[1.05]"
+                    style={{ filter: 'brightness(0.76) saturate(0.82)' }} />
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+                    style={{ background: 'rgba(245,158,11,0.07)' }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Info strip — stacked cards on mobile, horizontal on desktop */}
+        <div className="rounded-[20px] border border-white/[0.07] bg-white/[0.03] overflow-hidden">
+
+          {/* Open badge — full-width row on mobile */}
+          <div className="md:hidden flex items-center justify-center gap-2 py-3 border-b border-white/[0.07]">
+            <span className="animate-pulse inline-block w-[7px] h-[7px] rounded-full bg-green-500" />
+            <span className="text-green-300 text-xs font-semibold">Open now</span>
+          </div>
+
+          <div className="flex flex-col divide-y divide-white/[0.07] md:flex-row md:divide-y-0 md:flex-wrap md:items-center">
+            {/* Location */}
+            <div className="flex items-center gap-3.5 px-4 py-4 md:flex-1 md:min-w-[200px] md:px-6 md:py-5 md:border-r md:border-white/[0.07]">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
+                <MapPin size={15} style={{ color: '#f59e0b' }} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-white font-semibold text-sm leading-snug">{cfg.address ?? 'Dubai, UAE'}</p>
+                <a href={`https://maps.google.com/?q=${encodeURIComponent(cfg.address ?? 'Dubai UAE')}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="inline-block mt-1 text-[11px] font-semibold no-underline"
+                  style={{ color: '#f59e0b' }}>
+                  Get directions →
+                </a>
+              </div>
+            </div>
+
+            {/* Hours */}
+            <div className="flex items-center gap-3.5 px-4 py-4 md:flex-1 md:min-w-[180px] md:px-6 md:py-5 md:border-r md:border-white/[0.07]">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
+                <Clock size={15} style={{ color: '#f59e0b' }} />
+              </div>
+              <div>
+                <p className="text-white font-semibold text-sm">{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
+                <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Every day</p>
+              </div>
+            </div>
+
+            {/* Phone */}
+            {cfg.phone && (
+              <div className="flex items-center gap-3.5 px-4 py-4 md:flex-1 md:min-w-[160px] md:px-6 md:py-5 md:border-r md:border-white/[0.07]">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
+                  <Phone size={15} style={{ color: '#f59e0b' }} />
+                </div>
+                <div>
+                  <p className="text-white font-semibold text-sm">{cfg.phone}</p>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Reservations</p>
+                </div>
+              </div>
+            )}
+
+            {/* Open badge — inline on desktop only */}
+            <div className="hidden md:flex items-center gap-2 px-5 py-2.5 rounded-full ml-auto mr-5 my-3 flex-shrink-0"
+              style={{ backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
+              <span className="animate-pulse inline-block w-[7px] h-[7px] rounded-full bg-green-500" />
+              <span className="text-green-300 text-xs font-semibold whitespace-nowrap">Open now</span>
+            </div>
+          </div>
+        </div>
+      </section>
+        )
+      })()}
+
+      {/* ══════════════════════════════════════
+          TESTIMONIALS — flip-card relay
+      ══════════════════════════════════════ */}
+      <section ref={reviewsRef} style={{ backgroundColor: dark ? '#050508' : '#f5f1eb', padding: 'clamp(4rem,9vh,6rem) 0', overflow: 'hidden', position: 'relative' }}>
+
+        {/* Ambient blobs */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div style={{ position: 'absolute', width: 600, height: 600, borderRadius: '50%', top: '-20%', right: '-10%', background: 'radial-gradient(circle, rgba(245,158,11,0.07) 0%, transparent 65%)', animation: 'orbFloat2 22s ease-in-out infinite' }} />
+          <div style={{ position: 'absolute', width: 450, height: 450, borderRadius: '50%', bottom: '-10%', left: '-8%', background: 'radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 65%)', animation: 'orbFloat1 28s ease-in-out infinite' }} />
+          {/* Sparkle dots */}
+          {([
+            { top: '15%', left: '6%',  delay: '0s',   size: 4 },
+            { top: '70%', left: '4%',  delay: '1.2s', size: 3 },
+            { top: '20%', left: '90%', delay: '0.7s', size: 4 },
+            { top: '75%', left: '88%', delay: '1.8s', size: 5 },
+            { top: '45%', left: '50%', delay: '2.3s', size: 3 },
+          ] as { top: string; left: string; delay: string; size: number }[]).map((s, i) => (
+            <div key={i} style={{
+              position: 'absolute', top: s.top, left: s.left,
+              width: s.size, height: s.size, borderRadius: '50%',
+              backgroundColor: '#f59e0b',
+              animation: `glitterPulse ${2.8 + i * 0.5}s ease-in-out infinite ${s.delay}`,
+              boxShadow: `0 0 ${s.size * 4}px rgba(245,158,11,0.9)`,
+            }} />
+          ))}
+        </div>
+
+        {/* Header */}
+        <div className="reviews-head text-center mb-12" style={{ padding: '0 clamp(1.5rem,6vw,8rem)', position: 'relative', zIndex: 1 }}>
+          <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 12 }}>Guest Reviews</p>
+          <h2 style={{ color: pal.text, fontSize: 'clamp(2rem,4.5vw,3rem)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05 }}>
+            {cfg.heroConfig?.reviewsHeadline || 'Loved by every table'}
+          </h2>
+          <p style={{ color: pal.muted, fontSize: 13, marginTop: 10 }}>Tap any card to read the full review</p>
+        </div>
+
+        {/* Relay strip 1 → */}
+        <div style={{ position: 'relative', marginBottom: 16, zIndex: 1 }}>
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to right, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
+          <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to left, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
+          <div className="review-relay-strip" style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 38s linear infinite', padding: '8px 16px' }}
+            onMouseEnter={e => (e.currentTarget.style.animationPlayState = 'paused')}
+            onMouseLeave={e => (e.currentTarget.style.animationPlayState = 'running')}>
+            {[...TESTIMONIALS, ...TESTIMONIALS, ...TESTIMONIALS].map((t, i) => (
+              <ReviewCard key={i} t={t} i={i % TESTIMONIALS.length} dark={dark} />
+            ))}
+          </div>
+        </div>
+
+        {/* Relay strip 2 ← reverse */}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to right, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
+          <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to left, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
+          <div style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 44s linear infinite reverse', padding: '8px 16px 4px' }}
+            onMouseEnter={e => (e.currentTarget.style.animationPlayState = 'paused')}
+            onMouseLeave={e => (e.currentTarget.style.animationPlayState = 'running')}>
+            {[...TESTIMONIALS.slice().reverse(), ...TESTIMONIALS.slice().reverse(), ...TESTIMONIALS.slice().reverse()].map((t, i) => (
+              <ReviewCard key={i} t={t} i={i % TESTIMONIALS.length} dark={dark} />
+            ))}
+          </div>
+        </div>
+
+        {/* Rating row */}
+        <div className="reviews-head flex items-center justify-center gap-3 mt-10" style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', gap: 3 }}>
+            {[...Array(5)].map((_, i) => <Star key={i} size={13} style={{ color: '#f59e0b', fill: '#f59e0b' }} />)}
+          </div>
+          <span style={{ color: pal.text, fontWeight: 800, fontSize: 14 }}>4.9</span>
+          <span style={{ color: pal.muted, fontSize: 13 }}>· Based on 200+ reviews</span>
+        </div>
+      </section>
+
+      {/* ── Footer ── */}
+      <footer style={{ backgroundColor: '#060606', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        {/* Top strip */}
+        <div style={{ padding: 'clamp(2.5rem,5vh,3.5rem) clamp(1.5rem,6vw,8rem)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+          className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-10">
+
+          {/* Brand */}
+          <div style={{ maxWidth: 300 }}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: '#f59e0b', boxShadow: '0 4px 16px rgba(245,158,11,0.3)' }}>
+                <UtensilsCrossed size={15} className="text-black" />
+              </div>
+              <div>
+                <div className="font-black text-sm tracking-tight" style={{ color: '#f5f3ef' }}>{cfg.restaurantName}</div>
+                <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{cfg.tagline ?? 'Kerala Cuisine'}</div>
+              </div>
+            </div>
+            <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 12, lineHeight: 1.7 }}>
+              Authentic Kerala flavours, crafted fresh and served with warmth.
+            </p>
+          </div>
+
+          {/* Nav columns */}
+          <div className="flex flex-wrap gap-12">
+            <div>
+              <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>Explore</p>
+              {[{ href: '/menu', l: 'Menu' }, { href: '/book', l: 'Reserve a Table' }].map(n => (
+                <Link key={n.href} href={n.href} className="block mb-2.5 text-sm transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.45)' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#f59e0b' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.45)' }}>
+                  {n.l}
+                </Link>
+              ))}
+            </div>
+            <div>
+              <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>Account</p>
+              {[{ href: '/account', l: 'Sign In' }, { href: '/staff/login', l: 'Staff Portal' }].map(n => (
+                <Link key={n.href} href={n.href} className="block mb-2.5 text-sm transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.45)' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#f59e0b' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.45)' }}>
+                  {n.l}
+                </Link>
+              ))}
+            </div>
+            <div>
+              <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>Visit</p>
+              <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{cfg.address ?? 'Dubai, UAE'}</p>
+              <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
+              {cfg.phone && <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>{cfg.phone}</p>}
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom bar */}
+        <div style={{ padding: '14px clamp(1.5rem,6vw,8rem)' }} className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: 11 }}>© 2026 {cfg.restaurantName}. All rights reserved.</p>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#22c55e' }} />
+            <span style={{ color: 'rgba(255,255,255,0.22)', fontSize: 11 }}>Open now · Kitchen accepting orders</span>
+          </div>
+        </div>
+      </footer>
+
+      <style>{`
+        @keyframes marqueeX {
+          0%   { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(18px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes bobY {
+          0%, 100% { transform: translateY(0); }
+          50%       { transform: translateY(5px); }
+        }
+        @keyframes cardFloat3d {
+          0%,  100% { transform: translateY(0)     rotateY(-1.5deg) scale(1);    }
+          50%        { transform: translateY(-10px) rotateY(1.5deg)  scale(1.02); }
+        }
+        @keyframes orbFloat1 {
+          0%,100% { transform: translate(0,0) scale(1); }
+          33%     { transform: translate(40px,-30px) scale(1.08); }
+          66%     { transform: translate(-20px,20px) scale(0.94); }
+        }
+        @keyframes orbFloat2 {
+          0%,100% { transform: translate(0,0) scale(1); }
+          40%     { transform: translate(-50px,30px) scale(1.06); }
+          70%     { transform: translate(30px,-20px) scale(0.97); }
+        }
+        @keyframes glitterPulse {
+          0%,100% { opacity: 0.3; transform: scale(1) rotate(0deg); }
+          50%     { opacity: 1;   transform: scale(1.4) rotate(180deg); }
+        }
+        @keyframes reviewCardIn {
+          from { opacity: 0; transform: translateY(40px) scale(0.95); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
+    </div>
   )
 }

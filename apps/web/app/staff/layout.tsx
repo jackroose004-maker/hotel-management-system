@@ -1,10 +1,10 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Table2, ClipboardList, Receipt, CalendarDays,
-  BookOpen, BarChart2, Settings, LogOut, LayoutGrid,
+  BookOpen, BarChart2, Settings, LogOut, LayoutGrid, Users,
   UtensilsCrossed, Sun, Moon, ChevronLeft, ChevronRight, Menu, X,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
@@ -20,6 +20,7 @@ const NAV = [
   { href: '/staff/bills',     icon: Receipt,        label: 'Bills',       roles: ['OWNER','MANAGER'] },
   { href: '/staff/menu',      icon: BookOpen,       label: 'Menu',        roles: ['OWNER','MANAGER'] },
   { href: '/staff/analytics', icon: BarChart2,      label: 'Analytics',   roles: ['OWNER','MANAGER'] },
+  { href: '/staff/team',      icon: Users,          label: 'Team',        roles: ['OWNER','MANAGER'] },
   { href: '/staff/settings',  icon: Settings,       label: 'Settings',    roles: ['OWNER','MANAGER'] },
 ]
 
@@ -31,6 +32,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   const [collapsed, setCollapsed]     = useState(false)
   const [mobileOpen, setMobileOpen]   = useState(false)
   const [ready, setReady]             = useState(false)
+  const loggingOut                    = useRef(false)
 
   useEffect(() => {
     init()
@@ -40,7 +42,9 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   }, [])
 
   useEffect(() => {
-    if (ready && pathname !== '/staff/login' && !token) router.replace('/staff/login')
+    if (loggingOut.current) return
+    if (ready && pathname.startsWith('/staff') && pathname !== '/staff/login' && !token)
+      router.replace('/staff/login')
   }, [ready, token, pathname])
 
   useEffect(() => { setMobileOpen(false) }, [pathname])
@@ -48,7 +52,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   if (pathname === '/staff/login') return <>{children}</>
   if (!ready || !token) return null
 
-  const handleLogout = () => { logout(); router.push('/staff/login') }
+  const handleLogout = () => { loggingOut.current = true; logout(); router.push('/') }
   const visibleNav = NAV.filter(n => n.roles.includes(user?.role ?? ''))
 
   const SidebarContent = ({ mobile = false }: { mobile?: boolean }) => (

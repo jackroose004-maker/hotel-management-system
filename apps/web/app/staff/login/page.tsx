@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
@@ -91,7 +92,15 @@ export default function StaffLogin() {
       </div>
 
       {/* ── Right panel — form ────────────────────────────── */}
-      <div className="flex flex-col items-center justify-center w-full lg:w-[440px] px-6 py-12 relative">
+      <div className="flex flex-col items-center justify-center w-full lg:w-[440px] px-6 py-12 relative min-h-screen">
+
+        {/* Back to home */}
+        <div className="absolute top-6 left-6 right-6 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            Back to home
+          </Link>
+        </div>
 
         {/* Mobile logo */}
         <div className="flex items-center gap-2 mb-10 lg:hidden">
@@ -177,6 +186,11 @@ export default function StaffLogin() {
           <p className="text-center text-xs text-gray-700 mt-6">
             © 2024 Al Manzil · Dubai
           </p>
+          <div className="mt-4 text-center">
+            <Link href="/" className="text-xs text-gray-700 hover:text-orange-500 transition-colors">
+              ← Return to Al Manzil
+            </Link>
+          </div>
         </div>
       </div>
     </div>

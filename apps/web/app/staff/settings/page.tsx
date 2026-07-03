@@ -4,13 +4,26 @@ import {
   Store, Clock, Table2, ShoppingBag, CalendarDays,
   Save, MapPin, Phone, Loader2, CheckCircle2,
   Globe, WifiOff, Minus, Plus, ChevronDown,
-  Zap, ChevronRight,
+  Zap, ChevronRight, Layout, Trash2, UtensilsCrossed,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import ImageUpload from '@/components/ui/ImageUpload'
 import toast from 'react-hot-toast'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
+
+type CustomDish = { name: string; desc: string; price: string; time: string; img: string }
+
+type HeroConfig = {
+  line1: string; line2: string; subtext: string; videoUrl: string; posterUrl: string
+  ctaLabel: string; ctaSecondaryLabel: string; badgeText: string
+  dishesHeadline: string; dishesSubtext: string
+  customDishes?: CustomDish[]
+  relayTagline: string; relayHeadline: string; relayHeadlinePart2: string
+  ambienceTagline: string; ambienceHeadline: string; ambienceHeadlinePart2: string; ambienceDesc: string
+  reviewsHeadline: string
+  ambienceImg1: string; ambienceImg2: string; ambienceImg3: string; ambienceImg4: string
+}
 
 type Cfg = {
   restaurantName: string; tagline: string; phone: string; address: string; logoUrl: string
@@ -19,10 +32,11 @@ type Cfg = {
   bookingsEnabled: boolean; slotDurationMins: number; walkInBuffer: number; peakHoursEnabled: boolean
   peakStart: string; peakEnd: string; noShowWindowOffPeak: number; noShowWindowPeak: number
   maxBookingDaysAhead: number; requireLoginToBook: boolean; remindersEnabled: boolean; reminderMinsBefore: number
+  heroConfig: HeroConfig
 }
 
 const UPDATABLE: (keyof Cfg)[] = [
-  'restaurantName','tagline','phone','address','logoUrl','openTime','closeTime','timezone',
+  'restaurantName','tagline','heroConfig','phone','address','logoUrl','openTime','closeTime','timezone',
   'totalTables','defaultCapacity','vatRate','currency','defaultPrepTimeMins',
   'bookingsEnabled','slotDurationMins','walkInBuffer','peakHoursEnabled',
   'peakStart','peakEnd','noShowWindowOffPeak','noShowWindowPeak',
@@ -32,10 +46,11 @@ const UPDATABLE: (keyof Cfg)[] = [
 const TIMEZONES = ['Asia/Dubai','Asia/Riyadh','Asia/Kuwait','Asia/Bahrain','Asia/Qatar','Asia/Muscat']
 const CURRENCIES = ['AED','SAR','KWD','BHD','QAR','OMR']
 
-type SectionId = 'restaurant' | 'hours' | 'tables' | 'orders' | 'bookings'
+type SectionId = 'restaurant' | 'hours' | 'tables' | 'orders' | 'bookings' | 'landing'
 
 const NAV: { id: SectionId; label: string; icon: React.ElementType; desc: string }[] = [
   { id: 'restaurant',    label: 'Restaurant',    icon: Store,        desc: 'Name, logo & contact' },
+  { id: 'landing',       label: 'Landing Page',  icon: Layout,       desc: 'Hero, sections & text' },
   { id: 'hours',         label: 'Opening Hours', icon: Clock,        desc: 'Daily open & close times' },
   { id: 'tables',        label: 'Tables',        icon: Table2,       desc: 'Capacity & floor layout' },
   { id: 'orders',        label: 'Orders & VAT',  icon: ShoppingBag,  desc: 'Tax rate, currency & prep' },
@@ -53,6 +68,10 @@ const inputCls = [
 const Inp = ({ value, onChange, placeholder, type = 'text' }: { value: string; onChange: (v: string) => void; placeholder?: string; type?: string }) =>
   <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={placeholder}
     className={inputCls} style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text-primary)' }} />
+
+const Textarea = ({ value, onChange, placeholder, rows = 3 }: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number }) =>
+  <textarea rows={rows} value={value ?? ''} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+    className={inputCls} style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text-primary)', resize: 'vertical' }} />
 
 const Sel = ({ value, onChange, options }: { value: string | number; onChange: (v: string) => void; options: { value: string | number; label: string }[] }) => (
   <div className="relative">
@@ -399,6 +418,242 @@ export default function SettingsPage() {
                 </div>
               </div>
             </>}
+
+            {/* ── LANDING PAGE ── */}
+            {section === 'landing' && (() => {
+              const hc = cfg.heroConfig ?? {} as HeroConfig
+              const setHc = (k: keyof HeroConfig, v: string | CustomDish[] | null) =>
+                set('heroConfig', { ...hc, [k]: v } as any)
+              return <>
+                {/* HERO */}
+                <SectionLabel text="Hero — Headline & Subtext" />
+                <FieldBlock>
+                  <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                    Controls the full-screen video hero at the top of your public website.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 1 (white)</p>
+                      <Inp value={hc.line1 ?? ''} onChange={v => setHc('line1', v)} placeholder="Taste of" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 2 <span style={{ color: '#f59e0b' }}>(gold italic)</span></p>
+                      <Inp value={hc.line2 ?? ''} onChange={v => setHc('line2', v)} placeholder="Kerala" />
+                    </div>
+                  </div>
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Sub-text</p>
+                    <Inp value={hc.subtext ?? ''} onChange={v => setHc('subtext', v)} placeholder="Authentic South Indian cuisine · Dubai" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Badge text (pill above headline)</p>
+                    <Inp value={hc.badgeText ?? ''} onChange={v => setHc('badgeText', v)} placeholder="Now Open · Dubai, UAE" />
+                  </div>
+                </FieldBlock>
+                <SectionLabel text="Hero — Buttons" />
+                <FieldBlock>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Primary button label</p>
+                      <Inp value={hc.ctaLabel ?? ''} onChange={v => setHc('ctaLabel', v)} placeholder="Order Now" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Secondary button label</p>
+                      <Inp value={hc.ctaSecondaryLabel ?? ''} onChange={v => setHc('ctaSecondaryLabel', v)} placeholder="Reserve a Table" />
+                    </div>
+                  </div>
+                </FieldBlock>
+                <SectionLabel text="Hero — Background Media" />
+                <FieldBlock border={false}>
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Background video URL <span style={{ color: 'var(--text-muted)' }}>(MP4)</span></p>
+                    <Inp value={hc.videoUrl ?? ''} onChange={v => setHc('videoUrl', v)} placeholder="https://…/hero.mp4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Fallback poster image URL</p>
+                    <Inp value={hc.posterUrl ?? ''} onChange={v => setHc('posterUrl', v)} placeholder="https://images.unsplash.com/…" />
+                  </div>
+                </FieldBlock>
+
+                {/* DISHES */}
+                <SectionLabel text="Signature Dishes Section" />
+                <FieldBlock border={false}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Section eyebrow label</p>
+                      <Inp value={hc.dishesSubtext ?? ''} onChange={v => setHc('dishesSubtext', v)} placeholder="Signature Dishes" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Section headline</p>
+                      <Inp value={hc.dishesHeadline ?? ''} onChange={v => setHc('dishesHeadline', v)} placeholder="Dishes you'll dream about." />
+                    </div>
+                  </div>
+                </FieldBlock>
+
+                {/* SIGNATURE DISHES — custom dish cards */}
+                <SectionLabel text="Signature Dish Cards (up to 6)" />
+                <FieldBlock border={false}>
+                  <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                    Override the dishes shown in the landing page. Leave empty to pull from the live menu automatically.
+                  </p>
+                  {(hc.customDishes ?? []).map((dish, i) => (
+                    <div key={i} className="mb-4 rounded-xl p-4" style={{ border: '1px solid var(--card-border)', backgroundColor: 'var(--card-bg)' }}>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#f59e0b' }}>Dish {i + 1}</span>
+                        <button type="button" onClick={() => {
+                          const next = [...(hc.customDishes ?? [])]
+                          next.splice(i, 1)
+                          setHc('customDishes', next)
+                        }} className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors hover:bg-red-500/10"
+                          style={{ color: 'var(--text-muted)' }}>
+                          <Trash2 size={12} /> Remove
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Dish name</p>
+                          <Inp value={dish.name} onChange={v => {
+                            const next = [...(hc.customDishes ?? [])]
+                            next[i] = { ...next[i], name: v }
+                            setHc('customDishes', next)
+                          }} placeholder="Kerala Prawn Moilee" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Price (AED)</p>
+                          <Inp value={dish.price} onChange={v => {
+                            const next = [...(hc.customDishes ?? [])]
+                            next[i] = { ...next[i], price: v }
+                            setHc('customDishes', next)
+                          }} placeholder="68" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Prep time (mins)</p>
+                          <Inp value={dish.time} onChange={v => {
+                            const next = [...(hc.customDishes ?? [])]
+                            next[i] = { ...next[i], time: v }
+                            setHc('customDishes', next)
+                          }} placeholder="20" />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Dish photo</p>
+                          <ImageUpload
+                            value={dish.img || ''}
+                            onChange={v => {
+                              const next = [...(hc.customDishes ?? [])]
+                              next[i] = { ...next[i], img: v ?? '' }
+                              setHc('customDishes', next)
+                            }}
+                            folder="almanzil/dishes"
+                            publicId={`dish-${i}`}
+                            aspectRatio="free"
+                            hint="Recommended: 800 × 600 px"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Short description</p>
+                          <Inp value={dish.desc} onChange={v => {
+                            const next = [...(hc.customDishes ?? [])]
+                            next[i] = { ...next[i], desc: v }
+                            setHc('customDishes', next)
+                          }} placeholder="Tender prawns in a fragrant coconut-turmeric gravy" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {(hc.customDishes ?? []).length < 6 && (
+                    <button type="button" onClick={() => {
+                      const next = [...(hc.customDishes ?? []), { name: '', desc: '', price: '', time: '', img: '' }]
+                      setHc('customDishes', next)
+                    }} className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl transition-all hover:scale-[1.02]"
+                      style={{ border: '1.5px dashed rgba(245,158,11,0.4)', color: '#f59e0b', width: '100%', justifyContent: 'center' }}>
+                      <Plus size={14} /> Add Dish {(hc.customDishes ?? []).length + 1}
+                    </button>
+                  )}
+                  {(hc.customDishes ?? []).length > 0 && (
+                    <button type="button" onClick={() => setHc('customDishes', [])}
+                      className="mt-2 flex items-center gap-1 text-xs transition-colors hover:opacity-70"
+                      style={{ color: 'var(--text-muted)' }}>
+                      <Trash2 size={11} /> Clear all &amp; use live menu
+                    </button>
+                  )}
+                </FieldBlock>
+
+                {/* FOOD RELAY */}
+                <SectionLabel text="Food Relay Section" />
+                <FieldBlock border={false}>
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Eyebrow label</p>
+                    <Inp value={hc.relayTagline ?? ''} onChange={v => setHc('relayTagline', v)} placeholder="The Kitchen's Finest" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 1 (white)</p>
+                      <Inp value={hc.relayHeadline ?? ''} onChange={v => setHc('relayHeadline', v)} placeholder="Made fresh," />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 2 <span style={{ color: '#f59e0b' }}>(gold gradient)</span></p>
+                      <Inp value={hc.relayHeadlinePart2 ?? ''} onChange={v => setHc('relayHeadlinePart2', v)} placeholder="every single day." />
+                    </div>
+                  </div>
+                </FieldBlock>
+
+                {/* AMBIENCE */}
+                <SectionLabel text="Ambience Section" />
+                <FieldBlock border={false}>
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Eyebrow label</p>
+                    <Inp value={hc.ambienceTagline ?? ''} onChange={v => setHc('ambienceTagline', v)} placeholder="The Space" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 1 (white)</p>
+                      <Inp value={hc.ambienceHeadline ?? ''} onChange={v => setHc('ambienceHeadline', v)} placeholder="Come for the food." />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 2 <span style={{ color: '#f59e0b' }}>(gold gradient)</span></p>
+                      <Inp value={hc.ambienceHeadlinePart2 ?? ''} onChange={v => setHc('ambienceHeadlinePart2', v)} placeholder="Stay for the feeling." />
+                    </div>
+                  </div>
+                </FieldBlock>
+
+                {/* AMBIENCE IMAGES */}
+                <SectionLabel text="Ambience Photos (4 images)" />
+                <FieldBlock border={false}>
+                  <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                    Upload photos or paste a URL. Leave blank to use built-in defaults.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {([
+                      { key: 'ambienceImg1', label: 'Image 1 — left tall photo',  pid: 'amb1' },
+                      { key: 'ambienceImg2', label: 'Image 2 — top right',         pid: 'amb2' },
+                      { key: 'ambienceImg3', label: 'Image 3 — middle right',      pid: 'amb3' },
+                      { key: 'ambienceImg4', label: 'Image 4 — bottom right',      pid: 'amb4' },
+                    ] as { key: keyof HeroConfig; label: string; pid: string }[]).map(({ key, label, pid }) => (
+                      <div key={key}>
+                        <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>{label}</p>
+                        <ImageUpload
+                          value={(hc as any)[key] ?? ''}
+                          onChange={v => setHc(key, v ?? '')}
+                          folder="almanzil/ambience"
+                          publicId={pid}
+                          aspectRatio="free"
+                          hint="Recommended: 1400 × 900 px"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </FieldBlock>
+
+                {/* REVIEWS */}
+                <SectionLabel text="Guest Reviews Section" />
+                <FieldBlock border={false}>
+                  <div>
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Section headline</p>
+                    <Inp value={hc.reviewsHeadline ?? ''} onChange={v => setHc('reviewsHeadline', v)} placeholder="Loved by every table" />
+                  </div>
+                </FieldBlock>
+              </>
+            })()}
 
             {/* ── HOURS ── */}
             {section === 'hours' && <>

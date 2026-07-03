@@ -27,7 +27,6 @@ export class NotificationsController {
     return this.svc.markAllRead(req.user.id)
   }
 
-  // Push token registration
   @Post('device-token')
   upsertToken(@Req() req, @Body() body: { token: string; platform?: string; userAgent?: string }) {
     return this.svc.upsertDeviceToken(req.user.id, body.token, body.platform ?? 'WEB', body.userAgent)
