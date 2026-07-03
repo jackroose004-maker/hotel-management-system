@@ -351,7 +351,7 @@ function MenuPageInner() {
   // ─── REFS & SCROLL HOOKS (must be above any early returns) ────────────────
   const mainRef = useRef<HTMLElement>(null)
   const catTabsRef = useRef<HTMLDivElement>(null)
-  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
   const scrollingProgrammatically = useRef(false)
 
   // Scroll-spy: watch all category sections, update active pill
