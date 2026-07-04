@@ -176,7 +176,10 @@ export default function ImageUpload({
     setImgErr(false)
     setUploading(true)
     try {
-      const url = await uploadImage(blob, folder, publicId)
+      // Append timestamp so each upload gets a unique public ID — avoids
+      // Cloudinary's overwrite:false rejecting re-uploads and returning the old URL.
+      const uniqueId = publicId ? `${publicId}_${Date.now()}` : undefined
+      const url = await uploadImage(blob, folder, uniqueId)
       setPreview(url)
       onChange(url)
     } catch (e: any) {

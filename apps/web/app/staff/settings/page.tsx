@@ -2,11 +2,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   Store, Clock, Table2, ShoppingBag, CalendarDays,
-  Save, MapPin, Phone, Loader2, CheckCircle2,
-  Globe, WifiOff, Minus, Plus, ChevronDown,
+  Save, Loader2, CheckCircle2,
+  WifiOff, Minus, Plus, ChevronDown,
   Zap, ChevronRight, Layout, Trash2, UtensilsCrossed,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
+import { applyFavicon } from '@/store/brand'
 import ImageUpload from '@/components/ui/ImageUpload'
 import toast from 'react-hot-toast'
 
@@ -410,7 +411,7 @@ export default function SettingsPage() {
               <FieldBlock>
                 <ImageUpload
                   value={cfg.logoUrl}
-                  onChange={v => set('logoUrl', v)}
+                  onChange={v => { set('logoUrl', v); applyFavicon(v) }}
                   folder="almanzil/logo"
                   publicId="logo"
                   hint="Square image · min 256 × 256 px · uploads directly to CDN"
@@ -418,30 +419,6 @@ export default function SettingsPage() {
                   className="max-w-[160px]"
                 />
               </FieldBlock>
-              <SectionLabel text="Preview" />
-              <div className="p-5">
-                <div className="rounded-xl overflow-hidden" style={{ background: 'linear-gradient(120deg,#ea580c,#f59e0b)' }}>
-                  <div className="px-4 py-3.5 flex items-center gap-3.5">
-                    <div className="relative flex-shrink-0">
-                      <div className="w-10 h-10 rounded-xl border-2 border-white/20 overflow-hidden flex items-center justify-center" style={{ backgroundColor: 'rgba(255,255,255,0.15)' }}>
-                        {cfg.logoUrl
-                          ? <img src={cfg.logoUrl} alt="" className="w-full h-full object-cover" />
-                          : <Store size={14} className="text-white/50" />}
-                      </div>
-                      <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-orange-500" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-white truncate">{cfg.restaurantName || <span className="opacity-30">Name</span>}</p>
-                      <p className="text-xs text-white/60 truncate">{cfg.tagline || <span className="opacity-25">Tagline</span>}</p>
-                      <div className="flex gap-3 mt-1 flex-wrap">
-                        {cfg.address && <span className="text-[10px] text-white/50 flex items-center gap-0.5"><MapPin size={7} />{cfg.address}</span>}
-                        {cfg.phone && <span className="text-[10px] text-white/50 flex items-center gap-0.5"><Phone size={7} />{cfg.phone}</span>}
-                        <span className="text-[10px] text-white/50 flex items-center gap-0.5"><Globe size={7} />{cfg.currency}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </>}
 
             {/* ── LANDING PAGE ── */}
