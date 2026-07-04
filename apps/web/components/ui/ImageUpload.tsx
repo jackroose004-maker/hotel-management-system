@@ -136,6 +136,9 @@ function CropModal({ src, aspect, onConfirm, onCancel }: {
   )
 }
 
+// Module-level flag so only one ImageUpload handles a paste at a time
+let pasteHandled = false
+
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function ImageUpload({
   value, onChange, folder, publicId, label, hint, aspectRatio = 'free', className = '',
@@ -147,6 +150,14 @@ export default function ImageUpload({
   const [pasted, setPasted]       = useState(false)
   // crop modal state
   const [cropSrc, setCropSrc]     = useState<string | null>(null)
+
+  // Sync preview when parent updates value (e.g. settings load from backend)
+  useEffect(() => {
+    if (!uploading && !cropSrc) {
+      setPreview(value)
+      setImgErr(false)
+    }
+  }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const aspect = LOCKED_ASPECT[aspectRatio]
 
@@ -189,12 +200,16 @@ export default function ImageUpload({
   // global paste
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      if (uploading || cropSrc) return
+      if (uploading || cropSrc || pasteHandled) return
       const items = Array.from(e.clipboardData?.items ?? [])
       const imgItem = items.find(it => it.type.startsWith('image/'))
       if (!imgItem) return
       const file = imgItem.getAsFile()
-      if (file) { setPasted(true); setTimeout(() => setPasted(false), 1200); stageFile(file) }
+      if (file) {
+        pasteHandled = true
+        setTimeout(() => { pasteHandled = false }, 200)
+        setPasted(true); setTimeout(() => setPasted(false), 1200); stageFile(file)
+      }
     }
     document.addEventListener('paste', onPaste)
     return () => document.removeEventListener('paste', onPaste)

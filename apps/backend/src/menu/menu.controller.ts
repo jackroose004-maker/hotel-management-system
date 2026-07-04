@@ -14,8 +14,32 @@ export class MenuController {
   @Get('categories')
   getCategories() { return this.menu.getCategories() }
 
+  @Get('categories/:categoryId/items')
+  getCategoryItems(
+    @Param('categoryId') categoryId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsed = limit ? parseInt(limit, 10) : 12
+    return this.menu.getCategoryItems(categoryId, cursor, Number.isFinite(parsed) ? parsed : 12)
+  }
+
+  @Get('items/:id')
+  getItem(@Param('id') id: string) { return this.menu.getItem(id) }
+
   @Get('items')
-  getItems(@Query('all') all: string) { return this.menu.getAllItems(all === 'true') }
+  getItems(
+    @Query('all') all: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (categoryId) {
+      const parsed = limit ? parseInt(limit, 10) : 12
+      return this.menu.getCategoryItems(categoryId, cursor, Number.isFinite(parsed) ? parsed : 12)
+    }
+    return this.menu.getAllItems(all === 'true')
+  }
 
   // Staff protected
   @UseGuards(JwtAuthGuard, RolesGuard)

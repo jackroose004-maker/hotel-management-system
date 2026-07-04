@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { OrdersGateway } from '../websocket/orders.gateway'
+import { PaymentsService } from '../payments/payments.service'
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/create-order.dto'
 import { OrderStatus } from '@prisma/client'
 import { randomUUID } from 'crypto'
@@ -9,7 +10,11 @@ const VAT_RATE = 0.05
 
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService, private gateway: OrdersGateway) {}
+  constructor(
+    private prisma: PrismaService,
+    private gateway: OrdersGateway,
+    private payments: PaymentsService,
+  ) {}
 
   async create(dto: CreateOrderDto, userId?: string) {
     // Fetch all menu items to calculate prices server-side
@@ -18,6 +23,9 @@ export class OrdersService {
 
     if (menuItems.length !== itemIds.length) throw new BadRequestException('One or more menu items not found')
     if (dto.type === 'DINE_IN' && !dto.tableId) throw new BadRequestException('Table number is required for dine-in orders')
+    if (dto.type === 'TAKEAWAY' && dto.paymentMethod === 'CASH') {
+      throw new BadRequestException('Takeaway orders require card payment')
+    }
 
     const menuMap = new Map(menuItems.map(m => [m.id, m]))
 
@@ -29,15 +37,13 @@ export class OrdersService {
     const vatAmount = Math.round(subtotal * VAT_RATE * 100) / 100
     const total = Math.round((subtotal + vatAmount) * 100) / 100
 
-    // Get next token for takeaway
-    let tokenNumber: number | undefined
-    if (dto.type === 'TAKEAWAY') {
-      const lastOrder = await this.prisma.order.findFirst({
-        where: { type: 'TAKEAWAY', createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
-        orderBy: { tokenNumber: 'desc' },
-      })
-      tokenNumber = (lastOrder?.tokenNumber ?? 0) + 1
-    }
+    // Every order gets a sequential daily reference number (used by both dine-in and takeaway)
+    const lastOrder = await this.prisma.order.findFirst({
+      where: { createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
+      orderBy: { tokenNumber: 'desc' },
+      select: { tokenNumber: true },
+    })
+    const tokenNumber = (lastOrder?.tokenNumber ?? 0) + 1
 
     // Each person at a table gets their own tab (tableSessionId).
     // The table is just a delivery location — identity comes from the person, not the table.
@@ -106,6 +112,10 @@ export class OrdersService {
     }
 
     this.gateway.emitNewOrder(order)
+
+    if (dto.paymentMethod === 'CASH') {
+      return this.payments.registerCashOrder(order.id)
+    }
     return order
   }
 
@@ -138,10 +148,20 @@ export class OrdersService {
     if (dto.status === 'ACCEPTED') {
       auditData.approvedById = actingUserId ?? null
       auditData.approvedAt   = new Date()
+      // Calculate expected ready time from the slowest item in the order
+      const fullOrder = await this.prisma.order.findUnique({
+        where: { id },
+        include: { items: { include: { menuItem: { select: { prepTimeMins: true } } } } },
+      })
+      const maxPrepMins = fullOrder?.items.reduce((max, i) => Math.max(max, i.menuItem.prepTimeMins ?? 15), 15) ?? 15
+      const expectedReadyAt = new Date()
+      expectedReadyAt.setMinutes(expectedReadyAt.getMinutes() + maxPrepMins)
+      auditData.expectedReadyAt = expectedReadyAt
     }
     if (dto.status === 'CANCELLED') {
       auditData.cancelledById = actingUserId ?? null
       auditData.cancelledAt   = new Date()
+      if (dto.cancelReason) auditData.cancelReason = dto.cancelReason
     }
 
     const updated = await this.prisma.$transaction(async tx => {
@@ -182,13 +202,25 @@ export class OrdersService {
     return updated
   }
 
-  async guestCancel(id: string) {
+  async guestCancel(id: string, cancelReason?: string) {
     const order = await this.getById(id)
     if (order.status !== 'PENDING') throw new BadRequestException('Order can only be cancelled while pending')
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id },
-      data: { status: 'CANCELLED', cancelledAt: new Date() },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), ...(cancelReason ? { cancelReason } : {}) },
       include: { items: { include: { menuItem: true } }, table: true },
+    })
+    this.gateway.emitOrderUpdated(updated)
+    return updated
+  }
+
+  async submitFeedback(orderId: string, data: { rating: number; comment?: string; tags?: string }, userId?: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } })
+    if (!order) throw new NotFoundException('Order not found')
+    return this.prisma.feedback.upsert({
+      where: { orderId },
+      update: { rating: data.rating, comment: data.comment ?? null, tags: data.tags ?? null },
+      create: { orderId, userId: userId ?? null, rating: data.rating, comment: data.comment ?? null, tags: data.tags ?? null },
     })
   }
 
@@ -256,10 +288,27 @@ export class OrdersService {
     return { totalRevenue, totalOrders, paidOrders, cashOrders, dineIn, takeaway, avgOrderValue, byDay, hourly, topItems, period }
   }
 
+
+  async getBySessionToken(token: string) {
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    return this.prisma.order.findMany({
+      where: {
+        tableSessionId: token,
+        createdAt: { gte: today },
+        status: { not: 'CANCELLED' },
+      },
+      include: {
+        items: { include: { menuItem: { select: { id: true, name: true, prepTimeMins: true } } } },
+        table: { select: { id: true, tableNumber: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+  }
+
   getByUser(userId: string) {
     return this.prisma.order.findMany({
       where: { userId },
-      include: { items: { include: { menuItem: true } }, table: true },
+      include: { items: { include: { menuItem: true } }, table: true, feedback: true },
       orderBy: { createdAt: 'desc' },
       take: 20,
     })
@@ -294,6 +343,46 @@ export class OrdersService {
       allPaid:   orders.length > 0 && orders.every(o => o.paymentStatus === 'PAID'),
       anyUnpaid: orders.some(o => o.paymentStatus === 'UNPAID'),
     }
+  }
+
+  // Active sessions at a specific table — used by staff to pick "who am I ordering for?"
+  async getTableSessions(tableId: string) {
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const sessionRows = await this.prisma.order.groupBy({
+      by: ['tableSessionId'],
+      where: { tableId, tableSessionId: { not: null }, createdAt: { gte: today }, status: { not: 'CANCELLED' } },
+      orderBy: { _min: { createdAt: 'asc' } },
+    })
+    const tabs = await Promise.all(sessionRows.map(async ({ tableSessionId }, idx) => {
+      if (!tableSessionId) return null
+      const orders = await this.prisma.order.findMany({
+        where: { tableSessionId, status: { not: 'CANCELLED' } },
+        include: { items: { include: { menuItem: { select: { name: true } } } }, user: { select: { name: true } } },
+        orderBy: { createdAt: 'asc' },
+      })
+      const total = orders.reduce((s, o) => s + Number(o.total), 0)
+      const allItems = orders.flatMap(o => o.items)
+      const itemCount = allItems.reduce((s, i) => s + i.quantity, 0)
+      const userName = orders.find(o => o.user)?.user?.name ?? null
+      // Deduplicate item names for display (e.g. "Chicken Burger ×2, Pepsi")
+      const itemSummary = Object.entries(
+        allItems.reduce<Record<string, number>>((acc, i) => {
+          acc[i.menuItem.name] = (acc[i.menuItem.name] ?? 0) + i.quantity
+          return acc
+        }, {})
+      ).map(([name, qty]) => (qty > 1 ? `${name} ×${qty}` : name))
+      const firstOrderAt = orders[0]?.createdAt ?? null
+      return {
+        sessionId: tableSessionId,
+        label: userName ?? `Guest ${idx + 1}`,
+        orderCount: orders.length,
+        itemCount,
+        total,
+        itemSummary,
+        firstOrderAt,
+      }
+    }))
+    return tabs.filter(Boolean)
   }
 
   // Active bills: one entry per table, containing ALL personal tabs (sessions) at that table

@@ -11,17 +11,31 @@ interface Order {
   items: { quantity: number; notes?: string; menuItem: { name: string; prepTimeMins: number } }[]
 }
 
-function useElapsed(createdAt: string) {
-  const [mins, setMins] = useState(() => Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000))
+function formatDuration(ms: number) {
+  const totalSecs = Math.floor(Math.abs(ms) / 1000)
+  if (totalSecs < 60) return `${totalSecs}s`
+  const mins = Math.floor(totalSecs / 60)
+  const secs = totalSecs % 60
+  if (mins < 60) return `${mins}m ${secs}s`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m ${secs}s`
+}
+
+function useElapsed(createdAt: string, estMins: number) {
+  const estMs = estMins * 60 * 1000
+  const [elapsed, setElapsed] = useState(() => Date.now() - new Date(createdAt).getTime())
   useEffect(() => {
-    const t = setInterval(() => setMins(Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)), 30000)
+    const t = setInterval(() => setElapsed(Date.now() - new Date(createdAt).getTime()), 1000)
     return () => clearInterval(t)
   }, [createdAt])
-  return { mins, late: mins > 20 }
+  const remaining = estMs - elapsed
+  const late = remaining < 0
+  const label = late ? `-${formatDuration(remaining)}` : formatDuration(remaining)
+  return { label, mins: Math.floor(elapsed / 60000), late }
 }
 
 function OrderTicket({ order, onUpdate }: { order: Order; onUpdate: (id: string, status: string) => void }) {
-  const { mins, late } = useElapsed(order.createdAt)
+  const estMins = Math.max(...order.items.map(i => i.menuItem.prepTimeMins ?? 15), 15)
+  const { label: timeLabel, mins, late } = useElapsed(order.createdAt, estMins)
   const isPreparing = order.status === 'PREPARING'
 
   return (
@@ -45,14 +59,22 @@ function OrderTicket({ order, onUpdate }: { order: Order; onUpdate: (id: string,
             ? <Utensils size={13} className="text-orange-500 flex-shrink-0" />
             : <Package size={13} className="text-blue-500 flex-shrink-0" />
           }
-          <span className="font-bold text-gray-900 dark:text-white text-sm">
-            {order.type === 'DINE_IN' ? `Table ${order.table?.tableNumber}` : `Token #${order.tokenNumber}`}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-gray-900 dark:text-white text-sm">
+              {order.type === 'DINE_IN' ? `Table ${order.table?.tableNumber}` : `Token #${order.tokenNumber}`}
+            </span>
+            {order.tokenNumber && (
+              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full"
+                style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#d97706' }}>
+                #{order.tokenNumber}
+              </span>
+            )}
+          </div>
         </div>
-        <div className={`flex items-center gap-1.5 text-xs font-bold ${late ? 'text-red-600 dark:text-red-400' : 'text-gray-400'}`}>
+        <div className={`flex items-center gap-1.5 text-xs font-bold ${late ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
           {late && <Flame size={12} className="text-red-500" />}
           <Clock size={10} />
-          {mins}m ago
+          {late ? timeLabel : `${timeLabel} left`}
         </div>
       </div>
 

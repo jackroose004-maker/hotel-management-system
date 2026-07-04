@@ -18,9 +18,7 @@ export class PaymentsService {
     if (!order) throw new NotFoundException('Order not found')
     if (order.paymentStatus === 'PAID') throw new BadRequestException('Order already paid')
 
-    // Amount in fils (AED smallest unit = fils, 100 fils = 1 AED)
     const amountInFils = Math.round(Number(order.total) * 100)
-
     const intent = await this.stripe.paymentIntents.create({
       amount: amountInFils,
       currency: 'aed',
@@ -28,11 +26,9 @@ export class PaymentsService {
       description: `Al Manzil Hotel — Order #${orderId.slice(-6).toUpperCase()}`,
     })
 
-    // Upsert payment record
-    await this.prisma.payment.upsert({
-      where: { orderId },
-      update: { stripeIntentId: intent.id, amount: order.total },
-      create: { orderId, stripeIntentId: intent.id, amount: order.total, currency: 'AED', status: 'UNPAID' },
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { stripeIntentId: intent.id },
     })
 
     return { clientSecret: intent.client_secret, paymentIntentId: intent.id }
@@ -40,25 +36,16 @@ export class PaymentsService {
 
   async confirmPayment(orderId: string, paymentIntentId: string) {
     const intent = await this.stripe.paymentIntents.retrieve(paymentIntentId)
-
     if (intent.status !== 'succeeded') {
       throw new BadRequestException(`Payment not confirmed. Status: ${intent.status}`)
     }
 
-    // Update both payment and order in a transaction
-    const [payment, order] = await this.prisma.$transaction([
-      this.prisma.payment.update({
-        where: { orderId },
-        data: { status: 'PAID' },
-      }),
-      this.prisma.order.update({
-        where: { id: orderId },
-        data: { paymentStatus: 'PAID', paymentMethod: 'CARD', status: 'ACCEPTED' },
-        include: { items: { include: { menuItem: true } }, table: true },
-      }),
-    ])
-
-    return { payment, order }
+    const order = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { paymentStatus: 'PAID', paymentMethod: 'CARD', status: 'ACCEPTED' },
+      include: { items: { include: { menuItem: true } }, table: true },
+    })
+    return { order }
   }
 
   async handleWebhook(rawBody: Buffer, signature: string) {
@@ -76,24 +63,18 @@ export class PaymentsService {
       const intent = event.data.object as Stripe.PaymentIntent
       const orderId = intent.metadata.orderId
       if (orderId) {
-        await this.prisma.$transaction([
-          this.prisma.payment.update({ where: { orderId }, data: { status: 'PAID' } }),
-          this.prisma.order.update({ where: { id: orderId }, data: { paymentStatus: 'PAID', paymentMethod: 'CARD', status: 'ACCEPTED' } }),
-        ])
+        await this.prisma.order.update({
+          where: { id: orderId },
+          data: { paymentStatus: 'PAID', paymentMethod: 'CARD', status: 'ACCEPTED' },
+        })
       }
     }
 
     return { received: true }
   }
 
-  // Guest selects "Pay Cash" — records intent, keeps order PENDING for manager approval
+  // Guest selects "Pay Cash" — marks payment method, staff settles later
   async registerCashOrder(orderId: string) {
-    const existingOrder = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } })
-    await this.prisma.payment.upsert({
-      where: { orderId },
-      update: { amount: existingOrder.total },
-      create: { orderId, amount: existingOrder.total, currency: 'AED', status: 'UNPAID' },
-    })
     const order = await this.prisma.order.update({
       where: { id: orderId },
       data: { paymentMethod: 'CASH' },
@@ -102,23 +83,18 @@ export class PaymentsService {
     return order
   }
 
-  // Settle every unpaid cash order at a table in one shot (one-tap for staff)
-  async settleAllCashForTable(tableId: string) {
+  // Settle all unpaid orders at a table — staff picks CASH or CARD
+  async settleAllCashForTable(tableId: string, method: 'CASH' | 'CARD' = 'CASH') {
     const unpaid = await this.prisma.order.findMany({
-      where: { tableId, status: 'DELIVERED', paymentStatus: 'UNPAID', paymentMethod: 'CASH' },
+      where: { tableId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
       select: { id: true, total: true },
     })
     if (!unpaid.length) return { settled: 0, total: 0 }
 
     await this.prisma.$transaction([
-      ...unpaid.map(o => this.prisma.payment.upsert({
-        where: { orderId: o.id },
-        update: { status: 'PAID', amount: o.total },
-        create: { orderId: o.id, amount: o.total, currency: 'AED', status: 'PAID' },
-      })),
       ...unpaid.map(o => this.prisma.order.update({
         where: { id: o.id },
-        data: { paymentStatus: 'PAID' },
+        data: { paymentStatus: 'PAID', paymentMethod: method },
       })),
       this.prisma.restaurantTable.update({
         where: { id: tableId },
@@ -126,45 +102,54 @@ export class PaymentsService {
       }),
     ])
 
-    const total = unpaid.reduce((s, o) => s + Number(o.total), 0)
-    return { settled: unpaid.length, total }
+    return { settled: unpaid.length, total: unpaid.reduce((s, o) => s + Number(o.total), 0) }
   }
 
-  // Manager settles cash payment after delivery
-  async settleCashPayment(orderId: string) {
-    const existingOrder = await this.prisma.order.findUniqueOrThrow({ where: { id: orderId } })
-    const [payment, order] = await this.prisma.$transaction([
-      this.prisma.payment.upsert({
-        where: { orderId },
-        update: { status: 'PAID', amount: existingOrder.total },
-        create: { orderId, amount: existingOrder.total, currency: 'AED', status: 'PAID' },
-      }),
-      this.prisma.order.update({
-        where: { id: orderId },
-        data: { paymentStatus: 'PAID' },
-        include: { items: { include: { menuItem: true } }, table: true },
-      }),
-    ])
+  // Settle a specific guest session (personal tab) — staff picks CASH or CARD
+  async settleSession(sessionId: string, method: 'CASH' | 'CARD' = 'CASH') {
+    const unpaid = await this.prisma.order.findMany({
+      where: { tableSessionId: sessionId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
+      select: { id: true, total: true, tableId: true },
+    })
+    if (!unpaid.length) return { settled: 0, total: 0 }
 
-    // After settling, check if any other orders for this table are still unpaid
-    if (existingOrder.tableId) {
-      const stillUnpaid = await this.prisma.order.count({
-        where: {
-          tableId: existingOrder.tableId,
-          id: { not: orderId },
-          status: 'DELIVERED',
-          paymentStatus: 'UNPAID',
-        },
+    await this.prisma.$transaction(
+      unpaid.map(o => this.prisma.order.update({
+        where: { id: o.id },
+        data: { paymentStatus: 'PAID', paymentMethod: method },
+      }))
+    )
+
+    const tableId = unpaid[0].tableId
+    if (tableId) {
+      const remaining = await this.prisma.order.count({
+        where: { tableId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
       })
-      if (stillUnpaid === 0) {
-        // All bills settled — table is now clearing
-        await this.prisma.restaurantTable.update({
-          where: { id: existingOrder.tableId },
-          data: { status: 'DIRTY' },
-        })
+      if (remaining === 0) {
+        await this.prisma.restaurantTable.update({ where: { id: tableId }, data: { status: 'DIRTY' } })
       }
     }
 
-    return { payment, order }
+    return { settled: unpaid.length, total: unpaid.reduce((s, o) => s + Number(o.total), 0) }
+  }
+
+  // Settle a single order (legacy endpoint, kept for compatibility)
+  async settleCashPayment(orderId: string) {
+    const order = await this.prisma.order.update({
+      where: { id: orderId },
+      data: { paymentStatus: 'PAID' },
+      include: { items: { include: { menuItem: true } }, table: true },
+    })
+
+    if (order.tableId) {
+      const stillUnpaid = await this.prisma.order.count({
+        where: { tableId: order.tableId, id: { not: orderId }, status: 'DELIVERED', paymentStatus: 'UNPAID' },
+      })
+      if (stillUnpaid === 0) {
+        await this.prisma.restaurantTable.update({ where: { id: order.tableId }, data: { status: 'DIRTY' } })
+      }
+    }
+
+    return { order }
   }
 }

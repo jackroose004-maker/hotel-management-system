@@ -32,9 +32,15 @@ export class PaymentsController {
     return this.payments.settleCashPayment(orderId)
   }
 
-  // Settle ALL unpaid cash orders for a table in one tap
+  // Settle ALL unpaid orders for a table — manager picks how the guest paid
   @Post('table/:tableId/settle-all-cash')
-  settleTableCash(@Param('tableId') tableId: string) {
-    return this.payments.settleAllCashForTable(tableId)
+  settleTableCash(@Param('tableId') tableId: string, @Body('method') method?: string) {
+    return this.payments.settleAllCashForTable(tableId, method as 'CASH' | 'CARD' | undefined)
+  }
+
+  // Settle a specific session (personal tab) — manager picks payment method
+  @Post('session/:sessionId/settle')
+  settleSession(@Param('sessionId') sessionId: string, @Body('method') method?: string) {
+    return this.payments.settleSession(sessionId, method as 'CASH' | 'CARD' | undefined)
   }
 }

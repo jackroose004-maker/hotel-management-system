@@ -54,11 +54,6 @@ enum TableStatus {
   DIRTY
 }
 
-enum BillStatus {
-  OPEN
-  CLOSED
-  VOIDED
-}
 
 enum NotificationType {
   ORDER_NEW
@@ -117,8 +112,6 @@ model User {
   activityLogs    ActivityLog[]   @relation("ActivityLogs")
   feedback        Feedback[]
   statusChanges   OrderStatusHistory[] @relation("StatusChanges")
-  generatedBills  Bill[]          @relation("GeneratedBills")
-  collectedPayments BillPayment[] @relation("CollectedPayments")
   createdPromos   Promo[]         @relation("CreatedPromos")
   promoUsages     PromoUsage[]
 
@@ -226,7 +219,6 @@ model RestaurantTable {
 
   orders   Order[]
   bookings Booking[]
-  bills    Bill[]
 
   @@map("restaurant_tables")
 }
@@ -240,8 +232,8 @@ model Order {
   type            OrderType
   tableId         String?        @map("table_id")
   tableSessionId  String?        @map("table_session_id")
-  billId          String?        @map("bill_id")
   userId          String?        @map("user_id")
+  stripeIntentId  String?        @unique @map("stripe_intent_id")
   tokenNumber     Int?           @map("token_number")
   status          OrderStatus    @default(PENDING)
   subtotal        Decimal        @db.Decimal(10, 2)
@@ -257,11 +249,12 @@ model Order {
   approvedAt      DateTime?      @map("approved_at")
   cancelledById   String?        @map("cancelled_by_id")
   cancelledAt     DateTime?      @map("cancelled_at")
+  cancelReason    String?        @map("cancel_reason")
+  expectedReadyAt DateTime?      @map("expected_ready_at")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
   table         RestaurantTable?  @relation(fields: [tableId], references: [id])
-  bill          Bill?             @relation(fields: [billId], references: [id])
   user          User?             @relation(fields: [userId], references: [id])
   approvedBy    User?             @relation("ApprovedOrders", fields: [approvedById], references: [id])
   cancelledBy   User?             @relation("CancelledOrders", fields: [cancelledById], references: [id])
@@ -270,7 +263,6 @@ model Order {
   statusHistory OrderStatusHistory[]
   feedback      Feedback?
   promoUsage    PromoUsage?
-  legacyPayment Payment?
 
   @@index([tableSessionId])
   @@index([userId, createdAt])
@@ -324,67 +316,6 @@ model OrderStatusHistory {
   @@map("order_status_history")
 }
 
-// ─────────────────────────────────────────────
-// BILL  (consolidated invoice for a table session)
-// ─────────────────────────────────────────────
-
-model Bill {
-  id             String     @id @default(uuid())
-  tableSessionId String     @map("table_session_id")
-  tableId        String?    @map("table_id")
-  status         BillStatus @default(OPEN)
-  subtotal       Decimal    @db.Decimal(10, 2)
-  vatAmount      Decimal    @db.Decimal(10, 2) @map("vat_amount")
-  serviceCharge  Decimal    @default(0) @db.Decimal(10, 2) @map("service_charge")
-  discountAmount Decimal    @default(0) @db.Decimal(10, 2) @map("discount_amount")
-  total          Decimal    @db.Decimal(10, 2)
-  generatedById  String?    @map("generated_by_id")
-  printCount     Int        @default(0) @map("print_count")
-  closedAt       DateTime?  @map("closed_at")
-  createdAt      DateTime   @default(now()) @map("created_at")
-  updatedAt      DateTime   @updatedAt @map("updated_at")
-
-  table       RestaurantTable? @relation(fields: [tableId], references: [id])
-  generatedBy User?            @relation("GeneratedBills", fields: [generatedById], references: [id])
-  orders      Order[]
-  payments    BillPayment[]
-
-  @@index([tableSessionId])
-  @@map("bills")
-}
-
-// A bill can be settled across multiple payment methods (split cash+card)
-model BillPayment {
-  id            String        @id @default(uuid())
-  billId        String        @map("bill_id")
-  method        PaymentMethod
-  amount        Decimal       @db.Decimal(10, 2)
-  reference     String?       // stripe intent id, last4, etc.
-  collectedById String?       @map("collected_by_id")
-  collectedAt   DateTime      @default(now()) @map("collected_at")
-
-  bill        Bill  @relation(fields: [billId], references: [id])
-  collectedBy User? @relation("CollectedPayments", fields: [collectedById], references: [id])
-
-  @@index([billId])
-  @@map("bill_payments")
-}
-
-// Legacy 1:1 payment record (kept for Stripe webhook compatibility)
-model Payment {
-  id             String        @id @default(uuid())
-  orderId        String        @unique @map("order_id")
-  stripeIntentId String?       @unique @map("stripe_intent_id")
-  amount         Decimal       @db.Decimal(10, 2)
-  currency       String        @default("AED")
-  status         PaymentStatus @default(UNPAID)
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
-
-  order Order @relation(fields: [orderId], references: [id])
-
-  @@map("payments")
-}
 
 // ─────────────────────────────────────────────
 // PROMOS & DISCOUNTS

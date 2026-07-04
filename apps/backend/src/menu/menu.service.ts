@@ -7,23 +7,53 @@ import { CreateMenuItemDto, UpdateMenuItemDto } from './dto/create-menu-item.dto
 export class MenuService {
   constructor(private prisma: PrismaService) {}
 
+  private readonly itemInclude = {
+    modifierGroups: {
+      orderBy: { sortOrder: 'asc' as const },
+      include: { options: { orderBy: { sortOrder: 'asc' as const } } },
+    },
+  }
+
+  /** Lightweight category list — no nested items (fast initial load). */
   getCategories() {
     return this.prisma.menuCategory.findMany({
       where: { isActive: true },
       orderBy: { sortOrder: 'asc' },
-      include: {
-        items: {
-          where: { isAvailable: true },
-          orderBy: { name: 'asc' },
-          include: {
-            modifierGroups: {
-              orderBy: { sortOrder: 'asc' },
-              include: { options: { orderBy: { sortOrder: 'asc' } } },
-            },
-          },
-        },
+      select: {
+        id: true,
+        name: true,
+        nameAr: true,
+        sortOrder: true,
+        _count: { select: { items: { where: { isAvailable: true } } } },
       },
+    }).then(cats =>
+      cats.map(({ _count, ...cat }) => ({ ...cat, itemCount: _count.items })),
+    )
+  }
+
+  /** Cursor-paginated items for one category (infinite scroll). */
+  async getCategoryItems(categoryId: string, cursor?: string, limit = 12) {
+    const category = await this.prisma.menuCategory.findFirst({
+      where: { id: categoryId, isActive: true },
     })
+    if (!category) throw new NotFoundException('Category not found')
+
+    const take = Math.min(Math.max(limit, 1), 50)
+    const items = await this.prisma.menuItem.findMany({
+      where: { categoryId, isAvailable: true },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+      take: take + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      include: this.itemInclude,
+    })
+
+    const hasMore = items.length > take
+    const page = hasMore ? items.slice(0, take) : items
+    return {
+      items: page,
+      nextCursor: hasMore ? page[page.length - 1].id : null,
+      hasMore,
+    }
   }
 
   getAllCategories() {
@@ -79,7 +109,9 @@ export class MenuService {
   }
 
   createCategory(dto: CreateCategoryDto) {
-    return this.prisma.menuCategory.create({ data: dto })
+    // Generate a slug ID from the name so it's consistent with seeded categories (e.g. "Falooda" → "falooda")
+    const id = dto.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    return this.prisma.menuCategory.create({ data: { id, ...dto } })
   }
 
   async reorderCategories(ids: string[]) {
@@ -107,6 +139,13 @@ export class MenuService {
   async deleteItem(id: string) {
     await this.findItemOrThrow(id)
     return this.prisma.menuItem.delete({ where: { id } })
+  }
+
+  getItem(id: string) {
+    return this.prisma.menuItem.findUniqueOrThrow({
+      where: { id },
+      include: { modifierGroups: { include: { options: true } } },
+    })
   }
 
   private async findItemOrThrow(id: string) {

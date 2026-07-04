@@ -1,6 +1,6 @@
-import { IsArray, IsEnum, IsOptional, IsString, IsNumber, ValidateNested, IsInt, Min } from 'class-validator'
+import { IsArray, IsEnum, IsOptional, IsString, ValidateNested, IsInt, Min } from 'class-validator'
 import { Type } from 'class-transformer'
-import { OrderType } from '@prisma/client'
+import { OrderType, PaymentMethod } from '@prisma/client'
 
 export class OrderItemDto {
   @IsString()
@@ -38,6 +38,11 @@ export class CreateOrderDto {
   @IsOptional()
   contactPhone?: string
 
+  /** Set CASH for dine-in "pay when leaving" — registers payment in same request */
+  @IsEnum(PaymentMethod)
+  @IsOptional()
+  paymentMethod?: PaymentMethod
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => OrderItemDto)
@@ -47,4 +52,8 @@ export class CreateOrderDto {
 export class UpdateOrderStatusDto {
   @IsEnum(['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED'])
   status: string
+
+  @IsString()
+  @IsOptional()
+  cancelReason?: string
 }

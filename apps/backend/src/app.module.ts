@@ -12,7 +12,6 @@ import { BookingsModule } from './bookings/bookings.module'
 import { SettingsModule } from './settings/settings.module'
 import { ActivityLogModule } from './activity-log/activity-log.module'
 import { NotificationsModule } from './notifications/notifications.module'
-import { BillsModule } from './bills/bills.module'
 import { ReportsModule } from './reports/reports.module'
 import { UsersModule } from './users/users.module'
 import { LoggerMiddleware } from './common/middleware/logger.middleware'
@@ -32,7 +31,6 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware'
     SettingsModule,
     ActivityLogModule,
     NotificationsModule,
-    BillsModule,
     ReportsModule,
     UsersModule,
   ],

@@ -15,7 +15,7 @@ interface OrderSummary {
   id: string; status: string; type: string; total: number; createdAt: string; paymentStatus: string
   table?: { tableNumber: number; name?: string }
   tokenNumber?: number
-  items: { quantity: number; menuItem: { name: string } }[]
+  items: { quantity: number; menuItem: { name: string; prepTimeMins?: number } }[]
 }
 
 const TABLE_CFG: Record<string, { label: string; bg: string; text: string }> = {
@@ -25,14 +25,27 @@ const TABLE_CFG: Record<string, { label: string; bg: string; text: string }> = {
   DIRTY:        { label: 'Cleaning',   bg: '#6b7280', text: '#fff' },
 }
 
-function elapsed(createdAt: string) {
-  const mins = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m`
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`
+function formatDuration(ms: number) {
+  const s = Math.floor(Math.abs(ms) / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  if (m < 60) return `${m}m ${sec}s`
+  return `${Math.floor(m / 60)}h ${m % 60}m ${sec}s`
 }
 function elapsedMins(createdAt: string) {
   return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
+}
+function useOrderTimer(createdAt: string, estMins: number) {
+  const estMs = estMins * 60 * 1000
+  const [elapsed, setElapsed] = useState(() => Date.now() - new Date(createdAt).getTime())
+  useEffect(() => {
+    const t = setInterval(() => setElapsed(Date.now() - new Date(createdAt).getTime()), 1000)
+    return () => clearInterval(t)
+  }, [createdAt])
+  const remaining = estMs - elapsed
+  const overdue = remaining < 0
+  return { label: overdue ? `-${formatDuration(remaining)}` : `${formatDuration(remaining)} left`, overdue }
 }
 
 // ── Stat card ──────────────────────────────────────────────────────────────────
@@ -61,6 +74,51 @@ function StatCard({
         <div className="text-[11px] mt-0.5 font-medium" style={{ color: urgent ? 'var(--brand)' : 'var(--text-muted)' }}>{sub}</div>
       </div>
     </button>
+  )
+}
+
+function ActiveOrderRow({ o }: { o: OrderSummary }) {
+  const estMins = Math.max(...o.items.map(i => i.menuItem.prepTimeMins ?? 15), 15)
+  const { label: timeLabel, overdue } = useOrderTimer(o.createdAt, estMins)
+  const label = o.type === 'DINE_IN' ? `Table ${o.table?.name ?? o.table?.tableNumber}` : `Takeaway #${o.tokenNumber}`
+  const statusStyles: Record<string, React.CSSProperties> = {
+    PENDING:   { backgroundColor: 'var(--c-pending-bg)',  color: 'var(--c-pending-fg)' },
+    ACCEPTED:  { backgroundColor: 'var(--c-info-bg)',     color: 'var(--c-info-fg)' },
+    PREPARING: { backgroundColor: 'var(--c-warning-bg)',  color: 'var(--c-warning-fg)' },
+    READY:     { backgroundColor: 'var(--c-success-bg)',  color: 'var(--c-success-fg)' },
+  }
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0"
+      style={{ borderColor: 'var(--card-border)', backgroundColor: overdue ? 'var(--c-danger-bg)' : undefined }}>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{label}</span>
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={statusStyles[o.status] ?? {}}>{o.status}</span>
+        </div>
+        <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+          {o.items.slice(0, 2).map((i) => `${i.quantity}× ${i.menuItem.name}`).join(', ')}
+          {o.items.length > 2 && ` +${o.items.length - 2}`}
+        </div>
+      </div>
+      <span className="text-[10px] font-bold tabular-nums flex-shrink-0"
+        style={{ color: overdue ? 'var(--c-danger-fg)' : 'var(--text-muted)' }}>
+        {timeLabel}
+      </span>
+    </div>
+  )
+}
+
+function UrgentRow({ order }: { order: OrderSummary }) {
+  const estMins = Math.max(...order.items.map(i => i.menuItem.prepTimeMins ?? 15), 15)
+  const { label } = useOrderTimer(order.createdAt, estMins)
+  return (
+    <div className="flex items-center justify-between text-xs">
+      <span className="font-medium" style={{ color: 'var(--c-danger-fg)' }}>
+        {order.type === 'DINE_IN' ? `Table ${order.table?.name ?? order.table?.tableNumber}` : `Takeaway #${order.tokenNumber}`}
+        {' '}· {order.status}
+      </span>
+      <span className="font-bold tabular-nums" style={{ color: 'var(--c-danger-fg)' }}>{label}</span>
+    </div>
   )
 }
 
@@ -102,9 +160,11 @@ export default function Dashboard() {
   const kitchen        = orders.filter(o => ['ACCEPTED', 'PREPARING'].includes(o.status))
   const ready          = orders.filter(o => o.status === 'READY')
   const awaitingPay    = orders.filter(o => o.status === 'DELIVERED' && o.paymentStatus === 'UNPAID')
-  const urgent         = orders.filter(o =>
-    ['PENDING', 'ACCEPTED', 'PREPARING'].includes(o.status) && elapsedMins(o.createdAt) >= 15
-  )
+  const urgent         = orders.filter(o => {
+    if (!['PENDING', 'ACCEPTED', 'PREPARING'].includes(o.status)) return false
+    const estMins = Math.max(...o.items.map(i => i.menuItem.prepTimeMins ?? 15), 15)
+    return elapsedMins(o.createdAt) >= estMins
+  })
 
   const occupied = tables.filter(t => t.status === 'OCCUPIED').length
   const empty    = tables.filter(t => t.status === 'EMPTY').length
@@ -160,7 +220,7 @@ export default function Dashboard() {
     {
       label: 'In Kitchen',
       value: kitchen.length,
-      sub: kitchen.length > 0 ? `${kitchen.filter(o => elapsedMins(o.createdAt) >= 10).length} over 10 min` : 'no active orders',
+      sub: kitchen.length > 0 ? `${urgent.filter(o => ['ACCEPTED','PREPARING'].includes(o.status)).length} overdue` : 'no active orders',
       icon: <ChefHat size={16} style={{ color: '#06b6d4' }} />,
       accent: '#06b6d4',
       urgent: urgent.length > 0,
@@ -198,15 +258,7 @@ export default function Dashboard() {
             </span>
           </div>
           <div className="space-y-1.5">
-            {urgent.slice(0, 3).map(o => (
-              <div key={o.id} className="flex items-center justify-between text-xs">
-                <span className="font-medium" style={{ color: 'var(--c-danger-fg)' }}>
-                  {o.type === 'DINE_IN' ? `Table ${o.table?.name ?? o.table?.tableNumber}` : `Takeaway #${o.tokenNumber}`}
-                  {' '}· {o.status}
-                </span>
-                <span className="font-bold" style={{ color: 'var(--c-danger-fg)' }}>{elapsedMins(o.createdAt)}m</span>
-              </div>
-            ))}
+            {urgent.slice(0, 3).map(o => <UrgentRow key={o.id} order={o} />)}
             {urgent.length > 3 && <div className="text-xs" style={{ color: 'var(--text-muted)' }}>+{urgent.length - 3} more</div>}
           </div>
           <button onClick={() => router.push('/staff/orders')}
@@ -300,45 +352,7 @@ export default function Dashboard() {
               </div>
             )}
             {activeOrders.slice(0, 12).map(o => {
-              const mins = elapsedMins(o.createdAt)
-              const isUrgent = mins >= 15
-              const label = o.type === 'DINE_IN'
-                ? `Table ${o.table?.name ?? o.table?.tableNumber}`
-                : `Takeaway #${o.tokenNumber}`
-
-              const statusStyles: Record<string, React.CSSProperties> = {
-                PENDING:   { backgroundColor: 'var(--c-pending-bg)',  color: 'var(--c-pending-fg)' },
-                ACCEPTED:  { backgroundColor: 'var(--c-info-bg)',     color: 'var(--c-info-fg)' },
-                PREPARING: { backgroundColor: 'var(--c-warning-bg)',  color: 'var(--c-warning-fg)' },
-                READY:     { backgroundColor: 'var(--c-success-bg)',  color: 'var(--c-success-fg)' },
-              }
-
-              return (
-                <div key={o.id}
-                  className="flex items-center gap-3 px-4 py-2.5 border-b last:border-b-0"
-                  style={{
-                    borderColor: 'var(--card-border)',
-                    backgroundColor: isUrgent ? 'var(--c-danger-bg)' : undefined,
-                  }}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{label}</span>
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                        style={statusStyles[o.status] ?? {}}>
-                        {o.status}
-                      </span>
-                    </div>
-                    <div className="text-[10px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
-                      {o.items.slice(0, 2).map(i => `${i.quantity}× ${i.menuItem.name}`).join(', ')}
-                      {o.items.length > 2 && ` +${o.items.length - 2}`}
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold flex-shrink-0"
-                    style={{ color: isUrgent ? 'var(--c-danger-fg)' : 'var(--text-muted)' }}>
-                    {elapsed(o.createdAt)}
-                  </span>
-                </div>
-              )
+              return <ActiveOrderRow key={o.id} o={o} />
             })}
           </div>
 

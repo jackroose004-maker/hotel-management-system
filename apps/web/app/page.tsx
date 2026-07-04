@@ -1,13 +1,15 @@
 'use client'
 import Link from 'next/link'
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import Lenis from 'lenis'
-import { UtensilsCrossed, Star, Clock, ArrowRight, Phone, MapPin, ChevronDown, CalendarDays, User } from 'lucide-react'
+import { UtensilsCrossed, Star, Clock, ArrowRight, Phone, MapPin, ChevronDown, CalendarDays, User, ShoppingCart, Check } from 'lucide-react'
 import AccountNavLink from '@/components/AccountNavLink'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
+import { useCartStore } from '@/store/cart'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
@@ -17,8 +19,9 @@ const FALLBACK_POSTER = 'https://images.unsplash.com/photo-1414235077428-338989a
 interface MenuItem { id: string; name: string; description?: string; price: string; prepTimeMins: number; imageUrl?: string }
 interface HeroConfig {
   line1?: string; line2?: string; subtext?: string; videoUrl?: string; posterUrl?: string
+  heroMediaType?: 'video' | 'image'; heroImageUrl?: string
   ctaLabel?: string; ctaSecondaryLabel?: string; badgeText?: string
-  dishesHeadline?: string; dishesSubtext?: string
+  dishesHeadline?: string; dishesSubtext?: string; signatureDishIds?: string[]
   customDishes?: Array<{ name: string; desc: string; price: string; time: string; img: string }>
   relayTagline?: string; relayHeadline?: string; relayHeadlinePart2?: string
   ambienceTagline?: string; ambienceHeadline?: string; ambienceHeadlinePart2?: string; ambienceDesc?: string
@@ -32,12 +35,12 @@ interface RestaurantSettings {
 }
 
 const DISHES_FALLBACK = [
-  { name: 'Malabar Biriyani',  desc: 'Fragrant basmati with tender chicken & caramelised onions', price: '55', time: 25, img: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=700&q=80' },
-  { name: 'Masala Dosa',       desc: 'Crispy golden crepe, spiced potato filling, fresh chutneys',  price: '22', time: 12, img: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=700&q=80' },
-  { name: 'Appam & Stew',      desc: 'Lacy rice pancakes with velvety coconut milk stew',           price: '28', time: 15, img: 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=700&q=80' },
-  { name: 'Kerala Fish Curry', desc: 'Spiced red curry with wild-caught fish & kudampuli',           price: '48', time: 20, img: 'https://images.unsplash.com/photo-1626508035297-0e8a5f53700b?w=700&q=80' },
-  { name: 'Prawn Fry',         desc: 'Crispy prawns in Kerala masala with fresh curry leaves',      price: '65', time: 18, img: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=700&q=80' },
-  { name: 'Puttu & Kadala',    desc: 'Steamed rice cylinders with black chickpea curry',            price: '22', time: 10, img: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=700&q=80' },
+  { name: 'Malabar Biriyani',  desc: 'Fragrant basmati with tender chicken & caramelised onions', price: '55', time: 25, img: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=700&q=80',  menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Masala Dosa',       desc: 'Crispy golden crepe, spiced potato filling, fresh chutneys',  price: '22', time: 12, img: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=700&q=80', menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Appam & Stew',      desc: 'Lacy rice pancakes with velvety coconut milk stew',           price: '28', time: 15, img: 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=700&q=80', menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Kerala Fish Curry', desc: 'Spiced red curry with wild-caught fish & kudampuli',           price: '48', time: 20, img: 'https://images.unsplash.com/photo-1626508035297-0e8a5f53700b?w=700&q=80', menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Prawn Fry',         desc: 'Crispy prawns in Kerala masala with fresh curry leaves',      price: '65', time: 18, img: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=700&q=80',  menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Puttu & Kadala',    desc: 'Steamed rice cylinders with black chickpea curry',            price: '22', time: 10, img: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=700&q=80',  menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
 ]
 
 const SHOWCASE_FALLBACK = [
@@ -128,14 +131,125 @@ function FoodShowcase({ items }: { items: { name: string; img: string }[] }) {
   )
 }
 
-// ── Dish Card — 3D float + rich hover ────────────────────────────────────────
-function DishCard({ name, desc, price, time, img, index }: {
+// ── Mobile signature gallery — editorial swipe, hero-style ───────────────────
+function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
+  dishes: typeof DISHES_FALLBACK
+  mutedColor: string
+  dotInactive: string
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [active, setActive] = useState(0)
+  const router = useRouter()
+
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el || !el.children.length) return
+    const child = el.children[0] as HTMLElement
+    const slideW = child.offsetWidth + 16
+    const idx = Math.round(el.scrollLeft / slideW)
+    setActive(Math.max(0, Math.min(idx, dishes.length - 1)))
+  }, [dishes.length])
+
+  const scrollTo = (i: number) => {
+    const el = scrollRef.current
+    if (!el || !el.children[i]) return
+    const child = el.children[i] as HTMLElement
+    el.scrollTo({ left: child.offsetLeft - 16, behavior: 'smooth' })
+    setActive(i)
+  }
+
+  return (
+    <div>
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-1 -mx-1 px-1"
+        style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
+      >
+        {dishes.map((d, i) => (
+          <div
+            key={d.name}
+            className="snap-center flex-shrink-0 w-[86vw] max-w-[360px]"
+            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              if (d.menuItemId) {
+                router.push(`/menu?open=${d.menuItemId}`)
+              } else {
+                router.push('/menu')
+              }
+            }}
+          >
+            <div className="relative overflow-hidden rounded-[28px] border border-white/[0.08] shadow-[0_24px_60px_rgba(0,0,0,0.55)]" style={{ aspectRatio: '3/4.2' }}>
+              <img
+                src={d.img}
+                alt={d.name}
+                className="absolute inset-0 w-full h-full object-cover"
+                style={{ filter: 'brightness(0.72) saturate(0.9)' }}
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-black/10" />
+              <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-transparent" />
+
+              <div className="absolute top-5 left-5 right-5 flex items-start justify-between gap-3">
+                <span className="text-[10px] font-bold tracking-[0.22em] uppercase text-amber-400/90">
+                  Signature · {String(i + 1).padStart(2, '0')}
+                </span>
+              </div>
+
+              <div className="absolute bottom-0 left-0 right-0 p-5 pt-16">
+                <h3 className="text-white font-black text-[1.65rem] leading-[1.08] tracking-tight mb-2">
+                  {d.name}
+                </h3>
+                <p className="text-white/55 text-sm leading-relaxed line-clamp-2 mb-5">
+                  {d.desc}
+                </p>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-1.5 text-white/35 text-xs">
+                    <Clock size={11} /> {d.time} min
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 text-[#f59e0b] text-xs font-bold">
+                    Taste this <ArrowRight size={12} />
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-center gap-2 mt-6">
+        {dishes.map((_, i) => (
+          <button
+            key={i}
+            type="button"
+            aria-label={`Go to dish ${i + 1}`}
+            onClick={() => scrollTo(i)}
+            className="h-1.5 rounded-full transition-all duration-300"
+            style={{
+              width: i === active ? 24 : 6,
+              backgroundColor: i === active ? '#f59e0b' : dotInactive,
+            }}
+          />
+        ))}
+      </div>
+      <p className="text-center text-[11px] mt-3 tracking-wide" style={{ color: mutedColor }}>Swipe to explore</p>
+    </div>
+  )
+}
+
+// ── Dish Card — 3D float + rich hover (desktop) ─────────────────────────────
+function DishCard({ name, desc, price, time, img, index, menuItemId, basePrice }: {
   name: string; desc: string; price: string; time: number; img: string; index?: number
+  menuItemId?: string; basePrice?: number
 }) {
   const cardRef  = useRef<HTMLDivElement>(null)
   const imgRef   = useRef<HTMLImageElement>(null)
   const [imgFailed, setImgFailed] = useState(false)
   const [hovered,   setHovered]   = useState(false)
+  const router = useRouter()
+
+  const handleClick = useCallback(() => {
+    router.push(menuItemId ? `/menu?open=${menuItemId}` : '/menu')
+  }, [menuItemId, router])
 
   const onMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const el = cardRef.current; if (!el) return
@@ -146,7 +260,6 @@ function DishCard({ name, desc, price, time, img, index }: {
     el.style.transform = `perspective(900px) rotateY(${x * 18}deg) rotateX(${-y * 12}deg) scale(1.06) translateY(-10px)`
     el.style.transition = 'transform 0.1s ease, box-shadow 0.1s ease'
     el.style.boxShadow = `0 32px 64px rgba(0,0,0,0.7), 0 0 0 1.5px rgba(245,158,11,0.5), ${x * 12}px ${y * -12}px 40px rgba(245,158,11,0.14)`
-    // Subtle image parallax counter-move
     if (imgRef.current) {
       imgRef.current.style.transform = `scale(1.1) translate(${x * -8}px, ${y * -6}px)`
       imgRef.current.style.transition = 'transform 0.15s ease'
@@ -175,7 +288,7 @@ function DishCard({ name, desc, price, time, img, index }: {
   const floatDelay = (index ?? 0) * 0.4
 
   return (
-    <div ref={cardRef} className="dish-card"
+    <div ref={cardRef} className="dish-card" data-index={index ?? 0}
       style={{
         borderRadius: 20,
         backgroundColor: '#0f0f0f',
@@ -183,14 +296,13 @@ function DishCard({ name, desc, price, time, img, index }: {
         boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
         transformOrigin: 'center bottom',
         willChange: 'transform, box-shadow',
-        animation: `cardFloat3d 6s ease-in-out infinite ${floatDelay}s`,
+        animationDelay: `${floatDelay}s`,
         cursor: 'pointer',
         overflow: 'hidden',
         position: 'relative',
       }}
       onMouseMove={onMove} onMouseEnter={onEnter} onMouseLeave={onLeave}>
 
-      {/* Hover gold shimmer layer */}
       <div style={{
         position: 'absolute', inset: 0, zIndex: 4, pointerEvents: 'none',
         opacity: hovered ? 1 : 0,
@@ -198,8 +310,7 @@ function DishCard({ name, desc, price, time, img, index }: {
         background: 'linear-gradient(135deg, rgba(245,158,11,0.07) 0%, transparent 55%, rgba(245,158,11,0.04) 100%)',
       }} />
 
-      <Link href="/menu" style={{ textDecoration: 'none', display: 'block' }}>
-        {/* Image area */}
+      <div onClick={handleClick} style={{ display: 'block' }}>
         <div style={{ aspectRatio: '16/10', overflow: 'hidden', position: 'relative' }}>
           {!imgFailed
             ? <img ref={imgRef} src={img} alt={name}
@@ -211,10 +322,8 @@ function DishCard({ name, desc, price, time, img, index }: {
               </div>
           }
 
-          {/* Always-on gradient */}
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.1) 50%, transparent 100%)' }} />
 
-          {/* Slide-up CTA overlay on hover */}
           <div style={{
             position: 'absolute', inset: 0, zIndex: 3,
             display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
@@ -234,18 +343,8 @@ function DishCard({ name, desc, price, time, img, index }: {
             </div>
           </div>
 
-          {/* Price badge */}
-          <div style={{
-            position: 'absolute', top: 14, right: 14, zIndex: 5,
-            backgroundColor: '#f59e0b', color: '#000',
-            fontWeight: 800, fontSize: 12, padding: '4px 12px', borderRadius: 20,
-            transform: hovered ? 'scale(1.1)' : 'scale(1)',
-            transition: 'transform 0.3s cubic-bezier(0.34,1.56,0.64,1)',
-            boxShadow: hovered ? '0 4px 16px rgba(245,158,11,0.5)' : 'none',
-          }}>AED {price}</div>
         </div>
 
-        {/* Card body */}
         <div style={{ padding: '16px 18px 18px', position: 'relative', zIndex: 2 }}>
           <h3 style={{
             color: '#f5f3ef', fontWeight: 700, fontSize: 15, lineHeight: 1.3, marginBottom: 6,
@@ -257,12 +356,83 @@ function DishCard({ name, desc, price, time, img, index }: {
             <Clock size={10} /> {time} min
           </div>
         </div>
-      </Link>
+      </div>
     </div>
   )
 }
 
-// ── Flip Review Card — front: quote / back: full review ──────────────────────
+// ── Mobile reviews — compact carousel, not dominating marquees ───────────────
+function ReviewsMobile({ active, onSelect, dark, pal }: {
+  active: number
+  onSelect: (i: number) => void
+  dark: boolean
+  pal: { text: string; muted: string }
+}) {
+  const t = TESTIMONIALS[active]
+  const cardBg = dark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.85)'
+  const border = dark ? 'rgba(255,255,255,0.08)' : 'rgba(245,158,11,0.15)'
+
+  return (
+    <div className="px-4">
+      <div
+        key={active}
+        className="mx-auto max-w-md rounded-[22px] border p-5 shadow-lg"
+        style={{
+          backgroundColor: cardBg,
+          borderColor: border,
+          boxShadow: dark ? '0 16px 40px rgba(0,0,0,0.35)' : '0 12px 32px rgba(0,0,0,0.06)',
+          animation: 'fadeUp 0.45s ease both',
+        }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex gap-0.5">
+            {[...Array(t.stars)].map((_, si) => (
+              <Star key={si} size={11} style={{ color: '#f59e0b', fill: '#f59e0b' }} />
+            ))}
+          </div>
+          <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: 'rgba(245,158,11,0.65)' }}>
+            {String(active + 1).padStart(2, '0')} / {String(TESTIMONIALS.length).padStart(2, '0')}
+          </span>
+        </div>
+
+        <p className="text-sm leading-relaxed italic mb-4" style={{ color: pal.text }}>
+          &ldquo;{t.text}&rdquo;
+        </p>
+
+        <div className="flex items-center gap-3 pt-3 border-t" style={{ borderColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}>
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black text-black flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg, #f59e0b, #fbbf24)' }}
+          >
+            {t.name[0]}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold truncate" style={{ color: pal.text }}>{t.name}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(245,158,11,0.75)' }}>Verified guest</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center gap-2 mt-5">
+        {TESTIMONIALS.map((_, i) => (
+          <button
+            key={i}
+            type="button"
+            aria-label={`Review ${i + 1}`}
+            onClick={() => onSelect(i)}
+            className="h-1.5 rounded-full transition-all duration-300"
+            style={{
+              width: i === active ? 22 : 6,
+              backgroundColor: i === active ? '#f59e0b' : (dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'),
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Flip Review Card — front: quote / back: full review (desktop) ─────────────
 function ReviewCard({ t, i, dark }: {
   t: typeof TESTIMONIALS[0]; i: number; dark: boolean
 }) {
@@ -377,6 +547,7 @@ export default function LandingPage() {
   const [reviewIdx,  setReviewIdx]  = useState(0)
   const [scrolled,   setScrolled]   = useState(false)
   const [navOpen,    setNavOpen]    = useState(false)
+  const [hasActiveOrder, setHasActiveOrder] = useState(false)
 
   const heroRef        = useRef<HTMLDivElement>(null)
   const videoRef       = useRef<HTMLVideoElement>(null)
@@ -391,6 +562,14 @@ export default function LandingPage() {
   const ambienceRef    = useRef<HTMLDivElement>(null)
   const reviewsRef     = useRef<HTMLDivElement>(null)
   const ctaRef         = useRef<HTMLDivElement>(null)
+
+  // Check if guest has active orders in localStorage — show "Track Order" pill
+  useEffect(() => {
+    try {
+      const ids: string[] = JSON.parse(localStorage.getItem('almanzil_order_ids') || '[]')
+      if (ids.length > 0) setHasActiveOrder(true)
+    } catch {}
+  }, [])
 
   // Smooth scroll
   useEffect(() => {
@@ -438,13 +617,7 @@ export default function LandingPage() {
   useEffect(() => {
     const kill = () => ScrollTrigger.getAll().forEach(t => t.kill())
 
-    // ── Hero video parallax
-    if (videoRef.current && heroRef.current) {
-      gsap.to(videoRef.current, {
-        scale: 1.12, yPercent: 16, ease: 'none',
-        scrollTrigger: { trigger: heroRef.current, start: 'top top', end: 'bottom top', scrub: true },
-      })
-    }
+    // No parallax on hero video — it caused a "drifting away" feeling while still in the hero
 
     // ── Hero entrance
     if (heroBadgeRef.current) gsap.fromTo(heroBadgeRef.current, { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.7, delay: 0.3, ease: 'power3.out' })
@@ -510,25 +683,32 @@ export default function LandingPage() {
   }, [])
 
   useEffect(() => {
-    fetch(`${API}/settings`).then(r => r.json())
-      .then(j => {
-        const s = j?.data ?? j
-        if (s?.restaurantName) {
-          setCfg(s)
-          const cd = s?.heroConfig?.customDishes
-          if (cd?.length >= 1) setDishes(cd.map((d: any) => ({ ...d, time: Number(d.time) || 15 })))
+    // Fetch both in parallel, then apply: signatureDishIds (pinned picks) > top-with-image (auto)
+    Promise.all([
+      fetch(`${API}/settings`).then(r => r.json()).catch(() => null),
+      fetch(`${API}/menu/items`).then(r => r.json()).catch(() => null),
+    ]).then(([settingsJson, menuJson]) => {
+      const s = settingsJson?.data ?? settingsJson
+      if (s?.restaurantName) setCfg(s)
+
+      const items: MenuItem[] = menuJson?.data ?? menuJson ?? []
+      const withImg = items.filter(i => i.imageUrl)
+      if (withImg.length >= 3) setShowcase(withImg.slice(0, 6).map(i => ({ name: i.name, img: i.imageUrl! })))
+
+      const pinnedIds: string[] | undefined = s?.heroConfig?.signatureDishIds
+      if (pinnedIds?.length) {
+        // Use admin-selected dishes in the order they were chosen, skip any whose ID is gone from menu
+        const byId = Object.fromEntries(withImg.map(i => [i.id, i]))
+        const pinned = pinnedIds.map(id => byId[id]).filter(Boolean)
+        if (pinned.length) {
+          setDishes(pinned.map(i => ({ name: i.name, desc: i.description ?? '', price: i.price, time: i.prepTimeMins, img: i.imageUrl!, menuItemId: i.id, basePrice: Number(i.price) })))
+          return
         }
-      }).catch(() => {})
-    fetch(`${API}/menu/items`).then(r => r.json())
-      .then(j => {
-        const items: MenuItem[] = j?.data ?? j ?? []
-        const withImg = items.filter(i => i.imageUrl)
-        if (withImg.length >= 3) setShowcase(withImg.slice(0, 6).map(i => ({ name: i.name, img: i.imageUrl! })))
-        // Only use API dishes if admin hasn't set custom dishes in heroConfig
-        const top = withImg.slice(0, 6)
-        if (top.length >= 4) setDishes(top.map(i => ({ name: i.name, desc: i.description ?? '', price: i.price, time: i.prepTimeMins, img: i.imageUrl! })))
-      }).catch(() => {})
-    // If heroConfig has custom dishes, those override API dishes — applied after settings load
+      }
+      // Auto: top items that have images
+      const top = withImg.slice(0, 6)
+      if (top.length >= 4) setDishes(top.map(i => ({ name: i.name, desc: i.description ?? '', price: i.price, time: i.prepTimeMins, img: i.imageUrl!, menuItemId: i.id, basePrice: Number(i.price) })))
+    })
   }, [])
 
   return (
@@ -560,6 +740,17 @@ export default function LandingPage() {
               onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.62)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
               Menu
             </Link>
+
+            {/* Track Order — shown when guest has active orders in localStorage */}
+            {hasActiveOrder && (
+              <Link href="/menu"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 animate-pulse"
+                style={{ backgroundColor: 'rgba(245,158,11,0.18)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(245,158,11,0.28)'; e.currentTarget.style.animationPlayState = 'paused' }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(245,158,11,0.18)'; e.currentTarget.style.animationPlayState = 'running' }}>
+                🔴 Track Order
+              </Link>
+            )}
 
             {/* Reserve — bordered pill with calendar icon, clearly a booking action */}
             <Link href="/book"
@@ -665,6 +856,7 @@ export default function LandingPage() {
               <nav className="flex-1 p-5 space-y-1">
                 {[
                   { href: '/menu',    label: 'Menu',         icon: '🍽️' },
+                  ...(hasActiveOrder ? [{ href: '/menu?track=1', label: 'Track Order', icon: '🔴' }] : []),
                   { href: '/book',    label: 'Book a Table', icon: '📅' },
                   { href: token ? '/account' : '/login', label: token && user ? user.name?.split(' ')[0] ?? 'My Account' : 'Sign In', icon: '👤' },
                 ].map(n => (
@@ -703,11 +895,24 @@ export default function LandingPage() {
       ══════════════════════════════════════ */}
       <section ref={heroRef} className="relative flex flex-col items-center justify-center overflow-hidden" style={{ height: '100svh', minHeight: 680 }}>
         <div className="absolute inset-0 overflow-hidden">
-          <video ref={videoRef} autoPlay muted loop playsInline poster={FALLBACK_POSTER}
-            className="w-full h-full object-cover"
-            style={{ opacity: 0.5, filter: 'saturate(0.7) brightness(0.85)', transformOrigin: 'center center', willChange: 'transform' }}>
-            <source src={cfg.heroConfig?.videoUrl || FALLBACK_VIDEO} type="video/mp4" />
-          </video>
+          {cfg.heroConfig?.heroMediaType === 'image' ? (
+            <img
+              src={cfg.heroConfig.heroImageUrl || FALLBACK_POSTER}
+              alt="Hero background"
+              className="w-full h-full object-cover"
+              style={{ opacity: 0.5, filter: 'saturate(0.7) brightness(0.85)' }}
+            />
+          ) : (
+            <video
+              key={cfg.heroConfig?.videoUrl || FALLBACK_VIDEO}
+              ref={videoRef}
+              src={cfg.heroConfig?.videoUrl || FALLBACK_VIDEO}
+              autoPlay muted loop playsInline
+              poster={cfg.heroConfig?.posterUrl || FALLBACK_POSTER}
+              className="w-full h-full object-cover"
+              style={{ opacity: 0.5, filter: 'saturate(0.7) brightness(0.85)', transformOrigin: 'center center', willChange: 'transform' }}
+            />
+          )}
         </div>
         <div className="absolute inset-0" style={{ background: 'linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.1) 45%, rgba(0,0,0,0.4) 75%, rgba(0,0,0,0.98) 100%)' }} />
 
@@ -887,32 +1092,28 @@ export default function LandingPage() {
       {/* ══════════════════════════════════════
           SIGNATURE DISHES
       ══════════════════════════════════════ */}
-      <section style={{ backgroundColor: pal.bg, padding: 'clamp(3rem,8vh,6rem) clamp(1.5rem,6vw,8rem)' }}>
-        <div ref={dishHeadRef} className="flex items-end justify-between mb-10 gap-4">
+      <section className="px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)]" style={{ backgroundColor: pal.bg, paddingTop: 'clamp(3rem,8vh,6rem)', paddingBottom: 'clamp(3rem,8vh,6rem)' }}>
+        <div ref={dishHeadRef} className="flex flex-col sm:flex-row sm:items-end justify-between mb-6 md:mb-10 gap-3">
           <div>
             <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 10 }}>{cfg.heroConfig?.dishesSubtext || 'Signature Dishes'}</p>
-            <h2 style={{ color: pal.text, fontSize: 'clamp(1.8rem,4vw,3rem)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.025em' }}>
+            <h2 style={{ color: pal.text, fontSize: 'clamp(1.6rem,7vw,3rem)', fontWeight: 900, lineHeight: 1.12, letterSpacing: '-0.025em' }}>
               {cfg.heroConfig?.dishesHeadline || "Dishes you'll dream about."}
             </h2>
           </div>
-          <Link href="/menu" className="flex items-center gap-2 text-sm font-semibold flex-shrink-0"
+          <Link href="/menu" className="flex items-center gap-2 text-sm font-semibold flex-shrink-0 self-start sm:self-auto"
             style={{ color: '#f59e0b' }}>
             Full Menu <ArrowRight size={14} />
           </Link>
         </div>
         <div ref={dishGridRef}>
-          {/* Mobile: horizontal scroll snap */}
-          <div className="md:hidden -mx-4 px-4">
-            <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory" style={{ scrollbarWidth: 'none' }}>
-              {dishes.map((d, i) => (
-                <div key={d.name} className="snap-start flex-shrink-0" style={{ width: 'clamp(240px, 72vw, 300px)' }}>
-                  <DishCard {...d} index={i} />
-                </div>
-              ))}
-            </div>
+          <div className="md:hidden">
+            <SignatureDishesMobile
+              dishes={dishes}
+              mutedColor={pal.muted}
+              dotInactive={dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)'}
+            />
           </div>
-          {/* Desktop: grid */}
-          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-4">
             {dishes.map((d, i) => <DishCard key={d.name} {...d} index={i} />)}
           </div>
         </div>
@@ -1038,13 +1239,12 @@ export default function LandingPage() {
       {/* ══════════════════════════════════════
           TESTIMONIALS — flip-card relay
       ══════════════════════════════════════ */}
-      <section ref={reviewsRef} style={{ backgroundColor: dark ? '#050508' : '#f5f1eb', padding: 'clamp(4rem,9vh,6rem) 0', overflow: 'hidden', position: 'relative' }}>
+      <section ref={reviewsRef} className="py-12 md:py-[clamp(4rem,9vh,6rem)] overflow-hidden relative" style={{ backgroundColor: dark ? '#050508' : '#f5f1eb' }}>
 
-        {/* Ambient blobs */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        {/* Ambient blobs — desktop only */}
+        <div className="hidden md:block absolute inset-0 pointer-events-none overflow-hidden">
           <div style={{ position: 'absolute', width: 600, height: 600, borderRadius: '50%', top: '-20%', right: '-10%', background: 'radial-gradient(circle, rgba(245,158,11,0.07) 0%, transparent 65%)', animation: 'orbFloat2 22s ease-in-out infinite' }} />
           <div style={{ position: 'absolute', width: 450, height: 450, borderRadius: '50%', bottom: '-10%', left: '-8%', background: 'radial-gradient(circle, rgba(245,158,11,0.06) 0%, transparent 65%)', animation: 'orbFloat1 28s ease-in-out infinite' }} />
-          {/* Sparkle dots */}
           {([
             { top: '15%', left: '6%',  delay: '0s',   size: 4 },
             { top: '70%', left: '4%',  delay: '1.2s', size: 3 },
@@ -1063,112 +1263,204 @@ export default function LandingPage() {
         </div>
 
         {/* Header */}
-        <div className="reviews-head text-center mb-12" style={{ padding: '0 clamp(1.5rem,6vw,8rem)', position: 'relative', zIndex: 1 }}>
-          <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 12 }}>Guest Reviews</p>
-          <h2 style={{ color: pal.text, fontSize: 'clamp(2rem,4.5vw,3rem)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.05 }}>
+        <div className="reviews-head text-center mb-6 md:mb-12 px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)] relative z-[1]">
+          <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 10 }}>Guest Reviews</p>
+          <h2 style={{ color: pal.text, fontSize: 'clamp(1.55rem,6.5vw,3rem)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.08 }}>
             {cfg.heroConfig?.reviewsHeadline || 'Loved by every table'}
           </h2>
-          <p style={{ color: pal.muted, fontSize: 13, marginTop: 10 }}>Tap any card to read the full review</p>
+          <p className="hidden md:block" style={{ color: pal.muted, fontSize: 13, marginTop: 10 }}>Tap any card to read the full review</p>
         </div>
 
-        {/* Relay strip 1 → */}
-        <div style={{ position: 'relative', marginBottom: 16, zIndex: 1 }}>
-          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to right, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
-          <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to left, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
-          <div className="review-relay-strip" style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 38s linear infinite', padding: '8px 16px' }}
-            onMouseEnter={e => (e.currentTarget.style.animationPlayState = 'paused')}
-            onMouseLeave={e => (e.currentTarget.style.animationPlayState = 'running')}>
-            {[...TESTIMONIALS, ...TESTIMONIALS, ...TESTIMONIALS].map((t, i) => (
-              <ReviewCard key={i} t={t} i={i % TESTIMONIALS.length} dark={dark} />
-            ))}
+        {/* Mobile — single compact carousel */}
+        <div className="md:hidden relative z-[1]">
+          <ReviewsMobile active={reviewIdx} onSelect={setReviewIdx} dark={dark} pal={pal} />
+        </div>
+
+        {/* Desktop — dual marquee strips */}
+        <div className="hidden md:block">
+          <div style={{ position: 'relative', marginBottom: 16, zIndex: 1 }}>
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to right, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
+            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to left, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
+            <div className="review-relay-strip" style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 38s linear infinite', padding: '8px 16px' }}
+              onMouseEnter={e => (e.currentTarget.style.animationPlayState = 'paused')}
+              onMouseLeave={e => (e.currentTarget.style.animationPlayState = 'running')}>
+              {[...TESTIMONIALS, ...TESTIMONIALS, ...TESTIMONIALS].map((t, i) => (
+                <ReviewCard key={i} t={t} i={i % TESTIMONIALS.length} dark={dark} />
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Relay strip 2 ← reverse */}
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to right, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
-          <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to left, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
-          <div style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 44s linear infinite reverse', padding: '8px 16px 4px' }}
-            onMouseEnter={e => (e.currentTarget.style.animationPlayState = 'paused')}
-            onMouseLeave={e => (e.currentTarget.style.animationPlayState = 'running')}>
-            {[...TESTIMONIALS.slice().reverse(), ...TESTIMONIALS.slice().reverse(), ...TESTIMONIALS.slice().reverse()].map((t, i) => (
-              <ReviewCard key={i} t={t} i={i % TESTIMONIALS.length} dark={dark} />
-            ))}
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to right, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
+            <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to left, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
+            <div style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 44s linear infinite reverse', padding: '8px 16px 4px' }}
+              onMouseEnter={e => (e.currentTarget.style.animationPlayState = 'paused')}
+              onMouseLeave={e => (e.currentTarget.style.animationPlayState = 'running')}>
+              {[...TESTIMONIALS.slice().reverse(), ...TESTIMONIALS.slice().reverse(), ...TESTIMONIALS.slice().reverse()].map((t, i) => (
+                <ReviewCard key={i} t={t} i={i % TESTIMONIALS.length} dark={dark} />
+              ))}
+            </div>
           </div>
         </div>
 
         {/* Rating row */}
-        <div className="reviews-head flex items-center justify-center gap-3 mt-10" style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ display: 'flex', gap: 3 }}>
-            {[...Array(5)].map((_, i) => <Star key={i} size={13} style={{ color: '#f59e0b', fill: '#f59e0b' }} />)}
+        <div className="reviews-head flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-3 mt-6 md:mt-10 relative z-[1]">
+          <div className="flex items-center gap-2">
+            <div style={{ display: 'flex', gap: 3 }}>
+              {[...Array(5)].map((_, i) => <Star key={i} size={12} style={{ color: '#f59e0b', fill: '#f59e0b' }} />)}
+            </div>
+            <span style={{ color: pal.text, fontWeight: 800, fontSize: 14 }}>4.9</span>
           </div>
-          <span style={{ color: pal.text, fontWeight: 800, fontSize: 14 }}>4.9</span>
-          <span style={{ color: pal.muted, fontSize: 13 }}>· Based on 200+ reviews</span>
+          <span style={{ color: pal.muted, fontSize: 12 }}>Based on 200+ reviews</span>
         </div>
       </section>
 
       {/* ── Footer ── */}
       <footer style={{ backgroundColor: '#060606', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-        {/* Top strip */}
-        <div style={{ padding: 'clamp(2.5rem,5vh,3.5rem) clamp(1.5rem,6vw,8rem)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
-          className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-10">
+        {/* Mobile quick actions */}
+        <div className="md:hidden px-4 pt-8 pb-6 border-b border-white/[0.05]">
+          <div className="grid grid-cols-2 gap-2.5 mb-2.5">
+            <Link href="/menu"
+              className="col-span-2 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-bold no-underline"
+              style={{ backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 8px 28px rgba(245,158,11,0.28)' }}>
+              Order Now <ArrowRight size={14} />
+            </Link>
+            <Link href="/book"
+              className="flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold no-underline border border-white/10"
+              style={{ color: 'rgba(255,255,255,0.75)', backgroundColor: 'rgba(255,255,255,0.03)' }}>
+              <CalendarDays size={13} style={{ color: '#f59e0b' }} /> Book Table
+            </Link>
+            <a href={`https://maps.google.com/?q=${encodeURIComponent(cfg.address ?? 'Dubai UAE')}`}
+              target="_blank" rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold no-underline border border-white/10"
+              style={{ color: 'rgba(255,255,255,0.75)', backgroundColor: 'rgba(255,255,255,0.03)' }}>
+              <MapPin size={13} style={{ color: '#f59e0b' }} /> Directions
+            </a>
+          </div>
+        </div>
 
-          {/* Brand */}
-          <div style={{ maxWidth: 300 }}>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: '#f59e0b', boxShadow: '0 4px 16px rgba(245,158,11,0.3)' }}>
-                <UtensilsCrossed size={15} className="text-black" />
+        {/* Main footer body */}
+        <div className="px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)] py-8 md:py-[clamp(2.5rem,5vh,3.5rem)] border-b border-white/[0.05]">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8 lg:gap-10">
+
+            {/* Brand — centered on mobile */}
+            <div className="w-full lg:max-w-[300px] text-center lg:text-left">
+              <div className="flex items-center gap-3 mb-3 justify-center lg:justify-start">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: '#f59e0b', boxShadow: '0 4px 16px rgba(245,158,11,0.3)' }}>
+                  <UtensilsCrossed size={16} className="text-black" />
+                </div>
+                <div className="text-left">
+                  <div className="font-black text-sm tracking-tight" style={{ color: '#f5f3ef' }}>{cfg.restaurantName}</div>
+                  <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{cfg.tagline ?? 'Kerala Cuisine'}</div>
+                </div>
+              </div>
+              <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 12, lineHeight: 1.7 }}>
+                Authentic Kerala flavours, crafted fresh and served with warmth.
+              </p>
+            </div>
+
+            {/* Mobile: visit cards */}
+            <div className="md:hidden w-full grid grid-cols-1 gap-2.5">
+              <a href={`https://maps.google.com/?q=${encodeURIComponent(cfg.address ?? 'Dubai UAE')}`}
+                target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3.5 rounded-2xl border border-white/[0.07] no-underline"
+                style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
+                  <MapPin size={14} style={{ color: '#f59e0b' }} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 2 }}>Location</p>
+                  <p className="text-sm truncate" style={{ color: 'rgba(255,255,255,0.7)' }}>{cfg.address ?? 'Dubai, UAE'}</p>
+                </div>
+                <ArrowRight size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
+              </a>
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="flex items-center gap-2.5 p-3.5 rounded-2xl border border-white/[0.07]"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
+                    <Clock size={14} style={{ color: '#f59e0b' }} />
+                  </div>
+                  <div>
+                    <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>Hours</p>
+                    <p className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.7)' }}>{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
+                  </div>
+                </div>
+                {cfg.phone ? (
+                  <a href={`tel:${cfg.phone.replace(/\s/g, '')}`}
+                    className="flex items-center gap-2.5 p-3.5 rounded-2xl border border-white/[0.07] no-underline"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
+                      <Phone size={14} style={{ color: '#f59e0b' }} />
+                    </div>
+                    <div className="min-w-0">
+                      <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>Call</p>
+                      <p className="text-xs font-semibold truncate" style={{ color: 'rgba(255,255,255,0.7)' }}>{cfg.phone}</p>
+                    </div>
+                  </a>
+                ) : (
+                  <div className="flex items-center gap-2.5 p-3.5 rounded-2xl border border-white/[0.07]"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
+                      <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    </div>
+                    <div>
+                      <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>Status</p>
+                      <p className="text-xs font-semibold text-green-400">Open now</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Nav columns — 2-col grid on mobile, row on desktop */}
+            <div className="w-full lg:w-auto grid grid-cols-2 md:flex md:flex-wrap gap-6 md:gap-12">
+              <div>
+                <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 12 }}>Explore</p>
+                {[{ href: '/menu', l: 'Menu' }, { href: '/book', l: 'Reserve a Table' }].map(n => (
+                  <Link key={n.href} href={n.href} className="block mb-2.5 text-sm transition-colors py-0.5"
+                    style={{ color: 'rgba(255,255,255,0.45)' }}
+                    onMouseEnter={e => { e.currentTarget.style.color = '#f59e0b' }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.45)' }}>
+                    {n.l}
+                  </Link>
+                ))}
               </div>
               <div>
-                <div className="font-black text-sm tracking-tight" style={{ color: '#f5f3ef' }}>{cfg.restaurantName}</div>
-                <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{cfg.tagline ?? 'Kerala Cuisine'}</div>
+                <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 12 }}>Account</p>
+                {[
+                  { href: token && user ? '/account' : '/login', l: token && user ? user.name?.split(' ')[0] ?? 'My Account' : 'Sign In' },
+                  { href: '/staff/login', l: 'Staff Portal' },
+                ].map(n => (
+                  <Link key={n.href} href={n.href} className="block mb-2.5 text-sm transition-colors py-0.5"
+                    style={{ color: 'rgba(255,255,255,0.45)' }}
+                    onMouseEnter={e => { e.currentTarget.style.color = '#f59e0b' }}
+                    onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.45)' }}>
+                    {n.l}
+                  </Link>
+                ))}
               </div>
-            </div>
-            <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 12, lineHeight: 1.7 }}>
-              Authentic Kerala flavours, crafted fresh and served with warmth.
-            </p>
-          </div>
-
-          {/* Nav columns */}
-          <div className="flex flex-wrap gap-12">
-            <div>
-              <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>Explore</p>
-              {[{ href: '/menu', l: 'Menu' }, { href: '/book', l: 'Reserve a Table' }].map(n => (
-                <Link key={n.href} href={n.href} className="block mb-2.5 text-sm transition-colors"
-                  style={{ color: 'rgba(255,255,255,0.45)' }}
-                  onMouseEnter={e => { e.currentTarget.style.color = '#f59e0b' }}
-                  onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.45)' }}>
-                  {n.l}
-                </Link>
-              ))}
-            </div>
-            <div>
-              <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>Account</p>
-              {[{ href: '/account', l: 'Sign In' }, { href: '/staff/login', l: 'Staff Portal' }].map(n => (
-                <Link key={n.href} href={n.href} className="block mb-2.5 text-sm transition-colors"
-                  style={{ color: 'rgba(255,255,255,0.45)' }}
-                  onMouseEnter={e => { e.currentTarget.style.color = '#f59e0b' }}
-                  onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.45)' }}>
-                  {n.l}
-                </Link>
-              ))}
-            </div>
-            <div>
-              <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>Visit</p>
-              <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{cfg.address ?? 'Dubai, UAE'}</p>
-              <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
-              {cfg.phone && <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>{cfg.phone}</p>}
+              <div className="hidden md:block">
+                <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>Visit</p>
+                <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{cfg.address ?? 'Dubai, UAE'}</p>
+                <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
+                {cfg.phone && <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>{cfg.phone}</p>}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Bottom bar */}
-        <div style={{ padding: '14px clamp(1.5rem,6vw,8rem)' }} className="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)] py-4 md:py-3.5 flex flex-col items-center justify-center md:flex-row md:justify-between gap-3 text-center md:text-left">
           <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: 11 }}>© 2026 {cfg.restaurantName}. All rights reserved.</p>
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#22c55e' }} />
-            <span style={{ color: 'rgba(255,255,255,0.22)', fontSize: 11 }}>Open now · Kitchen accepting orders</span>
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-green-500/20"
+            style={{ backgroundColor: 'rgba(34,197,94,0.06)' }}>
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-green-500" />
+            <span className="text-green-400/80 text-[11px] font-medium">Open now · Kitchen accepting orders</span>
           </div>
         </div>
       </footer>
@@ -1189,6 +1481,18 @@ export default function LandingPage() {
         @keyframes cardFloat3d {
           0%,  100% { transform: translateY(0)     rotateY(-1.5deg) scale(1);    }
           50%        { transform: translateY(-10px) rotateY(1.5deg)  scale(1.02); }
+        }
+        @media (max-width: 767px) {
+          .dish-card {
+            animation: none !important;
+            transform: none !important;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.35) !important;
+          }
+        }
+        @media (min-width: 768px) {
+          .dish-card {
+            animation: cardFloat3d 6s ease-in-out infinite;
+          }
         }
         @keyframes orbFloat1 {
           0%,100% { transform: translate(0,0) scale(1); }

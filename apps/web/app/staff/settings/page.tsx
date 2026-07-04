@@ -10,15 +10,31 @@ import { useAuthStore } from '@/store/auth'
 import ImageUpload from '@/components/ui/ImageUpload'
 import toast from 'react-hot-toast'
 
+const CLOUD  = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME!
+const PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!
+
+async function uploadVideo(file: File): Promise<string> {
+  if (!CLOUD || !PRESET) throw new Error('Cloudinary env vars not set')
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('upload_preset', PRESET)
+  fd.append('folder', 'almanzil/hero')
+  fd.append('public_id', 'hero-video')
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD}/video/upload`, { method: 'POST', body: fd })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error?.message ?? 'Upload failed') }
+  return (await res.json()).secure_url as string
+}
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
-type CustomDish = { name: string; desc: string; price: string; time: string; img: string }
+type MenuItem = { id: string; name: string; description: string | null; price: string; prepTimeMins: number; imageUrl: string | null; category?: { name: string } }
 
 type HeroConfig = {
   line1: string; line2: string; subtext: string; videoUrl: string; posterUrl: string
+  heroMediaType?: 'video' | 'image'; heroImageUrl?: string
   ctaLabel: string; ctaSecondaryLabel: string; badgeText: string
   dishesHeadline: string; dishesSubtext: string
-  customDishes?: CustomDish[]
+  signatureDishIds?: string[]
   relayTagline: string; relayHeadline: string; relayHeadlinePart2: string
   ambienceTagline: string; ambienceHeadline: string; ambienceHeadlinePart2: string; ambienceDesc: string
   reviewsHeadline: string
@@ -184,6 +200,15 @@ export default function SettingsPage() {
   const [saved, setSaved]       = useState(false)
   const [loadErr, setLoadErr]   = useState(false)
   const [section, setSection]   = useState<SectionId>('restaurant')
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [videoUploading, setVideoUploading] = useState(false)
+
+  useEffect(() => {
+    if (section !== 'landing') return
+    fetch(`${API}/menu/items`).then(r => r.json())
+      .then(j => setMenuItems((j?.data ?? j ?? []).filter((i: MenuItem) => i.imageUrl)))
+      .catch(() => {})
+  }, [section])
 
   const load = useCallback(() => {
     setLoadErr(false)
@@ -422,7 +447,7 @@ export default function SettingsPage() {
             {/* ── LANDING PAGE ── */}
             {section === 'landing' && (() => {
               const hc = cfg.heroConfig ?? {} as HeroConfig
-              const setHc = (k: keyof HeroConfig, v: string | CustomDish[] | null) =>
+              const setHc = (k: keyof HeroConfig, v: string | string[] | null) =>
                 set('heroConfig', { ...hc, [k]: v } as any)
               return <>
                 {/* HERO */}
@@ -465,14 +490,79 @@ export default function SettingsPage() {
                 </FieldBlock>
                 <SectionLabel text="Hero — Background Media" />
                 <FieldBlock border={false}>
-                  <div className="mb-4">
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Background video URL <span style={{ color: 'var(--text-muted)' }}>(MP4)</span></p>
-                    <Inp value={hc.videoUrl ?? ''} onChange={v => setHc('videoUrl', v)} placeholder="https://…/hero.mp4" />
+                  {/* Video / Image toggle */}
+                  <div className="flex gap-2 mb-5">
+                    {(['video', 'image'] as const).map(t => (
+                      <button key={t} type="button"
+                        onClick={() => setHc('heroMediaType', t)}
+                        className="flex-1 py-2 rounded-xl text-xs font-bold capitalize transition-all"
+                        style={{
+                          backgroundColor: (hc.heroMediaType ?? 'video') === t ? '#f59e0b' : 'var(--card-bg)',
+                          color: (hc.heroMediaType ?? 'video') === t ? '#000' : 'var(--text-muted)',
+                          border: '1px solid var(--card-border)',
+                        }}>
+                        {t === 'video' ? '🎬 Video' : '🖼️ Image'}
+                      </button>
+                    ))}
                   </div>
-                  <div>
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Fallback poster image URL</p>
-                    <Inp value={hc.posterUrl ?? ''} onChange={v => setHc('posterUrl', v)} placeholder="https://images.unsplash.com/…" />
-                  </div>
+
+                  {(hc.heroMediaType ?? 'video') === 'video' ? (
+                    <div className="space-y-4">
+                      {/* Upload or paste URL */}
+                      <div>
+                        <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Upload video (MP4)</p>
+                        <label className="flex items-center justify-center gap-2 w-full py-3 rounded-xl cursor-pointer transition-all text-sm font-semibold"
+                          style={{ border: '1.5px dashed rgba(245,158,11,0.4)', color: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.04)' }}>
+                          {videoUploading ? <><Loader2 size={14} className="animate-spin" /> Uploading…</> : <><Zap size={14} /> Choose MP4 file</>}
+                          <input type="file" accept="video/mp4,video/*" className="hidden" disabled={videoUploading}
+                            onChange={async e => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              setVideoUploading(true)
+                              try {
+                                const url = await uploadVideo(file)
+                                setHc('videoUrl', url)
+                                toast.success('Video uploaded!')
+                              } catch (err: any) {
+                                toast.error(err.message ?? 'Upload failed')
+                              } finally {
+                                setVideoUploading(false)
+                              }
+                            }} />
+                        </label>
+                        {hc.videoUrl && (
+                          <p className="text-[10px] mt-1.5 truncate" style={{ color: 'var(--text-muted)' }}>✓ {hc.videoUrl}</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Or paste video URL</p>
+                        <Inp value={hc.videoUrl ?? ''} onChange={v => setHc('videoUrl', v)} placeholder="https://…/hero.mp4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Poster image (shown while video loads)</p>
+                        <ImageUpload
+                          value={hc.posterUrl ?? ''}
+                          onChange={v => setHc('posterUrl', v ?? '')}
+                          folder="almanzil/hero"
+                          publicId="hero-poster"
+                          aspectRatio="video"
+                          hint="Recommended: 1920 × 1080 px"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Hero background image</p>
+                      <ImageUpload
+                        value={hc.heroImageUrl ?? ''}
+                        onChange={v => setHc('heroImageUrl', v ?? '')}
+                        folder="almanzil/hero"
+                        publicId="hero-image"
+                        aspectRatio="video"
+                        hint="Recommended: 1920 × 1080 px, landscape"
+                      />
+                    </div>
+                  )}
                 </FieldBlock>
 
                 {/* DISHES */}
@@ -490,92 +580,64 @@ export default function SettingsPage() {
                   </div>
                 </FieldBlock>
 
-                {/* SIGNATURE DISHES — custom dish cards */}
+                {/* SIGNATURE DISHES — pick from live menu */}
                 <SectionLabel text="Signature Dish Cards (up to 6)" />
                 <FieldBlock border={false}>
                   <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                    Override the dishes shown in the landing page. Leave empty to pull from the live menu automatically.
+                    Pick up to 6 dishes from your menu to feature on the landing page. Leave empty to auto-show the top 6 dishes with photos.
                   </p>
-                  {(hc.customDishes ?? []).map((dish, i) => (
-                    <div key={i} className="mb-4 rounded-xl p-4" style={{ border: '1px solid var(--card-border)', backgroundColor: 'var(--card-bg)' }}>
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: '#f59e0b' }}>Dish {i + 1}</span>
-                        <button type="button" onClick={() => {
-                          const next = [...(hc.customDishes ?? [])]
-                          next.splice(i, 1)
-                          setHc('customDishes', next)
-                        }} className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors hover:bg-red-500/10"
-                          style={{ color: 'var(--text-muted)' }}>
-                          <Trash2 size={12} /> Remove
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Dish name</p>
-                          <Inp value={dish.name} onChange={v => {
-                            const next = [...(hc.customDishes ?? [])]
-                            next[i] = { ...next[i], name: v }
-                            setHc('customDishes', next)
-                          }} placeholder="Kerala Prawn Moilee" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Price (AED)</p>
-                          <Inp value={dish.price} onChange={v => {
-                            const next = [...(hc.customDishes ?? [])]
-                            next[i] = { ...next[i], price: v }
-                            setHc('customDishes', next)
-                          }} placeholder="68" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Prep time (mins)</p>
-                          <Inp value={dish.time} onChange={v => {
-                            const next = [...(hc.customDishes ?? [])]
-                            next[i] = { ...next[i], time: v }
-                            setHc('customDishes', next)
-                          }} placeholder="20" />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Dish photo</p>
-                          <ImageUpload
-                            value={dish.img || ''}
-                            onChange={v => {
-                              const next = [...(hc.customDishes ?? [])]
-                              next[i] = { ...next[i], img: v ?? '' }
-                              setHc('customDishes', next)
+                  {menuItems.length === 0 ? (
+                    <p className="text-xs py-3 text-center" style={{ color: 'var(--text-muted)' }}>Loading menu items…</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {menuItems.map(item => {
+                        const selected = (hc.signatureDishIds ?? []).includes(item.id)
+                        const count = (hc.signatureDishIds ?? []).length
+                        const disabled = !selected && count >= 6
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => {
+                              const ids = hc.signatureDishIds ?? []
+                              setHc('signatureDishIds', selected ? ids.filter(id => id !== item.id) : [...ids, item.id])
                             }}
-                            folder="almanzil/dishes"
-                            publicId={`dish-${i}`}
-                            aspectRatio="free"
-                            hint="Recommended: 800 × 600 px"
-                          />
-                        </div>
-                        <div className="sm:col-span-2">
-                          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-muted)' }}>Short description</p>
-                          <Inp value={dish.desc} onChange={v => {
-                            const next = [...(hc.customDishes ?? [])]
-                            next[i] = { ...next[i], desc: v }
-                            setHc('customDishes', next)
-                          }} placeholder="Tender prawns in a fragrant coconut-turmeric gravy" />
-                        </div>
-                      </div>
+                            className="flex items-center gap-3 p-2.5 rounded-xl text-left transition-all"
+                            style={{
+                              border: selected ? '1.5px solid #f59e0b' : '1px solid var(--card-border)',
+                              backgroundColor: selected ? 'rgba(245,158,11,0.08)' : 'var(--card-bg)',
+                              opacity: disabled ? 0.4 : 1,
+                              cursor: disabled ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            <div className="relative flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden">
+                              <img src={item.imageUrl!} alt={item.name} className="w-full h-full object-cover" />
+                              {selected && (
+                                <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.7)' }}>
+                                  <CheckCircle2 size={16} className="text-black" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold truncate" style={{ color: selected ? '#f59e0b' : 'var(--text-primary)' }}>{item.name}</p>
+                              <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>AED {item.price} · {item.prepTimeMins} min</p>
+                            </div>
+                          </button>
+                        )
+                      })}
                     </div>
-                  ))}
-                  {(hc.customDishes ?? []).length < 6 && (
-                    <button type="button" onClick={() => {
-                      const next = [...(hc.customDishes ?? []), { name: '', desc: '', price: '', time: '', img: '' }]
-                      setHc('customDishes', next)
-                    }} className="flex items-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl transition-all hover:scale-[1.02]"
-                      style={{ border: '1.5px dashed rgba(245,158,11,0.4)', color: '#f59e0b', width: '100%', justifyContent: 'center' }}>
-                      <Plus size={14} /> Add Dish {(hc.customDishes ?? []).length + 1}
-                    </button>
                   )}
-                  {(hc.customDishes ?? []).length > 0 && (
-                    <button type="button" onClick={() => setHc('customDishes', [])}
-                      className="mt-2 flex items-center gap-1 text-xs transition-colors hover:opacity-70"
+                  {(hc.signatureDishIds ?? []).length > 0 && (
+                    <button type="button" onClick={() => setHc('signatureDishIds', [])}
+                      className="mt-3 flex items-center gap-1 text-xs transition-colors hover:opacity-70"
                       style={{ color: 'var(--text-muted)' }}>
-                      <Trash2 size={11} /> Clear all &amp; use live menu
+                      <Trash2 size={11} /> Clear selection &amp; use live menu
                     </button>
                   )}
+                  <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
+                    {(hc.signatureDishIds ?? []).length}/6 selected
+                  </p>
                 </FieldBlock>
 
                 {/* FOOD RELAY */}

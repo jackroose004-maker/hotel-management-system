@@ -57,11 +57,12 @@ function ItemModal({ item, categories, onClose, onSave }: {
   item: Partial<MenuItem> | null
   categories: Category[]
   onClose: () => void
-  onSave: (updated: MenuItem) => void
+  onSave: (updated: MenuItem) => void | Promise<void>
 }) {
   const isEdit = !!item?.id
   const [form, setForm] = useState({
     name: item?.name ?? '',
+    nameAr: (item as any)?.nameAr ?? '',
     description: item?.description ?? '',
     price: item?.price != null ? String(item.price) : '',
     prepTimeMins: String(item?.prepTimeMins ?? 15),
@@ -69,6 +70,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
     imageUrl: item?.imageUrl ?? '',
   })
   const [saving, setSaving] = useState(false)
+  const [savedFlash, setSavedFlash] = useState(false)
 
   // Modifier groups state — fetched fresh from API when modal opens in edit mode
   const [groups,          setGroups]          = useState<ModifierGroup[]>([])
@@ -82,17 +84,10 @@ function ItemModal({ item, categories, onClose, onSave }: {
   useEffect(() => {
     if (!item?.id) return
     setGroupsLoading(true)
-    api.get(`/menu/categories`)
+    api.get(`/menu/items?all=true`)
       .then(r => {
-        for (const cat of r.data ?? []) {
-          const found = cat.items?.find((i: any) => i.id === item.id)
-          if (found?.modifierGroups) { setGroups(found.modifierGroups); return }
-        }
-        // fallback: item not in categories response, try direct item fetch
-        return api.get(`/menu/items?all=true`).then(r2 => {
-          const found = (r2.data ?? []).find((i: any) => i.id === item.id)
-          if (found?.modifierGroups) setGroups(found.modifierGroups)
-        })
+        const found = (r.data ?? []).find((i: MenuItem) => i.id === item.id)
+        if (found?.modifierGroups) setGroups(found.modifierGroups)
       })
       .catch(() => {})
       .finally(() => setGroupsLoading(false))
@@ -146,24 +141,27 @@ function ItemModal({ item, categories, onClose, onSave }: {
     try {
       const payload = {
         name: form.name,
+        nameAr: form.nameAr || undefined,
         description: form.description || undefined,
         price: parseFloat(form.price),
         prepTimeMins: parseInt(form.prepTimeMins),
         categoryId: form.categoryId,
         imageUrl: form.imageUrl || undefined,
       }
+      let saved: MenuItem
       if (isEdit) {
         const { data } = await api.patch(`/menu/items/${item!.id}`, payload)
-        onSave({ ...item, ...data, id: item!.id! })
-        toast.success('Item updated')
+        saved = { ...item, ...data, id: item!.id! } as MenuItem
       } else {
         const { data } = await api.post('/menu/items', payload)
-        onSave(data)
-        toast.success('Item added!')
+        saved = data
       }
+      setSavedFlash(true)
+      await new Promise(r => setTimeout(r, 450))
+      onSave(saved)
       onClose()
     } catch { toast.error(isEdit ? 'Failed to update' : 'Failed to add item') }
-    finally { setSaving(false) }
+    finally { setSaving(false); setSavedFlash(false) }
   }
 
   const ic = 'w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400/30 focus:border-orange-500 focus:bg-white dark:focus:bg-gray-900 transition-all placeholder-gray-400 dark:placeholder-gray-600'
@@ -188,12 +186,19 @@ function ItemModal({ item, categories, onClose, onSave }: {
 
 
         {/* Form */}
-        <form onSubmit={submit} className="overflow-y-auto flex-1 p-5 space-y-4">
+        <form id="item-form" onSubmit={submit} className="overflow-y-auto flex-1 p-5 space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Item Name *</label>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Item Name (EN) *</label>
               <input required value={form.name} onChange={e => f('name', e.target.value)}
                 placeholder="e.g. Chicken Biriyani" className={ic} autoFocus={!isEdit} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">
+                اسم العنصر (AR) <span className="text-gray-400 font-normal">— optional</span>
+              </label>
+              <input value={form.nameAr} onChange={e => f('nameAr', e.target.value)}
+                placeholder="مثال: بريياني دجاج" className={ic} dir="rtl" />
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Price (AED) *</label>
@@ -242,6 +247,10 @@ function ItemModal({ item, categories, onClose, onSave }: {
               <div className="flex items-center justify-between mb-1">
                 <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-1.5">
                   <Tag size={10} /> Sizes &amp; Variants
+                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full normal-case"
+                    style={{ backgroundColor: 'rgba(34,197,94,0.12)', color: '#16a34a' }}>
+                    auto-saved
+                  </span>
                 </div>
                 {groupsLoading && <Loader2 size={12} className="animate-spin text-amber-500" />}
               </div>
@@ -354,9 +363,13 @@ function ItemModal({ item, categories, onClose, onSave }: {
 
         {/* Footer */}
         <div className="flex gap-2 px-5 py-4 border-t border-gray-100 dark:border-[var(--card-border)] flex-shrink-0 bg-white dark:bg-gray-900">
-          <button type="submit" disabled={saving}
-            className="flex-1 flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-sm transition-colors shadow-sm shadow-orange-200 dark:shadow-none">
-            {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : <><Check size={14} /> {isEdit ? 'Save Changes' : 'Add Item'}</>}
+          <button type="submit" form="item-form" disabled={saving || savedFlash}
+            className={`flex-1 flex items-center justify-center gap-2 disabled:opacity-50 text-white font-semibold py-3 rounded-xl text-sm transition-all shadow-sm ${savedFlash ? 'bg-green-600 shadow-green-200 dark:shadow-none' : 'bg-orange-500 hover:bg-orange-600 shadow-orange-200 dark:shadow-none'}`}>
+            {savedFlash
+              ? <><Check size={14} /> Saved!</>
+              : saving
+                ? <><Loader2 size={14} className="animate-spin" /> Saving…</>
+                : <><Check size={14} /> {isEdit ? 'Save Changes' : 'Add Item'}</>}
           </button>
           <button type="button" onClick={onClose}
             className="px-5 py-3 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
@@ -474,12 +487,21 @@ export default function MenuManagementPage() {
   const [delItem, setDelItem]       = useState<MenuItem | null>(null)
   const [showCatForm, setShowCatForm] = useState(false)
   const [catName, setCatName]         = useState('')
+  const [catNameAr, setCatNameAr]     = useState('')
   const [catSaving, setCatSaving]     = useState(false)
 
   const load = async () => {
-    const r = await api.get('/menu/categories')
-    setCategories(r.data)
-    if (!active && r.data[0]) setActive(r.data[0].id)
+    const [catRes, itemRes] = await Promise.all([
+      api.get('/menu/categories'),
+      api.get('/menu/items?all=true'),
+    ])
+    const items: MenuItem[] = itemRes.data ?? []
+    const grouped = (catRes.data ?? []).map((cat: { id: string; name: string }) => ({
+      ...cat,
+      items: items.filter(i => i.categoryId === cat.id || (i as any).category?.id === cat.id),
+    }))
+    setCategories(grouped)
+    if (!active && grouped[0]) setActive(grouped[0].id)
   }
 
   useEffect(() => { load() }, [])
@@ -490,15 +512,10 @@ export default function MenuManagementPage() {
     toast.success(isAvailable ? 'Marked off menu' : 'Back on menu')
   }
 
-  const handleSave = (saved: MenuItem) => {
-    setCategories(prev => {
-      const updated = prev.map(c => ({ ...c, items: c.items.map(i => i.id === saved.id ? { ...i, ...saved } : i) }))
-      const alreadyExists = updated.some(c => c.items.some(i => i.id === saved.id))
-      if (!alreadyExists) {
-        return updated.map(c => c.id === saved.categoryId ? { ...c, items: [...c.items, saved] } : c)
-      }
-      return updated
-    })
+  const handleSave = async (saved: MenuItem) => {
+    await load()
+    setActive(saved.categoryId ?? active)
+    toast.success(`"${saved.name}" saved`)
   }
 
   const handleDelete = async () => {
@@ -514,10 +531,11 @@ export default function MenuManagementPage() {
     if (!catName.trim()) return
     setCatSaving(true)
     try {
-      const { data } = await api.post('/menu/categories', { name: catName.trim() })
+      const { data } = await api.post('/menu/categories', { name: catName.trim(), ...(catNameAr.trim() ? { nameAr: catNameAr.trim() } : {}) })
       toast.success('Category created!')
       setShowCatForm(false)
       setCatName('')
+      setCatNameAr('')
       await load()
       if (data?.id) setActive(data.id)
     } catch { toast.error('Failed') }
@@ -615,8 +633,12 @@ export default function MenuManagementPage() {
             {showCatForm ? (
               <form onSubmit={addCategory} className="flex items-center gap-1.5 flex-shrink-0">
                 <input autoFocus required value={catName} onChange={e => setCatName(e.target.value)}
-                  placeholder="Category name…"
-                  className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl px-3 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-orange-400/40 placeholder-gray-400" />
+                  placeholder="Name (EN)…"
+                  className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl px-3 py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-orange-400/40 placeholder-gray-400" />
+                <input value={catNameAr} onChange={e => setCatNameAr(e.target.value)}
+                  placeholder="الاسم (AR)"
+                  dir="rtl"
+                  className="bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl px-3 py-2 text-sm w-28 focus:outline-none focus:ring-2 focus:ring-orange-400/40 placeholder-gray-400" />
                 <button type="submit" disabled={catSaving}
                   className="bg-orange-500 text-white rounded-xl px-3 py-2 text-xs font-bold hover:bg-orange-600 disabled:opacity-50">
                   {catSaving ? '…' : 'Create'}

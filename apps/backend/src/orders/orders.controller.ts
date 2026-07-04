@@ -11,10 +11,14 @@ export class OrdersController {
   constructor(private orders: OrdersService) {}
 
   // OptionalJwtAuthGuard: if user is logged in their id is attached; guests still work
+  // When staff/manager/owner use the guest menu (/menu), treat as guest order (no userId)
+  // so it doesn't pollute their personal order history and joins the table session correctly
   @UseGuards(OptionalJwtAuthGuard)
   @Post()
   create(@Body() dto: CreateOrderDto, @Request() req) {
-    return this.orders.create(dto, req.user?.id)
+    const user = req.user
+    const isStaff = user?.role && ['STAFF', 'MANAGER', 'OWNER'].includes(user.role)
+    return this.orders.create(dto, isStaff ? undefined : user?.id)
   }
 
   @UseGuards(JwtAuthGuard)
@@ -73,6 +77,21 @@ export class OrdersController {
     return this.orders.claimGuestOrders(req.user.id, orderIds ?? [])
   }
 
+  // Guest fetches their own active orders by sessionStorage token — no auth required
+  // Used to show staff-placed orders that were linked to this guest's session
+  @Get('by-session/:token')
+  getBySessionToken(@Param('token') token: string) {
+    return this.orders.getBySessionToken(token)
+  }
+
+  // Active guest sessions at a table — staff uses this to pick who they're ordering for
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Get('table/:tableId/sessions')
+  getTableSessions(@Param('tableId') tableId: string) {
+    return this.orders.getTableSessions(tableId)
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'MANAGER', 'STAFF')
   @Get('session/:sessionId/bill')
@@ -87,12 +106,14 @@ export class OrdersController {
     return this.orders.getTableBill(tableId)
   }
 
-  // Staff places an order on behalf of a guest — auto-joins current session
+  // Staff places an order on behalf of a guest — never assign to staff userId
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'MANAGER', 'STAFF')
   @Post('table/:tableId/staff-order')
-  staffOrder(@Param('tableId') tableId: string, @Body() dto: CreateOrderDto, @Request() req) {
-    return this.orders.create({ ...dto, type: 'DINE_IN', tableId }, req.user?.id)
+  staffOrder(@Param('tableId') tableId: string, @Body() dto: CreateOrderDto) {
+    // Pass undefined userId so the order joins the table's existing customer session,
+    // not a new session under the staff member's account
+    return this.orders.create({ ...dto, type: 'DINE_IN', tableId }, undefined)
   }
 
   // Reassign an order to a different session (manager/owner only)
@@ -101,6 +122,19 @@ export class OrdersController {
   @Patch(':id/reassign-session')
   reassignSession(@Param('id') id: string, @Body('sessionId') sessionId: string) {
     return this.orders.reassignOrderSession(id, sessionId)
+  }
+
+  // Guest submits feedback after order is delivered — no auth required
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post(':id/feedback')
+  submitFeedback(
+    @Param('id') orderId: string,
+    @Body('rating') rating: number,
+    @Body('comment') comment?: string,
+    @Body('tags') tags?: string,
+    @Request() req?: any,
+  ) {
+    return this.orders.submitFeedback(orderId, { rating, comment, tags }, req?.user?.id)
   }
 
   @Get(':id')
@@ -118,7 +152,8 @@ export class OrdersController {
   // Guest self-cancel — only allowed while order is still PENDING
   @UseGuards(OptionalJwtAuthGuard)
   @Post(':id/cancel')
-  guestCancel(@Param('id') id: string) {
-    return this.orders.guestCancel(id)
+  guestCancel(@Param('id') id: string, @Body('cancelReason') cancelReason?: string) {
+    return this.orders.guestCancel(id, cancelReason)
   }
+
 }

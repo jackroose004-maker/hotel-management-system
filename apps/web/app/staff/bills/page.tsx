@@ -84,13 +84,194 @@ function TotalsBlock({ subtotal, vat, total }: { subtotal: number; vat: number; 
   )
 }
 
+// ── Payment method picker modal ───────────────────────────────────────────────
+// Common AED note denominations for quick-select
+const CASH_NOTES = [5, 10, 20, 50, 100, 200, 500]
+
+function SettleModal({ amount, items, onConfirm, onClose, busy }: {
+  amount: number
+  items: { name: string; qty: number; price: number }[]
+  onConfirm: (method: 'CASH' | 'CARD') => void
+  onClose: () => void
+  busy: boolean
+}) {
+  const [step, setStep] = useState<'review' | 'method' | 'cash'>('review')
+  const [received, setReceived] = useState('')
+
+  const receivedNum = parseFloat(received) || 0
+  const change = receivedNum - amount
+  const changeValid = receivedNum >= amount
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
+      onClick={onClose}>
+      <div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 space-y-4"
+        style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
+        onClick={e => e.stopPropagation()}>
+
+        {step === 'review' && (
+          <>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-black" style={{ color: 'var(--text-primary)' }}>Review Bill</h2>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+                Verify before settling
+              </span>
+            </div>
+            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--card-border)' }}>
+              <div className="divide-y divide-[var(--card-border)]">
+                {items.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between px-3 py-2">
+                    <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                      <span className="font-black text-xs mr-1.5" style={{ color: '#f59e0b' }}>{item.qty}×</span>
+                      {item.name}
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                      AED {item.price.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between px-3 py-2.5" style={{ backgroundColor: 'var(--muted-bg)', borderTop: '1px solid var(--card-border)' }}>
+                <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total</span>
+                <span className="text-lg font-black" style={{ color: 'var(--text-primary)' }}>AED {amount.toFixed(2)}</span>
+              </div>
+            </div>
+            <button onClick={() => setStep('method')}
+              className="w-full py-3.5 rounded-2xl font-black text-sm"
+              style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+              ✓ Looks Good — Choose Payment
+            </button>
+            <button onClick={onClose}
+              className="w-full py-2.5 rounded-2xl text-sm font-semibold"
+              style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+              Go Back
+            </button>
+          </>
+        )}
+
+        {step === 'method' && (
+          <>
+            <div className="text-center">
+              <div className="text-4xl mb-2">💳</div>
+              <h2 className="text-lg font-black" style={{ color: 'var(--text-primary)' }}>How did they pay?</h2>
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                Bill total: <strong style={{ color: 'var(--text-primary)' }}>AED {amount.toFixed(2)}</strong>
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setStep('cash')} disabled={busy}
+                className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ borderColor: 'var(--c-success-fg)', backgroundColor: 'rgba(22,163,74,0.08)' }}>
+                <Banknote size={24} style={{ color: 'var(--c-success-fg)' }} />
+                <div className="text-center">
+                  <p className="text-sm font-black" style={{ color: 'var(--c-success-fg)' }}>Cash</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Physical notes</p>
+                </div>
+              </button>
+
+              <button onClick={() => onConfirm('CARD')} disabled={busy}
+                className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ borderColor: 'var(--c-info-fg)', backgroundColor: 'rgba(59,130,246,0.08)' }}>
+                <CreditCard size={24} style={{ color: 'var(--c-info-fg)' }} />
+                <div className="text-center">
+                  <p className="text-sm font-black" style={{ color: 'var(--c-info-fg)' }}>Card · Tap</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Online · Transfer</p>
+                </div>
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 'cash' && (
+          <>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setStep('method')} style={{ color: 'var(--text-muted)' }}>←</button>
+              <h2 className="text-base font-black" style={{ color: 'var(--text-primary)' }}>Cash Collection</h2>
+            </div>
+
+            {/* Bill amount */}
+            <div className="rounded-xl px-4 py-3 flex justify-between items-center"
+              style={{ backgroundColor: 'var(--muted-bg)' }}>
+              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Bill Total</span>
+              <span className="text-lg font-black" style={{ color: 'var(--text-primary)' }}>AED {amount.toFixed(2)}</span>
+            </div>
+
+            {/* Quick denomination buttons */}
+            <div>
+              <p className="text-[10px] font-semibold mb-2 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                Amount received
+              </p>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {CASH_NOTES.filter(n => n >= amount || n === Math.ceil(amount / 10) * 10).slice(0, 6).map(n => (
+                  <button key={n} onClick={() => setReceived(String(n))}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                    style={Number(received) === n
+                      ? { backgroundColor: 'var(--brand)', color: '#000' }
+                      : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-primary)', border: '1px solid var(--card-border)' }}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder={`Enter amount (min ${amount.toFixed(2)})`}
+                value={received}
+                onChange={e => setReceived(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl text-base font-bold outline-none"
+                style={{ backgroundColor: 'var(--muted-bg)', border: `2px solid ${changeValid && received ? 'var(--c-success-fg)' : 'var(--card-border)'}`, color: 'var(--text-primary)' }}
+              />
+            </div>
+
+            {/* Change due */}
+            {received && (
+              <div className="rounded-xl px-4 py-3 flex justify-between items-center"
+                style={{
+                  backgroundColor: changeValid ? 'rgba(22,163,74,0.1)' : 'rgba(239,68,68,0.1)',
+                  border: `1px solid ${changeValid ? 'var(--c-success-bdr)' : 'rgba(239,68,68,0.3)'}`,
+                }}>
+                <span className="text-sm font-semibold" style={{ color: changeValid ? 'var(--c-success-fg)' : '#f87171' }}>
+                  {changeValid ? 'Change to return' : 'Not enough'}
+                </span>
+                <span className="text-xl font-black" style={{ color: changeValid ? 'var(--c-success-fg)' : '#f87171' }}>
+                  {changeValid ? `AED ${change.toFixed(2)}` : `Short AED ${Math.abs(change).toFixed(2)}`}
+                </span>
+              </div>
+            )}
+
+            <button
+              onClick={() => onConfirm('CASH')}
+              disabled={busy || !changeValid}
+              className="w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+              style={{ backgroundColor: 'var(--c-success-fg)', color: '#fff' }}>
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />}
+              {busy ? 'Recording…' : `Confirm — AED ${amount.toFixed(2)} received`}
+            </button>
+          </>
+        )}
+
+        {!busy && step === 'method' && (
+          <button onClick={() => setStep('review')}
+            className="w-full py-3 rounded-2xl text-sm font-semibold transition-colors"
+            style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+            ← Back to Review
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Per-tab row inside a table card ──────────────────────────────────────────
-function TabRow({ tab, idx, tableName, onSettleCash, busy }: {
+function TabRow({ tab, idx, tableName, onSettle, busy }: {
   tab: Tab; idx: number; tableName: string
-  onSettleCash: (sessionId: string) => void
+  onSettle: (sessionId: string, method: 'CASH' | 'CARD') => void
   busy: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [showSettle, setShowSettle] = useState(false)
   const label = tabLabel(tab, idx)
   const isMember = !!tab.orders.find(o => o.user)
   const total = Number(tab.summary.total)
@@ -169,14 +350,25 @@ function TabRow({ tab, idx, tableName, onSettleCash, busy }: {
 
           <div className="flex items-center gap-2 pt-1">
             {!tab.summary.allPaid ? (
+              <>
               <button
-                onClick={() => onSettleCash(tab.sessionId)} disabled={busy}
+                onClick={() => setShowSettle(true)} disabled={busy}
                 className="flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50 transition-opacity hover:opacity-90 text-white"
                 style={{ backgroundColor: 'var(--brand)' }}
               >
-                {busy ? <Loader2 size={11} className="animate-spin" /> : <Banknote size={11} />}
-                Collect Cash
+                {busy ? <Loader2 size={11} className="animate-spin" /> : <ArrowRight size={11} />}
+                Settle Bill
               </button>
+              {showSettle && (
+                <SettleModal
+                  amount={total}
+                  items={items}
+                  busy={busy}
+                  onClose={() => setShowSettle(false)}
+                  onConfirm={method => { setShowSettle(false); onSettle(tab.sessionId, method) }}
+                />
+              )}
+              </>
             ) : (
               <div className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold"
                 style={{ backgroundColor: 'var(--c-success-bg)', color: 'var(--c-success-fg)' }}>
@@ -195,9 +387,9 @@ function TabRow({ tab, idx, tableName, onSettleCash, busy }: {
 }
 
 // ── Active table card ─────────────────────────────────────────────────────────
-function ActiveTableCard({ entry, onSettleCash, busySession }: {
+function ActiveTableCard({ entry, onSettle, busySession }: {
   entry: ActiveTableEntry
-  onSettleCash: (sessionId: string, tableId: string) => void
+  onSettle: (sessionId: string, tableId: string, method: 'CASH' | 'CARD') => void
   busySession: Record<string, boolean>
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -260,7 +452,7 @@ function ActiveTableCard({ entry, onSettleCash, busySession }: {
                 tab={tab}
                 idx={idx}
                 tableName={tableName}
-                onSettleCash={(sessionId) => onSettleCash(sessionId, entry.table.id)}
+                onSettle={(sessionId, method) => onSettle(sessionId, entry.table.id, method)}
                 busy={!!busySession[tab.sessionId]}
               />
             ))}
@@ -433,7 +625,6 @@ export default function BillsPage() {
   const [active, setActive]     = useState<ActiveTableEntry[]>([])
   const [closed, setClosed]     = useState<ClosedSession[]>([])
   const [takeaway, setTakeaway] = useState<TakeawayEntry[]>([])
-  const [tab, setTab]           = useState<'active' | 'today' | 'takeaway'>('active')
   const [loading, setLoading]   = useState(true)
   const [busySession, setBusySession] = useState<Record<string, boolean>>({})
 
@@ -453,11 +644,12 @@ export default function BillsPage() {
 
   useEffect(() => { load() }, [load])
 
-  const settleCash = async (sessionId: string, tableId: string) => {
+  const settle = async (sessionId: string, tableId: string, method: 'CASH' | 'CARD') => {
     setBusySession(p => ({ ...p, [sessionId]: true }))
     try {
-      await api.post(`/payments/table/${tableId}/settle-all-cash`)
-      notify.order.cashCollected('')
+      await api.post(`/payments/session/${sessionId}/settle`, { method })
+      const label = method === 'CARD' ? 'Card payment recorded' : 'Cash collected'
+      notify.order.cashCollected(label)
       await load()
     } catch {
       notify.error('Failed to settle')
@@ -466,15 +658,12 @@ export default function BillsPage() {
     }
   }
 
-  const totalTabs   = active.reduce((s, e) => s + e.tabs.length, 0)
-  const pendingTabs = active.reduce((s, e) => s + e.tabs.filter(t => t.summary.anyUnpaid).length, 0)
-  const todayRevenue = closed.reduce((s, c) => s + Number(c.summary.total), 0)
-
-  const TABS = [
-    { key: 'active'   as const, label: 'Dine-in',   icon: Receipt, count: active.length },
-    { key: 'today'    as const, label: 'Closed',     icon: History, count: closed.length },
-    { key: 'takeaway' as const, label: 'Takeaway',   icon: Package, count: takeaway.length },
-  ]
+  const totalTabs    = active.reduce((s, e) => s + e.tabs.length, 0)
+  const pendingTabs  = active.reduce((s, e) => s + e.tabs.filter(t => t.summary.anyUnpaid).length, 0)
+  const closedRevenue  = closed.reduce((s, c) => s + Number(c.summary.total), 0)
+  const takeawayRevenue = takeaway.reduce((s, t) => s + Number(t.summary.total), 0)
+  const todayRevenue = closedRevenue + takeawayRevenue
+  const historyCount = closed.length + takeaway.length
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -482,8 +671,7 @@ export default function BillsPage() {
       {/* ── Header ── */}
       <div className="px-4 sm:px-6 pt-4 pb-3 border-b flex-shrink-0"
         style={{ backgroundColor: 'var(--header-bg)', borderColor: 'var(--header-border)' }}>
-        {/* Title row */}
-        <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center justify-between gap-2 mb-2">
           <div>
             <h1 className="text-lg font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>Bills & Payment</h1>
             <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Collect cash · print receipts · close tables</p>
@@ -496,7 +684,7 @@ export default function BillsPage() {
         </div>
 
         {/* Stat badges */}
-        <div className="flex items-center gap-1.5 flex-wrap mb-3">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {active.length > 0 && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
               style={{ backgroundColor: 'var(--brand-light)', color: 'var(--brand-dark)' }}>
@@ -512,132 +700,79 @@ export default function BillsPage() {
           {todayRevenue > 0 && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
               style={{ backgroundColor: 'var(--c-success-bg)', color: 'var(--c-success-fg)' }}>
-              AED {todayRevenue.toFixed(2)} settled
+              AED {todayRevenue.toFixed(2)} settled today
             </span>
           )}
         </div>
-
-        {/* Tab switcher — full width on mobile */}
-        <div className="flex rounded-xl p-1 gap-0.5" style={{ backgroundColor: 'var(--muted-bg)' }}>
-          {TABS.map(({ key, label, icon: Icon, count }) => (
-            <button key={key} onClick={() => setTab(key)}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
-              style={tab === key
-                ? { backgroundColor: 'var(--card-bg)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }
-                : { color: 'var(--text-muted)' }}
-            >
-              <Icon size={11} />
-              {label}
-              {count > 0 && (
-                <span className="text-white text-[9px] font-bold min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center"
-                  style={{ backgroundColor: tab === key ? 'var(--brand)' : 'var(--c-neutral-fg)' }}>
-                  {count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
       </div>
 
-      {/* ── Content ── */}
-      <div className="p-4 sm:p-6 flex-1 overflow-auto">
+      {/* ── Content — single scrollable page, no tabs ── */}
+      <div className="p-4 sm:p-6 flex-1 overflow-auto space-y-8">
 
         {loading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 animate-pulse">
-            {[1,2,3,4,5,6].map(i => (
-              <div key={i} className="h-20 rounded-2xl border" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 animate-pulse">
+            {[1,2,3,4].map(i => (
+              <div key={i} className="h-24 rounded-2xl border" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }} />
             ))}
           </div>
         )}
 
-        {/* Dine-in active — tables with open sessions (guests still seated, payment pending) */}
-        {!loading && tab === 'active' && (
-          <>
-            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-              Tables where guests are currently seated and have unpaid or partially-paid orders.
-            </p>
+        {/* ── Section 1: Active tables (guests seated, payment pending) ── */}
+        {!loading && (
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Receipt size={14} style={{ color: 'var(--brand)' }} />
+              <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Active Bills</h2>
+              {active.length > 0 && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: 'var(--brand-light)', color: 'var(--brand-dark)' }}>
+                  {active.length}
+                </span>
+              )}
+            </div>
+
             {active.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 gap-4 rounded-2xl border border-dashed"
+              <div className="flex flex-col items-center justify-center py-12 gap-3 rounded-2xl border border-dashed"
                 style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
                   style={{ backgroundColor: 'var(--brand-light)' }}>
-                  <Receipt size={24} style={{ color: 'var(--brand)' }} />
+                  <Receipt size={20} style={{ color: 'var(--brand)' }} />
                 </div>
-                <div className="text-center">
-                  <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>No active dine-in bills</p>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Bills appear here when guests place dine-in orders.</p>
-                </div>
+                <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>No active bills right now</p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Bills appear here when guests place dine-in orders</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {active.map(e => (
-                  <ActiveTableCard key={e.table.id} entry={e} onSettleCash={settleCash} busySession={busySession} />
+                  <ActiveTableCard key={e.table.id} entry={e} onSettle={settle} busySession={busySession} />
                 ))}
               </div>
             )}
-          </>
+          </section>
         )}
 
-        {/* Takeaway — card-paid, already settled */}
-        {!loading && tab === 'takeaway' && (
-          <>
-          <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-            Today's takeaway orders — all paid by card at checkout.
-          </p>
-          {takeaway.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4 rounded-2xl border border-dashed"
-              style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ backgroundColor: 'var(--muted-bg)' }}>
-                <Package size={24} style={{ color: 'var(--text-muted)' }} />
+        {/* ── Section 2: Today's history (closed dine-in + takeaway, all settled) ── */}
+        {!loading && historyCount > 0 && (
+          <section>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <History size={14} style={{ color: 'var(--text-muted)' }} />
+                <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Settled Today</h2>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: 'var(--c-success-bg)', color: 'var(--c-success-fg)' }}>
+                  {historyCount}
+                </span>
               </div>
-              <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>No takeaway orders today</p>
+              <span className="text-sm font-black" style={{ color: 'var(--c-success-fg)' }}>
+                AED {todayRevenue.toFixed(2)}
+              </span>
             </div>
-          ) : (
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {closed.map(s => <ClosedSessionCard key={s.sessionId} s={s} />)}
               {takeaway.map(e => <TakeawayCard key={e.tokenNumber} entry={e} />)}
             </div>
-          )}
-          </>
-        )}
-
-        {/* Closed sessions — tables where the session ended (payment collected, table freed) */}
-        {!loading && tab === 'today' && (
-          <>
-          <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-            Sessions that have been closed today — payment collected and table freed.
-          </p>
-          {closed.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4 rounded-2xl border border-dashed"
-              style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
-                style={{ backgroundColor: 'var(--c-success-bg)' }}>
-                <CheckCircle2 size={24} style={{ color: 'var(--c-success-fg)' }} />
-              </div>
-              <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>No closed bills today yet</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {/* Day summary banner */}
-              <div className="rounded-2xl px-4 py-3 flex items-center justify-between"
-                style={{ backgroundColor: 'var(--c-success-bg)', border: '1px solid var(--c-success-bdr)' }}>
-                <div>
-                  <div className="text-xs font-semibold" style={{ color: 'var(--c-success-fg)' }}>Today's closed bills</div>
-                  <div className="text-[10px] mt-0.5" style={{ color: 'var(--c-success-fg)', opacity: 0.7 }}>
-                    {closed.length} session{closed.length !== 1 ? 's' : ''}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-lg font-black" style={{ color: 'var(--c-success-fg)' }}>AED {todayRevenue.toFixed(2)}</div>
-                  <div className="text-[10px]" style={{ color: 'var(--c-success-fg)', opacity: 0.7 }}>gross revenue</div>
-                </div>
-              </div>
-              {/* Grid of closed session cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {closed.map(s => <ClosedSessionCard key={s.sessionId} s={s} />)}
-              </div>
-            </div>
-          )}
-          </>
+          </section>
         )}
       </div>
     </div>

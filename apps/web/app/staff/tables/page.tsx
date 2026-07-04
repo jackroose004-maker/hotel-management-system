@@ -92,8 +92,23 @@ export default function TablesPage() {
     if (!items.length) { notify.error('Add at least one item'); return }
     setAddingOrder(true)
     try {
+      // Fetch existing customer sessions so we can attach this order to their bill
+      let guestTabToken: string | undefined
+      try {
+        const { data: sessions } = await api.get(`/orders/table/${addOrderModal.id}/sessions`)
+        if (sessions?.length === 1) {
+          // Only one guest — add directly to their session
+          guestTabToken = sessions[0].sessionId
+        } else if (sessions?.length > 1) {
+          // Multiple guests — pick the first non-staff session (fallback: first one)
+          guestTabToken = sessions[0].sessionId
+        }
+        // If no sessions yet (table is empty), no guestTabToken → backend creates a fresh table session
+      } catch {}
+
       await api.post(`/orders/table/${addOrderModal.id}/staff-order`, {
         type: 'DINE_IN', tableId: addOrderModal.id, items, paymentMethod: 'CASH',
+        ...(guestTabToken ? { guestTabToken } : {}),
       })
       notify.success('Order added to the bill')
       setAddOrderModal(null)
@@ -552,94 +567,99 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           {visible.map(table => {
             const cfg = S[table.status as Status] ?? S.EMPTY
             const displayName = table.name ?? `Table ${table.tableNumber}`
             const isEditing = editingId === table.id
+            const isOccupied = table.status === 'OCCUPIED' || table.status === 'BILL_PENDING'
 
             return (
-              <div key={table.id} className="group bg-[var(--card-bg)] rounded-2xl border border-gray-200 dark:border-[var(--card-border)] overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+              <div key={table.id} className={`group rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all flex flex-col ${cfg.card} ${cfg.cardDark}`}>
 
-                {/* Coloured status area */}
-                <div className={`${cfg.card} ${cfg.cardDark} px-4 pt-4 pb-3 flex flex-col gap-1`}>
-                  {/* Name */}
+                {/* ── Top section: name + status ── */}
+                <div className="px-4 pt-4 pb-3 flex flex-col gap-1 flex-1">
+
+                  {/* Name row */}
                   {isEditing ? (
                     <div className="flex items-center gap-1">
                       <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') saveName(table.id); if (e.key === 'Escape') setEditingId(null) }}
                         className="flex-1 text-sm font-bold bg-white/20 border border-white/30 rounded-lg px-2 py-1 focus:outline-none text-white placeholder-white/50 min-w-0" />
-                      <button onClick={() => saveName(table.id)} className="text-white/80 hover:text-white flex-shrink-0"><Check size={13} /></button>
-                      <button onClick={() => setEditingId(null)} className="text-white/60 hover:text-white flex-shrink-0"><X size={13} /></button>
+                      <button onClick={() => saveName(table.id)} className="text-white/80 hover:text-white flex-shrink-0 p-1"><Check size={14} /></button>
+                      <button onClick={() => setEditingId(null)} className="text-white/60 hover:text-white flex-shrink-0 p-1"><X size={14} /></button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1 group/n">
-                      <p className={`font-extrabold text-base truncate flex-1 ${cfg.text}`}>{displayName}</p>
+                    <div className="flex items-start justify-between gap-1">
+                      <p className={`font-extrabold text-lg leading-tight truncate flex-1 ${cfg.text}`}>{displayName}</p>
                       <button onClick={() => { setEditingId(table.id); setNameInput(displayName) }}
-                        className={`opacity-0 group-hover/n:opacity-100 transition-opacity flex-shrink-0 ${cfg.text} opacity-60 hover:opacity-100`}>
-                        <Pencil size={11} />
+                        className={`${cfg.text} opacity-40 hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5 p-1`}>
+                        <Pencil size={13} />
                       </button>
                     </div>
                   )}
 
-                  <p className={`text-xs font-semibold ${cfg.sub}`}>{cfg.label}</p>
+                  <p className={`text-sm font-semibold ${cfg.sub}`}>{cfg.label}</p>
 
-                  {/* Clearing: show elapsed + auto-clear countdown */}
+                  {/* Clearing timer */}
                   {table.status === 'DIRTY' && table.updatedAt && (
-                    <div className="flex items-center gap-1 text-[10px] text-gray-100/80 mt-0.5">
-                      <Clock size={9} />
+                    <div className={`flex items-center gap-1 text-xs mt-1 ${cfg.sub}`}>
+                      <Clock size={11} />
                       <span>Cleaning {clearingElapsed(table.updatedAt, now)}</span>
                       {(clearingCountdown(table.updatedAt, now) ?? 0) > 0 && (
-                        <span className="ml-1 opacity-70">· auto-clears in {clearingCountdown(table.updatedAt, now)}m</span>
-                      )}
-                      {(clearingCountdown(table.updatedAt, now) ?? 1) <= 0 && (
-                        <span className="ml-1 text-green-300">· clearing soon…</span>
+                        <span className="opacity-60">· {clearingCountdown(table.updatedAt, now)}m left</span>
                       )}
                     </div>
                   )}
 
-                  {/* Capacity + QR */}
-                  <div className="flex items-center justify-between mt-1">
-                    <span className={`flex items-center gap-1 text-xs ${cfg.sub}`}>
-                      <Users size={11} /> {table.capacity} seats
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {(table.status === 'OCCUPIED' || table.status === 'BILL_PENDING') && (
-                        <>
-                          <button onClick={() => openAddOrder(table)}
-                            className={`${cfg.text} opacity-70 hover:opacity-100 transition-opacity`}
-                            title="Add items to bill">
-                            <Plus size={13} />
-                          </button>
-                          <button onClick={() => openBill(table)}
-                            className={`${cfg.text} opacity-70 hover:opacity-100 transition-opacity`}
-                            title="View consolidated bill">
-                            <Receipt size={13} />
-                          </button>
-                        </>
-                      )}
-                      {table.qrCode && (
-                        <button onClick={() => { setQrModal(table); setQrRegenConfirm(false) }}
-                          className={`${cfg.text} opacity-60 hover:opacity-100 transition-opacity`}>
-                          <QrCode size={13} />
-                        </button>
-                      )}
-                    </div>
+                  {/* Capacity */}
+                  <div className={`flex items-center gap-1 text-xs mt-1 ${cfg.sub}`}>
+                    <Users size={12} /> {table.capacity} seats
                   </div>
                 </div>
 
-                {/* Actions — only "Mark Clean" is manual; everything else is automated */}
-                <div className="p-2.5">
-                  {table.status === 'DIRTY' ? (
+                {/* ── Action buttons ── */}
+                <div className="px-3 pb-3 flex flex-col gap-2">
+
+                  {/* Occupied: Add items + View bill + QR — all big tap targets */}
+                  {isOccupied && (
+                    <>
+                      <button onClick={() => openAddOrder(table)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm bg-white/20 hover:bg-white/30 active:scale-[0.98] text-white transition-all">
+                        <Plus size={16} /> Add Items
+                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={() => openBill(table)}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-white/15 hover:bg-white/25 text-white transition-all">
+                          <Receipt size={15} /> Bill
+                        </button>
+                        {table.qrCode && (
+                          <button onClick={() => { setQrModal(table); setQrRegenConfirm(false) }}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-white/15 hover:bg-white/25 text-white transition-all">
+                            <QrCode size={15} /> QR
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {/* Clearing: Mark Clean */}
+                  {table.status === 'DIRTY' && (
                     <button onClick={() => updateStatus(table.id, 'EMPTY')}
-                      className="w-full py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-600 text-white transition-colors flex items-center justify-center gap-1.5">
-                      ✓ Mark Clean
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-black bg-white text-emerald-600 hover:bg-emerald-50 active:scale-[0.98] transition-all shadow-sm">
+                      <Check size={16} /> Mark Clean
                     </button>
-                  ) : (
-                    <div className="text-center text-[10px] text-gray-400 py-1.5">
-                      {table.status === 'EMPTY' && 'Ready for guests'}
-                      {table.status === 'OCCUPIED' && 'Orders in progress'}
-                      {table.status === 'BILL_PENDING' && 'Awaiting payment'}
+                  )}
+
+                  {/* Empty: just QR */}
+                  {table.status === 'EMPTY' && (
+                    <div className="flex gap-2">
+                      {table.qrCode && (
+                        <button onClick={() => { setQrModal(table); setQrRegenConfirm(false) }}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold bg-white/20 hover:bg-white/30 text-white transition-all">
+                          <QrCode size={16} /> View QR
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

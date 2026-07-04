@@ -284,7 +284,7 @@ function AccountContent() {
     if (!fb || fb.rating === 0) return toast.error('Please select a rating')
     setFeedback(prev => ({ ...prev, [orderId]: { ...prev[orderId], submitting: true } }))
     try {
-      await authFetch(`${API}/feedback`, { method: 'POST', body: JSON.stringify({ orderId, rating: fb.rating, comment: fb.comment }) })
+      await authFetch(`${API}/orders/${orderId}/feedback`, { method: 'POST', body: JSON.stringify({ rating: fb.rating, comment: fb.comment }) })
       setFeedback(prev => ({ ...prev, [orderId]: { ...prev[orderId], submitting: false, done: true } }))
       toast.success('Thank you for your feedback!')
     } catch { setFeedback(prev => ({ ...prev, [orderId]: { ...prev[orderId], submitting: false } })) }
@@ -657,18 +657,19 @@ function AccountContent() {
                             </span>
                           </div>
                           {isActive && (
-                            <Link href="/menu" className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-xl"
+                            <Link href="/menu?track=1" className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-xl"
                               style={{ border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b' }}>
                               Track <ChevronRight size={12} />
                             </Link>
                           )}
                         </div>
 
-                        {order.status === 'DELIVERED' && !hasFeedback && (
+                        {order.status === 'DELIVERED' && (
                           <div className="mt-3 pt-3" style={{ borderTop: '1px solid #1e1e1e' }}>
-                            {fb?.done ? (
-                              <div className="flex items-center gap-2 text-xs text-green-500">
-                                <Check size={13} /> Thanks for your feedback!
+                            {(hasFeedback || fb?.done) ? (
+                              <div className="flex items-center gap-2 text-xs" style={{ color: '#f59e0b' }}>
+                                {'★'.repeat(hasFeedback?.rating ?? fb?.rating ?? 5)}{'☆'.repeat(5 - (hasFeedback?.rating ?? fb?.rating ?? 5))}
+                                <span style={{ color: '#555' }}>{hasFeedback?.comment || 'Thanks for your feedback!'}</span>
                               </div>
                             ) : (
                               <div className="space-y-2">
