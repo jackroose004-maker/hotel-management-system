@@ -62,10 +62,6 @@ export class UpdateMenuItemDto {
 
   @IsString()
   @IsOptional()
-  descriptionAr?: string
-
-  @IsString()
-  @IsOptional()
   imageUrl?: string
 
   @IsBoolean()
