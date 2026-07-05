@@ -544,6 +544,7 @@ export default function LandingPage() {
   const { user, token, logout } = useAuthStore()
   const showLanguageToggle = useBrandStore(s => s.showLanguageToggle)
   const { lang, setLang } = useLangStore()
+  const ar = lang === 'ar'
   useEffect(() => { applyLangDir(lang) }, [lang])
   const pal = dark ? {
     bg: '#0c0c0c', bg2: '#080808', bg3: '#101010',
