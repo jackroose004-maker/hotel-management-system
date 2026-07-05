@@ -1037,14 +1037,14 @@ export default function LandingPage() {
             <Link href="/menu"
               className="flex items-center gap-2 rounded-2xl font-bold"
               style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 40px rgba(var(--brand-rgb),0.38)', padding: 'clamp(10px,2.5vw,16px) clamp(20px,5vw,32px)', fontSize: 'clamp(13px,3.5vw,16px)' }}>
-              {cfg.heroConfig?.ctaLabel || 'Order Now'} <ArrowRight size={14} />
+              {(ar && cfg.heroConfig?.ctaLabelAr) ? cfg.heroConfig.ctaLabelAr : (cfg.heroConfig?.ctaLabel || 'Order Now')} <ArrowRight size={14} />
             </Link>
             <Link href="/book"
               className="flex items-center gap-2 rounded-2xl font-medium"
               style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.82)', backdropFilter: 'blur(12px)', padding: 'clamp(10px,2.5vw,16px) clamp(16px,4vw,32px)', fontSize: 'clamp(13px,3.5vw,16px)' }}
               onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.13)' }}
               onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)' }}>
-              {cfg.heroConfig?.ctaSecondaryLabel || 'Reserve a Table'}
+              {(ar && cfg.heroConfig?.ctaSecondaryLabelAr) ? cfg.heroConfig.ctaSecondaryLabelAr : (cfg.heroConfig?.ctaSecondaryLabel || 'Reserve a Table')}
             </Link>
           </div>
 
@@ -1135,19 +1135,19 @@ export default function LandingPage() {
                 {/* Eyebrow with lines */}
                 <div className="relay-el" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginBottom: 20 }}>
                   <span style={{ flex: 1, maxWidth: 40, height: 1, backgroundColor: 'rgba(var(--brand-rgb),0.4)' }} />
-                  <p style={{ color: 'var(--brand)', fontSize: 10, letterSpacing: '0.26em', textTransform: 'uppercase', fontWeight: 700 }}>{cfg.heroConfig?.relayTagline || "The Kitchen's Finest"}</p>
+                  <p style={{ color: 'var(--brand)', fontSize: 10, letterSpacing: '0.26em', textTransform: 'uppercase', fontWeight: 700 }}>{(ar && cfg.heroConfig?.relayTaglineAr) ? cfg.heroConfig.relayTaglineAr : (cfg.heroConfig?.relayTagline || "The Kitchen's Finest")}</p>
                   <span style={{ flex: 1, maxWidth: 40, height: 1, backgroundColor: 'rgba(var(--brand-rgb),0.4)' }} />
                 </div>
 
                 <h2 className="relay-el" style={{ color: '#faf9f5', fontSize: 'clamp(2.6rem,7vw,5.5rem)', fontWeight: 900, lineHeight: 1.04, letterSpacing: '-0.025em', marginBottom: 8 }}>
-                  {cfg.heroConfig?.relayHeadline || 'Made fresh,'}
+                  {(ar && cfg.heroConfig?.relayHeadlineAr) ? cfg.heroConfig.relayHeadlineAr : (cfg.heroConfig?.relayHeadline || 'Made fresh,')}
                 </h2>
                 <h2 className="relay-el" style={{
                   fontSize: 'clamp(2.6rem,7vw,5.5rem)', fontWeight: 900, lineHeight: 1.04, letterSpacing: '-0.025em', marginBottom: 32,
                   backgroundImage: 'linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 45%, rgba(var(--brand-rgb),0.35) 100%)',
                   WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
                 }}>
-                  {cfg.heroConfig?.relayHeadlinePart2 || 'every single day.'}
+                  {(ar && cfg.heroConfig?.relayHeadlinePart2Ar) ? cfg.heroConfig.relayHeadlinePart2Ar : (cfg.heroConfig?.relayHeadlinePart2 || 'every single day.')}
                 </h2>
 
                 <Link className="relay-el" href="/menu"
@@ -1168,9 +1168,9 @@ export default function LandingPage() {
       <section className="px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)]" style={{ backgroundColor: pal.bg, paddingTop: 'clamp(3rem,8vh,6rem)', paddingBottom: 'clamp(3rem,8vh,6rem)' }}>
         <div ref={dishHeadRef} className="flex flex-col sm:flex-row sm:items-end justify-between mb-6 md:mb-10 gap-3">
           <div>
-            <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 10 }}>{cfg.heroConfig?.dishesSubtext || 'Signature Dishes'}</p>
+            <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 10 }}>{(ar && cfg.heroConfig?.dishesSubtextAr) ? cfg.heroConfig.dishesSubtextAr : (cfg.heroConfig?.dishesSubtext || 'Signature Dishes')}</p>
             <h2 style={{ color: pal.text, fontSize: 'clamp(1.6rem,7vw,3rem)', fontWeight: 900, lineHeight: 1.12, letterSpacing: '-0.025em' }}>
-              {cfg.heroConfig?.dishesHeadline || "Dishes you'll dream about."}
+              {(ar && cfg.heroConfig?.dishesHeadlineAr) ? cfg.heroConfig.dishesHeadlineAr : (cfg.heroConfig?.dishesHeadline || "Dishes you'll dream about.")}
             </h2>
           </div>
           <Link href="/menu" className="flex items-center gap-2 text-sm font-semibold flex-shrink-0 self-start sm:self-auto"
@@ -1248,13 +1248,13 @@ export default function LandingPage() {
 
         {/* Headline above photos */}
         <div className="amb-el text-center mb-8 md:mb-12 px-1">
-          <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 14 }}>{cfg.heroConfig?.ambienceTagline || 'The Space'}</p>
+          <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 14 }}>{(ar && cfg.heroConfig?.ambienceTaglineAr) ? cfg.heroConfig.ambienceTaglineAr : (cfg.heroConfig?.ambienceTagline || 'The Space')}</p>
           <h2 style={{ color: '#fff', fontSize: 'clamp(1.75rem,8vw,3.8rem)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.03em' }}>
-            {cfg.heroConfig?.ambienceHeadline || 'Come for the food.'}<br />
+            {(ar && cfg.heroConfig?.ambienceHeadlineAr) ? cfg.heroConfig.ambienceHeadlineAr : (cfg.heroConfig?.ambienceHeadline || 'Come for the food.')}<br />
             <span style={{
               backgroundImage: 'linear-gradient(135deg, var(--brand) 0%, var(--brand-dark) 55%, var(--brand) 100%)',
               WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-            }}>{cfg.heroConfig?.ambienceHeadlinePart2 || 'Stay for the feeling.'}</span>
+            }}>{(ar && cfg.heroConfig?.ambienceHeadlinePart2Ar) ? cfg.heroConfig.ambienceHeadlinePart2Ar : (cfg.heroConfig?.ambienceHeadlinePart2 || 'Stay for the feeling.')}</span>
           </h2>
         </div>
 
@@ -1392,7 +1392,7 @@ export default function LandingPage() {
         <div className="reviews-head text-center mb-6 md:mb-12 px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)] relative z-[1]">
           <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 10 }}>Guest Reviews</p>
           <h2 style={{ color: pal.text, fontSize: 'clamp(1.55rem,6.5vw,3rem)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.08 }}>
-            {cfg.heroConfig?.reviewsHeadline || 'Loved by every table'}
+            {(ar && cfg.heroConfig?.reviewsHeadlineAr) ? cfg.heroConfig.reviewsHeadlineAr : (cfg.heroConfig?.reviewsHeadline || 'Loved by every table')}
           </h2>
           <p className="hidden md:block" style={{ color: pal.muted, fontSize: 13, marginTop: 10 }}>Tap any card to read the full review</p>
         </div>

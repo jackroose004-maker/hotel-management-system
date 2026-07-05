@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   Store, Clock, Table2, ShoppingBag, CalendarDays,
   Save, Loader2, CheckCircle2,
@@ -28,17 +28,37 @@ async function uploadVideo(file: File): Promise<string> {
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
+async function autoTranslate(text: string, from: 'en' | 'ar', to: 'en' | 'ar'): Promise<string> {
+  if (!text.trim()) return ''
+  try {
+    const res = await fetch(
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}`
+    )
+    const json = await res.json()
+    return json?.responseData?.translatedText ?? ''
+  } catch { return '' }
+}
+
 type MenuItem = { id: string; name: string; description: string | null; price: string; prepTimeMins: number; imageUrl: string | null; category?: { name: string } }
 
 type HeroConfig = {
   line1: string; line2: string; subtext: string; videoUrl: string; posterUrl: string
+  line1Ar?: string; line2Ar?: string; subtextAr?: string; badgeTextAr?: string
   heroMediaType?: 'video' | 'image'; heroImageUrl?: string
-  ctaLabel: string; ctaSecondaryLabel: string; badgeText: string
-  dishesHeadline: string; dishesSubtext: string
+  ctaLabel: string; ctaLabelAr?: string
+  ctaSecondaryLabel: string; ctaSecondaryLabelAr?: string
+  badgeText: string
+  dishesHeadline: string; dishesHeadlineAr?: string
+  dishesSubtext: string; dishesSubtextAr?: string
   signatureDishIds?: string[]
-  relayTagline: string; relayHeadline: string; relayHeadlinePart2: string
-  ambienceTagline: string; ambienceHeadline: string; ambienceHeadlinePart2: string; ambienceDesc: string
-  reviewsHeadline: string
+  relayTagline: string; relayTaglineAr?: string
+  relayHeadline: string; relayHeadlineAr?: string
+  relayHeadlinePart2: string; relayHeadlinePart2Ar?: string
+  ambienceTagline: string; ambienceTaglineAr?: string
+  ambienceHeadline: string; ambienceHeadlineAr?: string
+  ambienceHeadlinePart2: string; ambienceHeadlinePart2Ar?: string
+  ambienceDesc: string
+  reviewsHeadline: string; reviewsHeadlineAr?: string
   ambienceImg1: string; ambienceImg2: string; ambienceImg3: string; ambienceImg4: string
   ambienceImg5: string; ambienceImg6: string; ambienceImg7: string; ambienceImg8: string
 }
@@ -160,6 +180,53 @@ const Slider = ({ value, min, max, step = 1, unit, onChange }: { value: number; 
 }
 
 // ─── Layout atoms ─────────────────────────────────────────────────────────────
+
+function BilingualField({ label, valueEn, valueAr, placeholder, placeholderAr, onChangeEn, onChangeAr }: {
+  label: string; valueEn: string; valueAr: string
+  placeholder: string; placeholderAr: string
+  onChangeEn: (v: string) => void; onChangeAr: (v: string) => void
+}) {
+  const [translating, setTranslating] = React.useState<'en' | 'ar' | null>(null)
+
+  const translate = async (from: 'en' | 'ar') => {
+    const text = from === 'en' ? valueEn : valueAr
+    if (!text.trim()) return
+    setTranslating(from)
+    const result = await autoTranslate(text, from, from === 'en' ? 'ar' : 'en')
+    if (result) from === 'en' ? onChangeAr(result) : onChangeEn(result)
+    setTranslating(null)
+  }
+
+  return (
+    <div className="mb-4">
+      <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>{label}</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div>
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--bg3)', color: 'var(--text-muted)' }}>EN</span>
+            <button onClick={() => translate('en')} disabled={!!translating || !valueEn}
+              className="text-[10px] font-medium px-2 py-0.5 rounded transition-colors disabled:opacity-40"
+              style={{ color: 'var(--brand)', backgroundColor: 'transparent', border: '1px solid var(--brand)' }}>
+              {translating === 'en' ? '...' : '→ AR'}
+            </button>
+          </div>
+          <Inp value={valueEn} onChange={onChangeEn} placeholder={placeholder} />
+        </div>
+        <div dir="rtl">
+          <div className="flex items-center gap-1.5 mb-1 justify-end">
+            <button onClick={() => translate('ar')} disabled={!!translating || !valueAr}
+              className="text-[10px] font-medium px-2 py-0.5 rounded transition-colors disabled:opacity-40"
+              style={{ color: 'var(--brand)', backgroundColor: 'transparent', border: '1px solid var(--brand)' }}>
+              {translating === 'ar' ? '...' : '→ EN'}
+            </button>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--bg3)', color: 'var(--text-muted)' }}>AR</span>
+          </div>
+          <Inp value={valueAr} onChange={onChangeAr} placeholder={placeholderAr} />
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function Row({ label, desc, children, border = true }: { label: string; desc?: string; children: React.ReactNode; border?: boolean }) {
   return (
@@ -430,7 +497,7 @@ export default function SettingsPage() {
                   <div className="relative">
                     <input
                       type="color"
-                      value={cfg.brandColor ?? '#f59e0b'}
+                      value={cfg.brandColor ?? 'var(--brand)'}
                       onChange={e => { set('brandColor', e.target.value); applyBrandColor(e.target.value) }}
                       className="w-12 h-12 rounded-xl cursor-pointer border-0 p-0.5"
                       style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--card-border)' }}
@@ -441,16 +508,25 @@ export default function SettingsPage() {
                       Accent color — used across all public pages
                     </p>
                     <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
-                      {cfg.brandColor ?? '#f59e0b'}
+                      {cfg.brandColor ?? 'var(--brand)'}
                     </p>
                   </div>
-                  {/* Quick presets */}
-                  <div className="flex gap-2 ml-auto">
-                    {['#f59e0b','#ef4444','#10b981','#3b82f6','#8b5cf6','#f43f5e'].map(c => (
-                      <button key={c} onClick={() => { set('brandColor', c); applyBrandColor(c) }}
-                        className="w-7 h-7 rounded-lg border-2 transition-all"
-                        style={{ backgroundColor: c, borderColor: cfg.brandColor === c ? '#fff' : 'transparent' }}
-                        title={c}
+                  {/* Quick presets — to add more colors just add to this array */}
+                  <div className="flex flex-wrap gap-2 ml-auto">
+                    {[
+                      { hex: '#C9A84C', name: 'Champagne Gold' },
+                      { hex: '#9B2335', name: 'Burgundy' },
+                      { hex: '#2E5FA3', name: 'Royal Blue' },
+                      { hex: '#673147', name: 'Deep Plum' },
+                      { hex: '#C4817A', name: 'Rose Gold' },
+                      { hex: '#2A7F7F', name: 'Teal' },
+                      { hex: '#8B6914', name: 'Antique Gold' },
+                      { hex: '#5C4033', name: 'Dark Mocha' },
+                    ].map(({ hex, name }) => (
+                      <button key={hex} onClick={() => { set('brandColor', hex); applyBrandColor(hex) }}
+                        className="w-7 h-7 rounded-lg border-2 transition-all hover:scale-110"
+                        style={{ backgroundColor: hex, borderColor: cfg.brandColor === hex ? '#fff' : 'transparent' }}
+                        title={name}
                       />
                     ))}
                   </div>
@@ -481,36 +557,35 @@ export default function SettingsPage() {
                   <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
                     Controls the full-screen video hero at the top of your public website.
                   </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 1 (white)</p>
-                      <Inp value={hc.line1 ?? ''} onChange={v => setHc('line1', v)} placeholder="Taste of" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 2 <span style={{ color: '#f59e0b' }}>(gold italic)</span></p>
-                      <Inp value={hc.line2 ?? ''} onChange={v => setHc('line2', v)} placeholder="Kerala" />
-                    </div>
-                  </div>
-                  <div className="mb-4">
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Sub-text</p>
-                    <Inp value={hc.subtext ?? ''} onChange={v => setHc('subtext', v)} placeholder="Authentic South Indian cuisine · Dubai" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Badge text (pill above headline)</p>
-                    <Inp value={hc.badgeText ?? ''} onChange={v => setHc('badgeText', v)} placeholder="Now Open · Dubai, UAE" />
-                  </div>
+                  {/* Bilingual headline fields — EN + AR with auto-translate */}
+                  {([
+                    { key: 'line1',     keyAr: 'line1Ar',     label: 'Headline line 1', placeholder: 'Taste of',                              placeholderAr: 'طعم'                              },
+                    { key: 'line2',     keyAr: 'line2Ar',     label: 'Headline line 2', placeholder: 'Kerala',                                placeholderAr: 'كيرالا'                            },
+                    { key: 'subtext',   keyAr: 'subtextAr',   label: 'Sub-text',        placeholder: 'Authentic South Indian cuisine · Dubai', placeholderAr: 'مطبخ جنوب الهند الأصيل · دبي'   },
+                    { key: 'badgeText', keyAr: 'badgeTextAr', label: 'Badge text',      placeholder: 'Now Open · Dubai, UAE',                  placeholderAr: 'مفتوح الآن · دبي'                },
+                  ] as { key: keyof HeroConfig; keyAr: keyof HeroConfig; label: string; placeholder: string; placeholderAr: string }[]).map(f => (
+                    <BilingualField key={f.key as string}
+                      label={f.label}
+                      valueEn={(hc[f.key] as string) ?? ''}
+                      valueAr={(hc[f.keyAr] as string) ?? ''}
+                      placeholder={f.placeholder}
+                      placeholderAr={f.placeholderAr}
+                      onChangeEn={v => setHc(f.key, v)}
+                      onChangeAr={v => setHc(f.keyAr, v)}
+                    />
+                  ))}
                 </FieldBlock>
                 <SectionLabel text="Hero — Buttons" />
                 <FieldBlock>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Primary button label</p>
-                      <Inp value={hc.ctaLabel ?? ''} onChange={v => setHc('ctaLabel', v)} placeholder="Order Now" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Secondary button label</p>
-                      <Inp value={hc.ctaSecondaryLabel ?? ''} onChange={v => setHc('ctaSecondaryLabel', v)} placeholder="Reserve a Table" />
-                    </div>
+                  <div className="space-y-4">
+                    <BilingualField label="Primary button label"
+                      valueEn={hc.ctaLabel ?? ''} valueAr={hc.ctaLabelAr ?? ''}
+                      placeholder="Order Now" placeholderAr="اطلب الآن"
+                      onChangeEn={v => setHc('ctaLabel', v)} onChangeAr={v => setHc('ctaLabelAr', v)} />
+                    <BilingualField label="Secondary button label"
+                      valueEn={hc.ctaSecondaryLabel ?? ''} valueAr={hc.ctaSecondaryLabelAr ?? ''}
+                      placeholder="Reserve a Table" placeholderAr="احجز طاولة"
+                      onChangeEn={v => setHc('ctaSecondaryLabel', v)} onChangeAr={v => setHc('ctaSecondaryLabelAr', v)} />
                   </div>
                 </FieldBlock>
                 <SectionLabel text="Hero — Background Media" />
@@ -522,7 +597,7 @@ export default function SettingsPage() {
                         onClick={() => setHc('heroMediaType', t)}
                         className="flex-1 py-2 rounded-xl text-xs font-bold capitalize transition-all"
                         style={{
-                          backgroundColor: (hc.heroMediaType ?? 'video') === t ? '#f59e0b' : 'var(--card-bg)',
+                          backgroundColor: (hc.heroMediaType ?? 'video') === t ? 'var(--brand)' : 'var(--card-bg)',
                           color: (hc.heroMediaType ?? 'video') === t ? '#000' : 'var(--text-muted)',
                           border: '1px solid var(--card-border)',
                         }}>
@@ -537,7 +612,7 @@ export default function SettingsPage() {
                       <div>
                         <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Upload video (MP4)</p>
                         <label className="flex items-center justify-center gap-2 w-full py-3 rounded-xl cursor-pointer transition-all text-sm font-semibold"
-                          style={{ border: '1.5px dashed rgba(245,158,11,0.4)', color: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.04)' }}>
+                          style={{ border: '1.5px dashed rgba(var(--brand-rgb),0.4)', color: 'var(--brand)', backgroundColor: 'rgba(var(--brand-rgb),0.04)' }}>
                           {videoUploading ? <><Loader2 size={14} className="animate-spin" /> Uploading…</> : <><Zap size={14} /> Choose MP4 file</>}
                           <input type="file" accept="video/mp4,video/*" className="hidden" disabled={videoUploading}
                             onChange={async e => {
@@ -593,15 +668,15 @@ export default function SettingsPage() {
                 {/* DISHES */}
                 <SectionLabel text="Signature Dishes Section" />
                 <FieldBlock border={false}>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Section eyebrow label</p>
-                      <Inp value={hc.dishesSubtext ?? ''} onChange={v => setHc('dishesSubtext', v)} placeholder="Signature Dishes" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Section headline</p>
-                      <Inp value={hc.dishesHeadline ?? ''} onChange={v => setHc('dishesHeadline', v)} placeholder="Dishes you'll dream about." />
-                    </div>
+                  <div className="space-y-4">
+                    <BilingualField label="Section eyebrow label"
+                      valueEn={hc.dishesSubtext ?? ''} valueAr={hc.dishesSubtextAr ?? ''}
+                      placeholder="Signature Dishes" placeholderAr="أطباقنا المميزة"
+                      onChangeEn={v => setHc('dishesSubtext', v)} onChangeAr={v => setHc('dishesSubtextAr', v)} />
+                    <BilingualField label="Section headline"
+                      valueEn={hc.dishesHeadline ?? ''} valueAr={hc.dishesHeadlineAr ?? ''}
+                      placeholder="Dishes you'll dream about." placeholderAr="أطباق ستحلم بها."
+                      onChangeEn={v => setHc('dishesHeadline', v)} onChangeAr={v => setHc('dishesHeadlineAr', v)} />
                   </div>
                 </FieldBlock>
 
@@ -618,34 +693,34 @@ export default function SettingsPage() {
                       {menuItems.map(item => {
                         const selected = (hc.signatureDishIds ?? []).includes(item.id)
                         const count = (hc.signatureDishIds ?? []).length
-                        const disabled = !selected && count >= 12
+                        const atCap = !selected && count >= 12
                         return (
                           <button
                             key={item.id}
                             type="button"
-                            disabled={disabled}
                             onClick={() => {
+                              if (atCap) { toast.error('Remove a dish first — max 12 selected'); return }
                               const ids = hc.signatureDishIds ?? []
                               setHc('signatureDishIds', selected ? ids.filter(id => id !== item.id) : [...ids, item.id])
                             }}
                             className="flex items-center gap-3 p-2.5 rounded-xl text-left transition-all"
                             style={{
-                              border: selected ? '1.5px solid #f59e0b' : '1px solid var(--card-border)',
-                              backgroundColor: selected ? 'rgba(245,158,11,0.08)' : 'var(--card-bg)',
-                              opacity: disabled ? 0.4 : 1,
-                              cursor: disabled ? 'not-allowed' : 'pointer',
+                              border: selected ? '1.5px solid var(--brand)' : '1px solid var(--card-border)',
+                              backgroundColor: selected ? 'rgba(var(--brand-rgb),0.08)' : 'var(--card-bg)',
+                              opacity: atCap ? 0.4 : 1,
+                              cursor: atCap ? 'not-allowed' : 'pointer',
                             }}
                           >
                             <div className="relative flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden">
                               <img src={item.imageUrl!} alt={item.name} className="w-full h-full object-cover" />
                               {selected && (
-                                <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.7)' }}>
+                                <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.7)' }}>
                                   <CheckCircle2 size={16} className="text-black" />
                                 </div>
                               )}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold truncate" style={{ color: selected ? '#f59e0b' : 'var(--text-primary)' }}>{item.name}</p>
+                              <p className="text-sm font-semibold truncate" style={{ color: selected ? 'var(--brand)' : 'var(--text-primary)' }}>{item.name}</p>
                               <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>AED {item.price} · {item.prepTimeMins} min</p>
                             </div>
                           </button>
@@ -668,38 +743,38 @@ export default function SettingsPage() {
                 {/* FOOD RELAY */}
                 <SectionLabel text="Food Relay Section" />
                 <FieldBlock border={false}>
-                  <div className="mb-4">
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Eyebrow label</p>
-                    <Inp value={hc.relayTagline ?? ''} onChange={v => setHc('relayTagline', v)} placeholder="The Kitchen's Finest" />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 1 (white)</p>
-                      <Inp value={hc.relayHeadline ?? ''} onChange={v => setHc('relayHeadline', v)} placeholder="Made fresh," />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 2 <span style={{ color: '#f59e0b' }}>(gold gradient)</span></p>
-                      <Inp value={hc.relayHeadlinePart2 ?? ''} onChange={v => setHc('relayHeadlinePart2', v)} placeholder="every single day." />
-                    </div>
+                  <div className="space-y-4">
+                    <BilingualField label="Eyebrow label"
+                      valueEn={hc.relayTagline ?? ''} valueAr={hc.relayTaglineAr ?? ''}
+                      placeholder="The Kitchen's Finest" placeholderAr="أجود ما في المطبخ"
+                      onChangeEn={v => setHc('relayTagline', v)} onChangeAr={v => setHc('relayTaglineAr', v)} />
+                    <BilingualField label="Headline line 1 (white)"
+                      valueEn={hc.relayHeadline ?? ''} valueAr={hc.relayHeadlineAr ?? ''}
+                      placeholder="Made fresh," placeholderAr="يُحضَّر طازجاً،"
+                      onChangeEn={v => setHc('relayHeadline', v)} onChangeAr={v => setHc('relayHeadlineAr', v)} />
+                    <BilingualField label="Headline line 2 (gold gradient)"
+                      valueEn={hc.relayHeadlinePart2 ?? ''} valueAr={hc.relayHeadlinePart2Ar ?? ''}
+                      placeholder="every single day." placeholderAr="كل يوم بلا استثناء."
+                      onChangeEn={v => setHc('relayHeadlinePart2', v)} onChangeAr={v => setHc('relayHeadlinePart2Ar', v)} />
                   </div>
                 </FieldBlock>
 
                 {/* AMBIENCE */}
                 <SectionLabel text="Ambience Section" />
                 <FieldBlock border={false}>
-                  <div className="mb-4">
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Eyebrow label</p>
-                    <Inp value={hc.ambienceTagline ?? ''} onChange={v => setHc('ambienceTagline', v)} placeholder="The Space" />
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 1 (white)</p>
-                      <Inp value={hc.ambienceHeadline ?? ''} onChange={v => setHc('ambienceHeadline', v)} placeholder="Come for the food." />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Headline line 2 <span style={{ color: '#f59e0b' }}>(gold gradient)</span></p>
-                      <Inp value={hc.ambienceHeadlinePart2 ?? ''} onChange={v => setHc('ambienceHeadlinePart2', v)} placeholder="Stay for the feeling." />
-                    </div>
+                  <div className="space-y-4">
+                    <BilingualField label="Eyebrow label"
+                      valueEn={hc.ambienceTagline ?? ''} valueAr={hc.ambienceTaglineAr ?? ''}
+                      placeholder="The Space" placeholderAr="المكان"
+                      onChangeEn={v => setHc('ambienceTagline', v)} onChangeAr={v => setHc('ambienceTaglineAr', v)} />
+                    <BilingualField label="Headline line 1 (white)"
+                      valueEn={hc.ambienceHeadline ?? ''} valueAr={hc.ambienceHeadlineAr ?? ''}
+                      placeholder="Come for the food." placeholderAr="تعال من أجل الطعام."
+                      onChangeEn={v => setHc('ambienceHeadline', v)} onChangeAr={v => setHc('ambienceHeadlineAr', v)} />
+                    <BilingualField label="Headline line 2 (gold gradient)"
+                      valueEn={hc.ambienceHeadlinePart2 ?? ''} valueAr={hc.ambienceHeadlinePart2Ar ?? ''}
+                      placeholder="Stay for the feeling." placeholderAr="وابقَ من أجل التجربة."
+                      onChangeEn={v => setHc('ambienceHeadlinePart2', v)} onChangeAr={v => setHc('ambienceHeadlinePart2Ar', v)} />
                   </div>
                 </FieldBlock>
 
@@ -738,10 +813,10 @@ export default function SettingsPage() {
                 {/* REVIEWS */}
                 <SectionLabel text="Guest Reviews Section" />
                 <FieldBlock border={false}>
-                  <div>
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Section headline</p>
-                    <Inp value={hc.reviewsHeadline ?? ''} onChange={v => setHc('reviewsHeadline', v)} placeholder="Loved by every table" />
-                  </div>
+                  <BilingualField label="Section headline"
+                    valueEn={hc.reviewsHeadline ?? ''} valueAr={hc.reviewsHeadlineAr ?? ''}
+                    placeholder="Loved by every table" placeholderAr="محبوب على كل طاولة"
+                    onChangeEn={v => setHc('reviewsHeadline', v)} onChangeAr={v => setHc('reviewsHeadlineAr', v)} />
                 </FieldBlock>
               </>
             })()}
