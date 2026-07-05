@@ -1180,15 +1180,18 @@ export default function LandingPage() {
           </Link>
         </div>
         {(() => {
-          const visibleDishes    = dishes.slice(dishPage * 6, dishPage * 6 + 6)
-          const pages            = Math.ceil(dishes.length / 6)
+          const paddedDishes = dishes.length > 0
+            ? Array.from({ length: 12 }, (_, i) => dishes[i % dishes.length])
+            : dishes
+          const visibleDishes    = paddedDishes.slice(dishPage * 6, dishPage * 6 + 6)
+          const pages            = Math.ceil(paddedDishes.length / 6)
 
           return (
             <div ref={dishGridRef}>
               {/* Mobile — all dishes, native swipe, no auto-rotation */}
               <div className="md:hidden">
                 <SignatureDishesMobile
-                  dishes={dishes}
+                  dishes={paddedDishes}
                   mutedColor={pal.muted}
                   dotInactive={dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)'}
                 />
@@ -1240,7 +1243,11 @@ export default function LandingPage() {
           .map(i => cfg.heroConfig?.[`ambienceImg${i}` as keyof typeof cfg.heroConfig] as string | undefined)
           .filter(Boolean) as string[]
         const fallback = AMBIENCE
-        const pool = allAmb.length >= 4 ? allAmb : fallback
+        const rawPool = allAmb.length >= 4 ? allAmb : fallback
+        // always show at least 8 images (2 pages) by cycling the source
+        const pool = rawPool.length >= 8
+          ? rawPool
+          : Array.from({ length: 8 }, (_, i) => rawPool[i % rawPool.length])
         const imgs = pool.slice(ambPage * 4, ambPage * 4 + 4)
         // pad to 4 if last page is short
         while (imgs.length < 4) imgs.push(pool[imgs.length % pool.length])
