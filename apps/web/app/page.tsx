@@ -177,7 +177,7 @@ function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
           const scale = i === active ? 1 : 0.94
           return (
           <div
-            key={d.name}
+            key={`${d.name}-${i}`}
             className="snap-center flex-shrink-0 w-[86vw] max-w-[360px]"
             style={{
               cursor: 'pointer',
@@ -924,10 +924,10 @@ export default function LandingPage() {
               {/* Nav links */}
               <nav className="flex-1 p-5 space-y-1">
                 {[
-                  { href: '/menu',    label: 'Menu',         icon: '🍽️' },
-                  ...(hasActiveOrder ? [{ href: '/menu?track=1', label: 'Track Order', icon: '🔴' }] : []),
-                  { href: '/book',    label: 'Book a Table', icon: '📅' },
-                  { href: token ? '/account' : '/login', label: token && user ? user.name?.split(' ')[0] ?? 'My Account' : 'Sign In', icon: '👤' },
+                  { href: '/menu',    label: t(lang, 'nav.menu'),  icon: '🍽️' },
+                  ...(hasActiveOrder ? [{ href: '/menu?track=1', label: ar ? 'تتبع الطلب' : 'Track Order', icon: '🔴' }] : []),
+                  { href: '/book',    label: t(lang, 'nav.book'),  icon: '📅' },
+                  { href: token ? '/account' : '/login', label: token && user ? user.name?.split(' ')[0] ?? t(lang, 'nav.myAccount') : t(lang, 'nav.signIn'), icon: '👤' },
                 ].map(n => (
                   <Link key={n.href} href={n.href} onClick={() => setNavOpen(false)}
                     className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all"
@@ -955,7 +955,7 @@ export default function LandingPage() {
                   <button onClick={() => { setNavOpen(false); logout() }}
                     className="flex items-center justify-center gap-2 py-3 rounded-2xl font-semibold text-sm w-full"
                     style={{ border: '1px solid rgba(239,68,68,0.25)', color: '#ef4444' }}>
-                    <LogOut size={13} /> Sign out
+                    <LogOut size={13} /> {t(lang, 'nav.signOut')}
                   </button>
                 )}
               </div>
@@ -1204,7 +1204,7 @@ export default function LandingPage() {
                   className="md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-4"
                   style={{ animation: 'dishFadeIn 0.45s ease both' }}
                 >
-                  {visibleDishes.map((d, i) => <DishCard key={d.name} {...d} index={i} />)}
+                  {visibleDishes.map((d, i) => <DishCard key={`${d.name}-${dishPage}-${i}`} {...d} index={i} />)}
                 </div>
               </div>
 

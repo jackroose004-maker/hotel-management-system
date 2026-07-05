@@ -48,7 +48,7 @@ interface MenuItem {
   price: number; prepTimeMins: number; isAvailable: boolean; imageUrl?: string
   modifierGroups?: ModifierGroup[]
 }
-interface Category { id: string; name: string; itemCount: number; items: MenuItem[] }
+interface Category { id: string; name: string; nameAr?: string; itemCount: number; items: MenuItem[] }
 interface CategoryPageState {
   nextCursor: string | null
   hasMore: boolean
