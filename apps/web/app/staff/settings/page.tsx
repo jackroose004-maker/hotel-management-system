@@ -64,7 +64,7 @@ type HeroConfig = {
 }
 
 type Cfg = {
-  restaurantName: string; tagline: string; phone: string; address: string; logoUrl: string
+  restaurantName: string; restaurantNameAr?: string; tagline: string; taglineAr?: string; phone: string; address: string; logoUrl: string
   openTime: string; closeTime: string; timezone: string
   totalTables: number; defaultCapacity: number; vatRate: number; currency: string; defaultPrepTimeMins: number
   bookingsEnabled: boolean; slotDurationMins: number; walkInBuffer: number; peakHoursEnabled: boolean
@@ -76,7 +76,7 @@ type Cfg = {
 }
 
 const UPDATABLE: (keyof Cfg)[] = [
-  'restaurantName','tagline','heroConfig','phone','address','logoUrl','openTime','closeTime','timezone',
+  'restaurantName','restaurantNameAr','tagline','taglineAr','heroConfig','phone','address','logoUrl','openTime','closeTime','timezone',
   'totalTables','defaultCapacity','vatRate','currency','defaultPrepTimeMins',
   'bookingsEnabled','slotDurationMins','walkInBuffer','peakHoursEnabled',
   'peakStart','peakEnd','noShowWindowOffPeak','noShowWindowPeak',
@@ -441,16 +441,14 @@ export default function SettingsPage() {
             {section === 'restaurant' && <>
               <SectionLabel text="Identity" />
               <FieldBlock>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Restaurant name</p>
-                    <Inp value={cfg.restaurantName} onChange={v => set('restaurantName', v)} placeholder="Al Manzil" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Tagline</p>
-                    <Inp value={cfg.tagline} onChange={v => set('tagline', v)} placeholder="Authentic Kerala cuisine" />
-                  </div>
-                </div>
+                <BilingualField label="Restaurant name"
+                  valueEn={cfg.restaurantName ?? ''} valueAr={cfg.restaurantNameAr ?? ''}
+                  placeholder="Al Manzil" placeholderAr="المنزل"
+                  onChangeEn={v => set('restaurantName', v)} onChangeAr={v => set('restaurantNameAr', v)} />
+                <BilingualField label="Tagline"
+                  valueEn={cfg.tagline ?? ''} valueAr={cfg.taglineAr ?? ''}
+                  placeholder="Authentic Kerala cuisine" placeholderAr="مطبخ كيرالا الأصيل"
+                  onChangeEn={v => set('tagline', v)} onChangeAr={v => set('taglineAr', v)} />
               </FieldBlock>
               <SectionLabel text="Contact" />
               <FieldBlock>

@@ -786,7 +786,7 @@ export default function LandingPage() {
               ? <img src={cfg.logoUrl} alt={cfg.restaurantName} className="w-8 h-8 rounded-lg object-cover" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.35)' }} />
               : <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}><UtensilsCrossed size={14} className="text-black" /></div>
             }
-            <span className="hidden sm:block font-black text-sm tracking-tight" style={{ color: scrolled ? pal.text : '#fff' }}>{cfg.restaurantName}</span>
+            <span className="hidden sm:block font-black text-sm tracking-tight" style={{ color: scrolled ? pal.text : '#fff' }}>{(ar && cfg.restaurantNameAr) ? cfg.restaurantNameAr : cfg.restaurantName}</span>
           </Link>
 
           {/* ── Center nav ── */}
@@ -913,7 +913,7 @@ export default function LandingPage() {
                     ? <img src={cfg.logoUrl} alt={cfg.restaurantName} className="w-8 h-8 rounded-lg object-cover" />
                     : <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}><UtensilsCrossed size={14} className="text-black" /></div>
                   }
-                  <span className="font-black text-sm" style={{ color: pal.text }}>{cfg.restaurantName}</span>
+                  <span className="font-black text-sm" style={{ color: pal.text }}>{(ar && cfg.restaurantNameAr) ? cfg.restaurantNameAr : cfg.restaurantName}</span>
                 </div>
                 <button onClick={() => setNavOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
                   style={{ color: pal.muted, backgroundColor: pal.bg3 }}>
@@ -1488,13 +1488,13 @@ export default function LandingPage() {
                     </div>
                 }
                 <div className="text-left">
-                  <div className="font-black text-sm tracking-tight" style={{ color: '#f5f3ef' }}>{cfg.restaurantName}</div>
-                  <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{cfg.tagline ?? ''}</div>
+                  <div className="font-black text-sm tracking-tight" style={{ color: '#f5f3ef' }}>{(ar && cfg.restaurantNameAr) ? cfg.restaurantNameAr : cfg.restaurantName}</div>
+                  <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{(ar && cfg.taglineAr) ? cfg.taglineAr : (cfg.tagline ?? '')}</div>
                 </div>
               </div>
               {cfg.tagline && (
                 <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 12, lineHeight: 1.7 }}>
-                  {cfg.tagline}
+                  {(ar && cfg.taglineAr) ? cfg.taglineAr : cfg.tagline}
                 </p>
               )}
             </div>
@@ -1595,7 +1595,7 @@ export default function LandingPage() {
 
         {/* Bottom bar */}
         <div className="px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)] py-4 md:py-3.5 flex flex-col items-center justify-center md:flex-row md:justify-between gap-3 text-center md:text-left">
-          <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: 11 }}>© 2026 {cfg.restaurantName}. All rights reserved.</p>
+          <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: 11 }}>© 2026 {(ar && cfg.restaurantNameAr) ? cfg.restaurantNameAr : cfg.restaurantName}. All rights reserved.</p>
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-green-500/20"
             style={{ backgroundColor: 'rgba(34,197,94,0.06)' }}>
             <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-green-500" />
