@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import Lenis from 'lenis'
-import { UtensilsCrossed, Star, Clock, ArrowRight, Phone, MapPin, ChevronDown, CalendarDays, User, ShoppingCart, Check, LogOut } from 'lucide-react'
+import { UtensilsCrossed, Star, Clock, ArrowRight, ArrowLeft, Phone, MapPin, ChevronDown, CalendarDays, User, ShoppingCart, Check, LogOut } from 'lucide-react'
 import AccountNavLink from '@/components/AccountNavLink'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
@@ -893,13 +893,14 @@ export default function LandingPage() {
                 WebkitBackdropFilter: 'blur(16px) saturate(110%)',
               }}
             />
-            {/* Drawer panel */}
+            {/* Drawer panel — right side in LTR, left side in RTL */}
             <div
-              className="absolute top-0 right-0 bottom-0 w-[min(18rem,88vw)] flex flex-col shadow-2xl animate-[slideInRight_0.28s_ease-out]"
+              className={`absolute top-0 bottom-0 w-[min(18rem,88vw)] flex flex-col shadow-2xl ${ar ? 'left-0 animate-[slideInLeft_0.28s_ease-out]' : 'right-0 animate-[slideInRight_0.28s_ease-out]'}`}
               style={{
                 backgroundColor: dark ? '#0c0c0c' : '#f9f6f2',
-                borderLeft: `1px solid ${pal.border}`,
-                boxShadow: '-8px 0 40px rgba(0,0,0,0.35)',
+                borderLeft: ar ? 'none' : `1px solid ${pal.border}`,
+                borderRight: ar ? `1px solid ${pal.border}` : 'none',
+                boxShadow: ar ? '8px 0 40px rgba(0,0,0,0.35)' : '-8px 0 40px rgba(0,0,0,0.35)',
               }}
               onClick={e => e.stopPropagation()}
             >
@@ -934,7 +935,7 @@ export default function LandingPage() {
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                     <span>{n.icon}</span>
                     {n.label}
-                    <ArrowRight size={13} className="ml-auto" style={{ color: 'var(--brand)' }} />
+                    {ar ? <ArrowLeft size={13} className="me-auto" style={{ color: 'var(--brand)' }} /> : <ArrowRight size={13} className="ms-auto" style={{ color: 'var(--brand)' }} />}
                   </Link>
                 ))}
               </nav>

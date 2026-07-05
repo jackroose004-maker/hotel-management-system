@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Eye, EyeOff, UtensilsCrossed, ArrowLeft } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
+import { useLangStore, applyLangDir, t } from '@/store/lang'
 import toast from 'react-hot-toast'
 
 const API     = process.env.NEXT_PUBLIC_API_URL     ?? 'http://localhost:3001/api/v1'
@@ -19,6 +20,9 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { setAuth, token } = useAuthStore()
+  const { lang, setLang } = useLangStore()
+  const ar = lang === 'ar'
+  useEffect(() => { applyLangDir(lang) }, [lang])
 
   const [tab, setTab] = useState<'login' | 'signup'>('login')
   const [showPass, setShowPass] = useState(false)
@@ -190,17 +194,26 @@ function LoginForm() {
         {/* Form area */}
         <div className="flex-1 flex flex-col justify-center px-5 py-8 max-w-md mx-auto w-full">
 
-          {/* Heading */}
+          {/* Lang toggle + Heading */}
           <div className="mb-7">
-            <h1 className="text-2xl font-black text-white mb-1.5">
-              {tab === 'login' ? 'Welcome back' : 'Create your account'}
-            </h1>
+            <div className="flex items-center justify-between mb-4">
+              <h1 className="text-2xl font-black text-white">
+                {tab === 'login'
+                  ? (ar ? 'مرحباً بعودتك' : 'Welcome back')
+                  : (ar ? 'إنشاء حساب جديد' : 'Create your account')}
+              </h1>
+              <button onClick={() => setLang(ar ? 'en' : 'ar')}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: ar ? 'var(--brand)' : '#666', border: '1px solid rgba(255,255,255,0.1)' }}>
+                {ar ? 'EN' : 'ع'}
+              </button>
+            </div>
             <p className="text-gray-400 text-sm">
               {comingForBooking
-                ? 'Sign in or register to complete your table reservation.'
+                ? (ar ? 'سجّل الدخول أو أنشئ حساباً لإتمام حجز طاولتك.' : 'Sign in or register to complete your table reservation.')
                 : tab === 'login'
-                ? 'Sign in to order, track meals, and manage bookings.'
-                : 'Join us to order food, book tables, and track your meals.'}
+                ? (ar ? 'سجّل الدخول لطلب الطعام وتتبع الوجبات وإدارة الحجوزات.' : 'Sign in to order, track meals, and manage bookings.')
+                : (ar ? 'انضم إلينا لطلب الطعام وحجز الطاولات وتتبع وجباتك.' : 'Join us to order food, book tables, and track your meals.')}
             </p>
           </div>
 
@@ -223,7 +236,7 @@ function LoginForm() {
               <path d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
               <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
             </svg>
-            Continue with Google
+            {ar ? 'المتابعة مع Google' : 'Continue with Google'}
           </button>
 
           {/* Divider */}
@@ -242,7 +255,7 @@ function LoginForm() {
                     ? 'text-white shadow-sm'
                     : 'text-gray-400 hover:text-gray-200 lg:hover:text-gray-700 dark:hover:text-gray-200'
                 }`}>
-                {t === 'login' ? 'Sign In' : 'Sign Up'}
+                {t === 'login' ? (ar ? 'تسجيل الدخول' : 'Sign In') : (ar ? 'إنشاء حساب' : 'Sign Up')}
               </button>
             ))}
           </div>
@@ -251,7 +264,7 @@ function LoginForm() {
           <form onSubmit={submit} className="space-y-3.5">
             {tab === 'signup' && (
               <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1.5">Full Name</label>
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5">{ar ? 'الاسم الكامل' : 'Full Name'}</label>
                 <input type="text" required placeholder="Your name" value={form.name}
                   onChange={e => setField('name', e.target.value)}
                   className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
@@ -259,7 +272,7 @@ function LoginForm() {
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-gray-400 mb-1.5">Email Address</label>
+              <label className="block text-xs font-semibold text-gray-400 mb-1.5">{ar ? 'البريد الإلكتروني' : 'Email Address'}</label>
               <input type="email" required placeholder="you@email.com" value={form.email}
                 onChange={e => setField('email', e.target.value)}
                 className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
@@ -277,7 +290,7 @@ function LoginForm() {
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-gray-400 mb-1.5">Password</label>
+              <label className="block text-xs font-semibold text-gray-400 mb-1.5">{ar ? 'كلمة المرور' : 'Password'}</label>
               <div className="relative">
                 <input type={showPass ? 'text' : 'password'} required minLength={6}
                   placeholder="••••••••" value={form.password}
@@ -292,7 +305,7 @@ function LoginForm() {
 
             {error && (
               error === 'STAFF_PORTAL' ? (
-                <div className="rounded-xl px-4 py-3 text-xs" style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
+                <div className="rounded-xl px-4 py-3 text-xs" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)', border: '1px solid rgba(var(--brand-rgb),0.25)' }}>
                   <p className="font-bold text-[var(--brand)] mb-1">Staff account detected</p>
                   <p className="text-gray-400 mb-2.5">This email is registered as a staff member. Please use the Staff Portal to sign in.</p>
                   <Link href="/staff/login"
@@ -312,8 +325,8 @@ function LoginForm() {
               className="w-full text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-black/20 hover:shadow-black/30 hover:scale-[1.01] active:scale-100 mt-1"
               style={{ backgroundColor: 'var(--brand)' }}>
               {loading
-                ? (tab === 'login' ? 'Signing in…' : 'Creating account…')
-                : (tab === 'login' ? 'Sign In' : 'Create Free Account')}
+                ? (tab === 'login' ? (ar ? 'جارٍ الدخول…' : 'Signing in…') : (ar ? 'جارٍ إنشاء الحساب…' : 'Creating account…'))
+                : (tab === 'login' ? (ar ? 'تسجيل الدخول' : 'Sign In') : (ar ? 'إنشاء حساب مجاني' : 'Create Free Account'))}
             </button>
           </form>
 

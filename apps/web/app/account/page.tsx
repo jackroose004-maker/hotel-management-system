@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '@/store/auth'
 import { useCartStore } from '@/store/cart'
 import { useBrandStore } from '@/store/brand'
+import { useLangStore, applyLangDir, t } from '@/store/lang'
 import { StatusBadge, bookingStatusVariant } from '@/components/ui/StatusBadge'
 import toast from 'react-hot-toast'
 
@@ -22,9 +23,18 @@ const ORDER_STATUS_LABEL: Record<string, string> = {
   PREPARING: 'Being Prepared', READY: 'Ready to Serve',
   DELIVERED: 'Served', CANCELLED: 'Cancelled',
 }
+const ORDER_STATUS_LABEL_AR: Record<string, string> = {
+  PENDING: 'تم استلام الطلب', ACCEPTED: 'مؤكد',
+  PREPARING: 'قيد التحضير', READY: 'جاهز للتقديم',
+  DELIVERED: 'تم التقديم', CANCELLED: 'ملغى',
+}
 const BOOKING_STATUS_LABEL: Record<string, string> = {
   PENDING: 'Upcoming', CONFIRMED: 'Confirmed', ARRIVED: 'Visited',
   NO_SHOW: 'No-show', CANCELLED: 'Cancelled',
+}
+const BOOKING_STATUS_LABEL_AR: Record<string, string> = {
+  PENDING: 'قادم', CONFIRMED: 'مؤكد', ARRIVED: 'تمت الزيارة',
+  NO_SHOW: 'لم يحضر', CANCELLED: 'ملغى',
 }
 const DIETARY_OPTIONS = [
   { id: 'vegetarian', label: 'Vegetarian', emoji: '🥗' },
@@ -101,6 +111,9 @@ function AccountContent() {
   const { user, token, logout, init } = useAuthStore()
   const cart = useCartStore()
   const logoUrl = useBrandStore(s => s.logoUrl)
+  const { lang, setLang } = useLangStore()
+  const ar = lang === 'ar'
+  useEffect(() => { applyLangDir(lang) }, [lang])
 
   const [tab, setTab] = useState<TabId>('home')
 
@@ -356,11 +369,11 @@ function AccountContent() {
   const upcomingBooks  = bookings.filter(b => ['PENDING','CONFIRMED'].includes(b.status))
 
   const TABS: { id: TabId; label: string; Icon: any; badge?: number }[] = [
-    { id: 'home',       label: 'Home',        Icon: Home,        badge: 0 },
-    { id: 'orders',     label: 'Orders',      Icon: ShoppingBag, badge: activeOrders.length },
-    { id: 'bookings',   label: 'Bookings',    Icon: CalendarDays,badge: upcomingBooks.length },
-    { id: 'favourites', label: 'Favourites',  Icon: Heart,       badge: 0 },
-    { id: 'profile',    label: 'Profile',     Icon: User,        badge: 0 },
+    { id: 'home',       label: ar ? 'الرئيسية' : 'Home',        Icon: Home,        badge: 0 },
+    { id: 'orders',     label: ar ? 'طلباتي'   : 'Orders',      Icon: ShoppingBag, badge: activeOrders.length },
+    { id: 'bookings',   label: ar ? 'حجوزاتي'  : 'Bookings',    Icon: CalendarDays,badge: upcomingBooks.length },
+    { id: 'favourites', label: ar ? 'المفضلة'  : 'Favourites',  Icon: Heart,       badge: 0 },
+    { id: 'profile',    label: ar ? 'الملف'    : 'Profile',     Icon: User,        badge: 0 },
   ]
 
   // ── UI ─────────────────────────────────────────────────────────────────────
@@ -371,8 +384,8 @@ function AccountContent() {
       <div className="relative overflow-hidden">
         {/* Background */}
         <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.12) 0%, transparent 60%)' }} />
-          <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(245,158,11,0.06)', transform: 'translate(30%,-30%)' }} />
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(135deg, rgba(var(--brand-rgb),0.12) 0%, transparent 60%)' }} />
+          <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.06)', transform: 'translate(30%,-30%)' }} />
         </div>
 
         <div className="relative px-4 sm:px-6 pt-5 pb-5 max-w-2xl mx-auto">
@@ -381,16 +394,23 @@ function AccountContent() {
             <Link href="/" className="flex items-center gap-2">
               {logoUrl
                 ? <img src={logoUrl} alt="Logo" className="w-8 h-8 rounded-xl object-cover" />
-                : <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#f59e0b' }}>
+                : <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}>
                     <UtensilsCrossed size={14} className="text-black" />
                   </div>
               }
               <span className="font-black text-sm text-white tracking-wide">AL MANZIL</span>
             </Link>
-            <button onClick={() => { logout(); router.push('/') }}
-              className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-300 transition-colors">
-              <LogOut size={13} /> Sign out
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setLang(ar ? 'en' : 'ar')}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
+                style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: ar ? 'var(--brand)' : '#555', border: '1px solid rgba(255,255,255,0.08)' }}>
+                {ar ? 'EN' : 'ع'}
+              </button>
+              <button onClick={() => { logout(); router.push('/') }}
+                className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-300 transition-colors">
+                <LogOut size={13} /> {ar ? 'خروج' : 'Sign out'}
+              </button>
+            </div>
           </div>
 
           {/* Avatar + name */}
@@ -398,9 +418,9 @@ function AccountContent() {
             {user.avatarUrl
               ? <img src={user.avatarUrl} alt={user.name}
                   className="w-16 h-16 rounded-2xl object-cover"
-                  style={{ border: '2px solid #f59e0b' }} referrerPolicy="no-referrer" />
+                  style={{ border: '2px solid var(--brand)' }} referrerPolicy="no-referrer" />
               : <div className="w-16 h-16 rounded-2xl flex items-center justify-center font-black text-2xl shadow-xl flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: '#000' }}>
+                  style={{ background: 'linear-gradient(135deg, var(--brand), #d97706)', color: '#000' }}>
                   {user.name.charAt(0).toUpperCase()}
                 </div>
             }
@@ -437,12 +457,12 @@ function AccountContent() {
           {TABS.map(({ id, label, Icon, badge }) => (
             <button key={id} onClick={() => setTab(id)}
               className="flex-1 relative flex flex-col items-center gap-0.5 py-2 rounded-xl text-[10px] font-bold transition-all"
-              style={tab === id ? { backgroundColor: '#f59e0b', color: '#000' } : { color: '#555' }}>
+              style={tab === id ? { backgroundColor: 'var(--brand)', color: '#000' } : { color: '#555' }}>
               <Icon size={14} />
               <span className="hidden sm:block">{label}</span>
               {(badge ?? 0) > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 text-[8px] font-black rounded-full flex items-center justify-center"
-                  style={{ backgroundColor: tab === id ? '#000' : '#f59e0b', color: tab === id ? '#f59e0b' : '#000' }}>
+                  style={{ backgroundColor: tab === id ? '#000' : 'var(--brand)', color: tab === id ? 'var(--brand)' : '#000' }}>
                   {badge}
                 </span>
               )}
@@ -461,15 +481,15 @@ function AccountContent() {
             {activeOrders.length > 0 && (
               <FadeIn delay={0}>
                 <div className="rounded-2xl p-4 flex items-center gap-3"
-                  style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
-                  <div className="w-2 h-2 rounded-full animate-pulse flex-shrink-0" style={{ backgroundColor: '#f59e0b' }} />
+                  style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)', border: '1px solid rgba(var(--brand-rgb),0.25)' }}>
+                  <div className="w-2 h-2 rounded-full animate-pulse flex-shrink-0" style={{ backgroundColor: 'var(--brand)' }} />
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-sm" style={{ color: '#f59e0b' }}>Order in progress</div>
+                    <div className="font-bold text-sm" style={{ color: 'var(--brand)' }}>Order in progress</div>
                     <div className="text-xs text-gray-500 mt-0.5 truncate">
-                      {ORDER_STATUS_LABEL[activeOrders[0].status]} · {activeOrders[0].items.slice(0,2).map((i: any) => i.menuItem.name).join(', ')}
+                      {(ar ? ORDER_STATUS_LABEL_AR : ORDER_STATUS_LABEL)[activeOrders[0].status]} · {activeOrders[0].items.slice(0,2).map((i: any) => ar && i.menuItem.nameAr ? i.menuItem.nameAr : i.menuItem.name).join('، ')}
                     </div>
                   </div>
-                  <button onClick={() => setTab('orders')} style={{ color: '#f59e0b' }}>
+                  <button onClick={() => setTab('orders')} style={{ color: 'var(--brand)' }}>
                     <ChevronRight size={16} />
                   </button>
                 </div>
@@ -516,7 +536,7 @@ function AccountContent() {
               <div className="grid grid-cols-2 gap-3">
                 <Link href="/menu"
                   className="rounded-2xl p-4 flex flex-col gap-3 transition-all active:scale-[0.97]"
-                  style={{ backgroundColor: '#f59e0b' }}>
+                  style={{ backgroundColor: 'var(--brand)' }}>
                   <Utensils size={22} className="text-black" />
                   <div>
                     <div className="font-black text-black text-sm">Order Food</div>
@@ -526,7 +546,7 @@ function AccountContent() {
                 <Link href="/book"
                   className="rounded-2xl p-4 flex flex-col gap-3 transition-all active:scale-[0.97]"
                   style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
-                  <CalendarDays size={22} style={{ color: '#f59e0b' }} />
+                  <CalendarDays size={22} style={{ color: 'var(--brand)' }} />
                   <div>
                     <div className="font-black text-white text-sm">Reserve Table</div>
                     <div className="text-gray-600 text-xs">Pick date &amp; time</div>
@@ -542,7 +562,7 @@ function AccountContent() {
                   <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest flex items-center gap-1.5">
                     <Heart size={10} className="text-red-400 fill-red-400" /> Favourites
                   </p>
-                  <button onClick={() => setTab('favourites')} style={{ color: '#f59e0b' }} className="text-xs flex items-center gap-1">
+                  <button onClick={() => setTab('favourites')} style={{ color: 'var(--brand)' }} className="text-xs flex items-center gap-1">
                     See all <ArrowRight size={11} />
                   </button>
                 </div>
@@ -558,7 +578,7 @@ function AccountContent() {
                       }
                       <div className="p-2">
                         <div className="text-white text-[10px] font-semibold truncate">{item.name}</div>
-                        <div className="text-[10px] font-black mt-0.5" style={{ color: '#f59e0b' }}>AED {Number(item.price).toFixed(0)}</div>
+                        <div className="text-[10px] font-black mt-0.5" style={{ color: 'var(--brand)' }}>AED {Number(item.price).toFixed(0)}</div>
                       </div>
                     </div>
                   ))}
@@ -574,12 +594,16 @@ function AccountContent() {
                 <FadeIn delay={160}>
                   <div className="flex items-center justify-between mb-3">
                     <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Must Try</p>
-                    <Link href="/menu" style={{ color: '#f59e0b' }} className="text-xs flex items-center gap-1">
+                    <Link href="/menu" style={{ color: 'var(--brand)' }} className="text-xs flex items-center gap-1">
                       View all <ArrowRight size={11} />
                     </Link>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3"
-                    style={{ opacity: mustTryFading ? 0 : 1, transition: 'opacity 0.4s ease' }}>
+                    style={{
+                      opacity: mustTryFading ? 0 : 1,
+                      transform: mustTryFading ? 'translateY(10px) scale(0.98)' : 'translateY(0) scale(1)',
+                      transition: 'opacity 0.38s ease, transform 0.38s cubic-bezier(0.33,1,0.68,1)',
+                    }}>
                     {visibleMustTry.map((item: any, i) => (
                       <div key={item.id}
                         className="group rounded-2xl overflow-hidden cursor-pointer transition-all active:scale-[0.97]"
@@ -590,7 +614,7 @@ function AccountContent() {
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                             onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
                           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
-                            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: '#f59e0b' }}>
+                            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}>
                               <Plus size={16} className="text-black" />
                             </div>
                           </div>
@@ -598,7 +622,7 @@ function AccountContent() {
                         <div className="p-3">
                           <div className="font-semibold text-white text-xs truncate">{item.name}</div>
                           <div className="flex items-center justify-between mt-1">
-                            <span className="font-black text-sm" style={{ color: '#f59e0b' }}>AED {Number(item.price).toFixed(0)}</span>
+                            <span className="font-black text-sm" style={{ color: 'var(--brand)' }}>AED {Number(item.price).toFixed(0)}</span>
                             <span className="text-gray-700 text-[10px] flex items-center gap-0.5"><Clock size={9} /> {item.prepTimeMins}m</span>
                           </div>
                         </div>
@@ -609,7 +633,7 @@ function AccountContent() {
                     <div className="flex justify-center gap-1.5 mt-3">
                       {Array.from({ length: mustTryPages }).map((_, i) => (
                         <div key={i} className="rounded-full transition-all duration-300"
-                          style={{ width: i === mustTryPage ? 18 : 6, height: 6, backgroundColor: i === mustTryPage ? '#f59e0b' : '#333' }} />
+                          style={{ width: i === mustTryPage ? 18 : 6, height: 6, backgroundColor: i === mustTryPage ? 'var(--brand)' : '#333' }} />
                       ))}
                     </div>
                   )}
@@ -648,7 +672,7 @@ function AccountContent() {
                   <p className="text-white font-bold mb-1">No orders yet</p>
                   <p className="text-gray-600 text-sm mb-5">Ready to try something amazing?</p>
                   <Link href="/menu" className="inline-flex items-center gap-2 font-bold px-6 py-3 rounded-2xl text-sm"
-                    style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                    style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
                     <Utensils size={15} /> Browse Menu
                   </Link>
                 </div>
@@ -667,18 +691,18 @@ function AccountContent() {
                       <div className="rounded-2xl p-4 transition-all"
                         style={{
                           backgroundColor: '#0d0d0d',
-                          border: `1px solid ${isActive ? 'rgba(245,158,11,0.3)' : '#1e1e1e'}`,
-                          boxShadow: isActive ? '0 0 20px rgba(245,158,11,0.05)' : 'none',
+                          border: `1px solid ${isActive ? 'rgba(var(--brand-rgb),0.3)' : '#1e1e1e'}`,
+                          boxShadow: isActive ? '0 0 20px rgba(var(--brand-rgb),0.05)' : 'none',
                         }}>
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                               style={isActive
-                                ? { backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b' }
+                                ? { backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }
                                 : order.status === 'CANCELLED'
                                   ? { backgroundColor: 'rgba(239,68,68,0.1)', color: '#f87171' }
                                   : { backgroundColor: '#1a1a1a', color: '#666' }}>
-                              • {ORDER_STATUS_LABEL[order.status] ?? order.status}
+                              • {(ar ? ORDER_STATUS_LABEL_AR : ORDER_STATUS_LABEL)[order.status] ?? order.status}
                             </span>
                             <span className="text-gray-700 text-[10px] font-mono">#{order.id.slice(-6).toUpperCase()}</span>
                           </div>
@@ -699,7 +723,7 @@ function AccountContent() {
                           </div>
                           {isActive && (
                             <Link href="/menu?track=1" className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-xl"
-                              style={{ border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b' }}>
+                              style={{ border: '1px solid rgba(var(--brand-rgb),0.3)', color: 'var(--brand)' }}>
                               Track <ChevronRight size={12} />
                             </Link>
                           )}
@@ -708,7 +732,7 @@ function AccountContent() {
                         {order.status === 'DELIVERED' && (
                           <div className="mt-3 pt-3" style={{ borderTop: '1px solid #1e1e1e' }}>
                             {(hasFeedback || fb?.done) ? (
-                              <div className="flex items-center gap-2 text-xs" style={{ color: '#f59e0b' }}>
+                              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--brand)' }}>
                                 {'★'.repeat(hasFeedback?.rating ?? fb?.rating ?? 5)}{'☆'.repeat(5 - (hasFeedback?.rating ?? fb?.rating ?? 5))}
                                 <span style={{ color: '#555' }}>{hasFeedback?.comment || 'Thanks for your feedback!'}</span>
                               </div>
@@ -728,7 +752,7 @@ function AccountContent() {
                                         style={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }} />
                                       <button onClick={() => submitFeedback(order.id)} disabled={fb?.submitting}
                                         className="text-xs px-3 py-1.5 rounded-lg font-bold flex-shrink-0 disabled:opacity-50"
-                                        style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                                        style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
                                         {fb?.submitting ? '…' : 'Submit'}
                                       </button>
                                     </>
@@ -763,7 +787,7 @@ function AccountContent() {
                   <p className="text-white font-bold mb-1">No reservations yet</p>
                   <p className="text-gray-600 text-sm mb-5">Reserve your table in seconds</p>
                   <Link href="/book" className="inline-flex items-center gap-2 font-bold px-6 py-3 rounded-2xl text-sm"
-                    style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                    style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
                     <CalendarDays size={15} /> Book a Table
                   </Link>
                 </div>
@@ -783,9 +807,9 @@ function AccountContent() {
                                 <div className="font-bold text-white text-sm">
                                   {new Date(b.slotDate).toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'short' })}
                                 </div>
-                                <div className="font-bold text-sm mt-0.5" style={{ color: '#f59e0b' }}>{slotLabel(b.slotTime)}</div>
+                                <div className="font-bold text-sm mt-0.5" style={{ color: 'var(--brand)' }}>{slotLabel(b.slotTime)}</div>
                               </div>
-                              <StatusBadge variant={bookingStatusVariant(b.status)} label={BOOKING_STATUS_LABEL[b.status] ?? b.status} size="sm" />
+                              <StatusBadge variant={bookingStatusVariant(b.status)} label={(ar ? BOOKING_STATUS_LABEL_AR : BOOKING_STATUS_LABEL)[b.status] ?? b.status} size="sm" />
                             </div>
                             <div className="flex items-center gap-2 text-xs text-gray-600 mb-4">
                               <span>Table {b.table?.tableNumber ?? '—'}</span>
@@ -795,7 +819,7 @@ function AccountContent() {
                             </div>
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-lg"
-                                style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
+                                style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
                                 <Clock size={10} /> Arrive within 15 min of slot
                               </div>
                               <button onClick={() => cancelBooking(b.id)} disabled={cancellingId === b.id}
@@ -825,7 +849,7 @@ function AccountContent() {
                               </div>
                               <div className="text-xs text-gray-700 mt-0.5">{b.partySize} guests</div>
                             </div>
-                            <StatusBadge variant={bookingStatusVariant(b.status)} label={BOOKING_STATUS_LABEL[b.status] ?? b.status} size="xs" />
+                            <StatusBadge variant={bookingStatusVariant(b.status)} label={(ar ? BOOKING_STATUS_LABEL_AR : BOOKING_STATUS_LABEL)[b.status] ?? b.status} size="xs" />
                           </div>
                         </FadeIn>
                       ))}
@@ -835,7 +859,7 @@ function AccountContent() {
 
                 <FadeIn delay={100}>
                   <Link href="/book" className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-bold"
-                    style={{ border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b' }}>
+                    style={{ border: '1px solid rgba(var(--brand-rgb),0.3)', color: 'var(--brand)' }}>
                     <CalendarDays size={15} /> Make another reservation
                   </Link>
                 </FadeIn>
@@ -860,7 +884,7 @@ function AccountContent() {
                   <p className="text-white font-bold mb-1">No favourites yet</p>
                   <p className="text-gray-600 text-sm mb-5">Tap ♡ on any dish while browsing the menu</p>
                   <Link href="/menu" className="inline-flex items-center gap-2 font-bold px-6 py-3 rounded-2xl text-sm"
-                    style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                    style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
                     <Utensils size={15} /> Browse Menu
                   </Link>
                 </div>
@@ -892,11 +916,11 @@ function AccountContent() {
                             <div className="text-gray-700 text-[10px] line-clamp-2 mb-2">{item.description}</div>
                           )}
                           <div className="flex items-center justify-between">
-                            <span className="font-black text-sm" style={{ color: '#f59e0b' }}>AED {Number(item.price).toFixed(0)}</span>
+                            <span className="font-black text-sm" style={{ color: 'var(--brand)' }}>AED {Number(item.price).toFixed(0)}</span>
                             <button
                               onClick={() => router.push(`/menu?open=${item.id}`)}
                               className="flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-lg"
-                              style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                              style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
                               <Plus size={10} /> View
                             </button>
                           </div>
@@ -919,7 +943,7 @@ function AccountContent() {
               <div className="rounded-2xl p-4" style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                    <User size={14} style={{ color: '#f59e0b' }} /> Personal Info
+                    <User size={14} style={{ color: 'var(--brand)' }} /> Personal Info
                   </h2>
                   {!editingProfile
                     ? <button onClick={() => setEditingProfile(true)} className="flex items-center gap-1 text-xs text-gray-600 hover:text-white transition-colors">
@@ -932,7 +956,7 @@ function AccountContent() {
                         </button>
                         <button onClick={saveProfile} disabled={savingProfile}
                           className="text-xs px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 disabled:opacity-50"
-                          style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                          style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
                           <Save size={11} /> {savingProfile ? '…' : 'Save'}
                         </button>
                       </div>
@@ -1004,7 +1028,7 @@ function AccountContent() {
             <FadeIn delay={100}>
               <div className="rounded-2xl p-4" style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
                 <h2 className="text-sm font-bold text-white flex items-center gap-2 mb-1">
-                  <Bell size={14} style={{ color: '#f59e0b' }} /> Notifications
+                  <Bell size={14} style={{ color: 'var(--brand)' }} /> Notifications
                 </h2>
                 <p className="text-xs text-gray-600 mb-4">Preferences saved — in-app push notifications coming soon.</p>
                 <div className="space-y-3">
@@ -1023,7 +1047,7 @@ function AccountContent() {
                           item.key === 'booking' ? !notifyBooking : notifyBooking,
                         )}
                         className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
-                        style={item.value ? { backgroundColor: '#f59e0b' } : { backgroundColor: '#2a2a2a' }}>
+                        style={item.value ? { backgroundColor: 'var(--brand)' } : { backgroundColor: '#2a2a2a' }}>
                         <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${item.value ? 'left-6' : 'left-1'}`} />
                       </button>
                     </div>

@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
+import { useLangStore, applyLangDir } from '@/store/lang'
 import {
   CalendarDays, Clock, Users,
   AlertTriangle, CheckCircle2, ArrowLeft, MapPin, UtensilsCrossed,
@@ -30,6 +31,9 @@ function dayLabel(d: Date) {
 export default function BookPage() {
   const router = useRouter()
   const { user, token } = useAuthStore()
+  const { lang, setLang } = useLangStore()
+  const ar = lang === 'ar'
+  useEffect(() => { applyLangDir(lang) }, [lang])
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -382,10 +386,15 @@ export default function BookPage() {
             <Link href="/" className="w-9 h-9 rounded-full bg-black/40 backdrop-blur flex items-center justify-center">
               <ArrowLeft size={16} className="text-white" />
             </Link>
+            <button onClick={() => setLang(ar ? 'en' : 'ar')}
+              className="text-[10px] font-bold px-2.5 py-1 rounded-full"
+              style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: ar ? 'var(--brand)' : '#aaa', border: '1px solid rgba(255,255,255,0.12)' }}>
+              {ar ? 'EN' : 'ع'}
+            </button>
           </div>
-          <h1 className="text-2xl font-bold text-white mb-1">Reserve a Table</h1>
+          <h1 className="text-2xl font-bold text-white mb-1">{ar ? 'احجز طاولة' : 'Reserve a Table'}</h1>
           <p className="text-gray-400 text-sm flex items-center gap-1.5">
-            <MapPin size={12} /> Al Manzil Hotel · Dubai, UAE
+            <MapPin size={12} /> {ar ? 'فندق المنزل · دبي، الإمارات' : 'Al Manzil Hotel · Dubai, UAE'}
           </p>
         </div>
       </div>
