@@ -64,6 +64,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
     name: item?.name ?? '',
     nameAr: (item as any)?.nameAr ?? '',
     description: item?.description ?? '',
+    descriptionAr: (item as any)?.descriptionAr ?? '',
     price: item?.price != null ? String(item.price) : '',
     prepTimeMins: String(item?.prepTimeMins ?? 15),
     categoryId: item?.categoryId ?? categories[0]?.id ?? '',
@@ -143,6 +144,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
         name: form.name,
         nameAr: form.nameAr || undefined,
         description: form.description || undefined,
+        descriptionAr: form.descriptionAr || undefined,
         price: parseFloat(form.price),
         prepTimeMins: parseInt(form.prepTimeMins),
         categoryId: form.categoryId,
@@ -223,11 +225,19 @@ function ItemModal({ item, categories, onClose, onSave }: {
                 {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
-            <div className="col-span-2">
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Description</label>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Description (EN)</label>
               <textarea value={form.description} onChange={e => f('description', e.target.value)}
                 placeholder="Short description of the dish (optional)"
                 rows={2} className={`${ic} resize-none`} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">
+                الوصف (AR) <span className="text-gray-400 font-normal">— optional</span>
+              </label>
+              <textarea value={form.descriptionAr} onChange={e => f('descriptionAr', e.target.value)}
+                placeholder="وصف قصير للطبق"
+                rows={2} dir="rtl" className={`${ic} resize-none`} />
             </div>
             <div className="col-span-2">
               <ImageUpload
@@ -271,7 +281,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
                       <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{group.name}</span>
                       {group.required && (
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                          style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+                          style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }}>
                           Required
                         </span>
                       )}
@@ -292,7 +302,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
                         style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)' }}>
                         <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{opt.name}</span>
                         <div className="flex items-center gap-3">
-                          <span className="text-xs font-bold" style={{ color: Number(opt.priceAdd) > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
+                          <span className="text-xs font-bold" style={{ color: Number(opt.priceAdd) > 0 ? 'var(--brand)' : 'var(--text-muted)' }}>
                             {Number(opt.priceAdd) > 0 ? `+AED ${Number(opt.priceAdd).toFixed(2)}` : 'no extra'}
                           </span>
                           <button type="button" onClick={() => deleteOption(group.id, opt.id)}
@@ -325,7 +335,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
                       <button type="button" onClick={() => addOption(group.id)}
                         disabled={!newOpt[group.id]?.name?.trim()}
                         className="text-white px-3 py-2 rounded-lg text-xs font-bold disabled:opacity-40 transition-colors"
-                        style={{ backgroundColor: '#f59e0b' }}>
+                        style={{ backgroundColor: 'var(--brand)' }}>
                         <Plus size={12} />
                       </button>
                     </div>
@@ -349,7 +359,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
                 </label>
                 <button type="button" onClick={addGroup} disabled={!newGroupName.trim() || addingGroup}
                   className="text-white px-3 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap disabled:opacity-40 transition-colors"
-                  style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                  style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
                   {addingGroup ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
                   Add Group
                 </button>

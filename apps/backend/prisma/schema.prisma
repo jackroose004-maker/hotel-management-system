@@ -151,9 +151,10 @@ model MenuCategory {
 model MenuItem {
   id           String   @id @default(uuid())
   categoryId   String   @map("category_id")
-  name         String
-  nameAr       String?  @map("name_ar")
-  description  String?
+  name            String
+  nameAr          String?  @map("name_ar")
+  description     String?
+  descriptionAr   String?  @map("description_ar")
   price        Decimal  @db.Decimal(10, 2)
   imageUrl     String?  @map("image_url")
   isAvailable  Boolean  @default(true) @map("is_available")

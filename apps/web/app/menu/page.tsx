@@ -18,6 +18,7 @@ import { useCartStore } from '@/store/cart'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { useBrandStore } from '@/store/brand'
+import { useLangStore, applyLangDir, t } from '@/store/lang'
 import StripePaymentForm from '@/components/StripePaymentForm'
 import ForceDark from '@/components/ForceDark'
 import { getStripe, isStripeConfigured } from '@/lib/stripe'
@@ -291,8 +292,8 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
     <div className="rounded-2xl overflow-hidden"
       style={{
         backgroundColor: '#111',
-        border: isReady ? '1px solid rgba(245,158,11,0.5)' : '1px solid #1e1e1e',
-        boxShadow: isReady ? '0 0 24px rgba(245,158,11,0.1)' : 'none',
+        border: isReady ? '1px solid rgba(var(--brand-rgb),0.5)' : '1px solid #1e1e1e',
+        boxShadow: isReady ? '0 0 24px rgba(var(--brand-rgb),0.1)' : 'none',
       }}>
 
       {/* ── Hero status block (always visible) ── */}
@@ -301,7 +302,7 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
         {/* Reference number — always visible, guests quote this to staff */}
         {o.tokenNumber && (
           <div className="mb-2 px-4 py-1.5 rounded-full font-black text-lg tracking-wider"
-            style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: 'var(--brand)', letterSpacing: '0.15em' }}>
+            style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)', letterSpacing: '0.15em' }}>
             #{o.tokenNumber}
           </div>
         )}
@@ -356,7 +357,7 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
                     style={{
                       backgroundColor: done ? 'var(--brand)' : '#1a1a1a',
                       border: `2px solid ${done ? 'var(--brand)' : '#2a2a2a'}`,
-                      boxShadow: active ? '0 0 14px rgba(245,158,11,0.5)' : 'none',
+                      boxShadow: active ? '0 0 14px rgba(var(--brand-rgb),0.5)' : 'none',
                     }}>
                     <Icon size={15} style={{ color: done ? '#000' : '#555' }} />
                   </div>
@@ -386,7 +387,7 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-bold text-white">Your Order</p>
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                style={{ backgroundColor: o.paymentStatus === 'PAID' ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
+                style={{ backgroundColor: o.paymentStatus === 'PAID' ? 'rgba(34,197,94,0.15)' : 'rgba(var(--brand-rgb),0.15)',
                          color: o.paymentStatus === 'PAID' ? '#4ade80' : 'var(--brand)' }}>
                 {o.paymentStatus === 'PAID' ? '✓ Card' : 'Cash'}
               </span>
@@ -402,7 +403,7 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
                     </span>
                   </div>
                   {item.notes && (
-                    <p className="text-[10px] mt-0.5 px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: 'var(--brand)' }}>
+                    <p className="text-[10px] mt-0.5 px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)' }}>
                       📝 {item.notes}
                     </p>
                   )}
@@ -504,8 +505,8 @@ function FoodImage({ src, alt, className }: { src?: string; alt: string; classNa
 
 // ─── FOOD CARD — defined outside MenuPageInner so React doesn't recreate the
 // component type on every render (which would remount all cards and replay animations)
-function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, onToggleFav, onOpen }: {
-  item: MenuItem; index: number; qty: number; isFav: boolean; isLoggedIn: boolean
+function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, lang, onToggleFav, onOpen }: {
+  item: MenuItem; index: number; qty: number; isFav: boolean; isLoggedIn: boolean; lang: 'en' | 'ar'
   onToggleFav: () => void; onOpen: () => void
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
@@ -531,9 +532,9 @@ function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, onToggleFav, 
         transitionDelay: `${index * 50}ms`,
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0) scale(1)' : 'translateY(24px) scale(0.97)',
-        backgroundColor: qty > 0 ? 'rgba(245,158,11,0.06)' : '#111',
-        border: qty > 0 ? '1px solid rgba(245,158,11,0.4)' : '1px solid #1e1e1e',
-        boxShadow: qty > 0 ? '0 0 24px rgba(245,158,11,0.08)' : 'none',
+        backgroundColor: qty > 0 ? 'rgba(var(--brand-rgb),0.06)' : '#111',
+        border: qty > 0 ? '1px solid rgba(var(--brand-rgb),0.4)' : '1px solid #1e1e1e',
+        boxShadow: qty > 0 ? '0 0 24px rgba(var(--brand-rgb),0.08)' : 'none',
       }}>
       <div className="relative h-40 w-full overflow-hidden flex-shrink-0">
         <FoodImage src={item.imageUrl} alt={item.name} className="w-full h-full transition-transform duration-500 hover:scale-105" />
@@ -567,9 +568,13 @@ function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, onToggleFav, 
         </div>
       </div>
       <div className="p-3 flex flex-col flex-1">
-        <div className="font-bold text-white text-sm leading-snug mb-1">{item.name}</div>
-        {item.description && (
-          <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed mb-2 flex-1">{item.description}</p>
+        <div className="font-bold text-white text-sm leading-snug mb-1">
+          {lang === 'ar' && (item as any).nameAr ? (item as any).nameAr : item.name}
+        </div>
+        {(lang === 'ar' ? ((item as any).descriptionAr || item.description) : item.description) && (
+          <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed mb-2 flex-1">
+            {lang === 'ar' && (item as any).descriptionAr ? (item as any).descriptionAr : item.description}
+          </p>
         )}
         <div className="flex items-center justify-between mt-auto pt-1">
           {item.modifierGroups && item.modifierGroups.length > 0 ? (
@@ -650,6 +655,10 @@ function MenuPageInner() {
   const cart = useCartStore()
   const { user: authUser } = useAuthStore()
   const { dark, toggle } = useThemeStore()
+  const { lang, setLang } = useLangStore()
+  const ar = lang === 'ar'
+  // Helper: pick Arabic field if available and Arabic is active
+  const dn = (en: string, arText?: string | null) => (ar && arText) ? arText : en
   const brandLogoUrl = useBrandStore(s => s.logoUrl)
   const brandName = useBrandStore(s => s.restaurantName)
   const isStaff = !!(authUser && ['STAFF', 'MANAGER', 'OWNER'].includes(authUser.role))
@@ -1286,7 +1295,7 @@ function MenuPageInner() {
       <div className="min-h-screen flex flex-col" style={{ backgroundColor: '#080808' }}>
         <ForceDark />
         {/* Gold top line */}
-        <div style={{ height: 2, background: 'linear-gradient(to right, transparent, #f59e0b 30%, #f59e0b 70%, transparent)' }} />
+        <div style={{ height: 2, background: 'linear-gradient(to right, transparent, var(--brand) 30%, var(--brand) 70%, transparent)' }} />
 
         {/* Header */}
         <div className="px-4 h-14 flex items-center justify-between sticky top-0 z-10 border-b"
@@ -1305,7 +1314,7 @@ function MenuPageInner() {
           </div>
           {hasReady && (
             <span className="text-xs font-bold px-2.5 py-1 rounded-full animate-pulse"
-              style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: 'var(--brand)' }}>
+              style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }}>
               {allDineIn ? '🔔 Ready to serve!' : '📦 Ready for pickup!'}
             </span>
           )}
@@ -1335,7 +1344,7 @@ function MenuPageInner() {
           ))}
 
           {/* Order More CTA */}
-          <div className="rounded-2xl p-4" style={{ border: '1px solid rgba(245,158,11,0.25)', backgroundColor: 'rgba(245,158,11,0.04)' }}>
+          <div className="rounded-2xl p-4" style={{ border: '1px solid rgba(var(--brand-rgb),0.25)', backgroundColor: 'rgba(var(--brand-rgb),0.04)' }}>
             <p className="text-xs font-semibold text-[var(--brand)] mb-0.5">Want to add more?</p>
             <p className="text-xs text-[var(--brand)]/50 mb-3">
               {allDineIn ? 'All new items will be added to your bill for this table.' : 'Add to your existing order.'}
@@ -1356,7 +1365,7 @@ function MenuPageInner() {
                 <Link href="/login?redirect=/menu" className="flex-1 py-2.5 rounded-xl text-sm font-bold text-center"
                   style={{ backgroundColor: 'var(--brand)', color: '#000' }}>Sign Up Free</Link>
                 <Link href="/login?redirect=/menu" className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-center"
-                  style={{ border: '1px solid rgba(245,158,11,0.4)', color: 'var(--brand)' }}>Sign In</Link>
+                  style={{ border: '1px solid rgba(var(--brand-rgb),0.4)', color: 'var(--brand)' }}>Sign In</Link>
               </div>
             </div>
           )}
@@ -1456,7 +1465,7 @@ function MenuPageInner() {
                     {selectable.map(t => (
                       <button key={t.id} onClick={() => { setTableId(t.id); setTableNum(t.tableNumber); cart.setTableId(t.id) }}
                           style={tableId === t.id
-                          ? { backgroundColor: 'var(--brand)', border: '1px solid #f59e0b', boxShadow: '0 4px 12px rgba(245,158,11,0.2)' }
+                          ? { backgroundColor: 'var(--brand)', border: '1px solid var(--brand)', boxShadow: '0 4px 12px rgba(var(--brand-rgb),0.2)' }
                           : { backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}
                         className="rounded-xl py-3 px-2 text-center transition-all">
                         <div className={`font-bold text-sm ${tableId === t.id ? 'text-black' : 'text-white'}`}>
@@ -1503,7 +1512,7 @@ function MenuPageInner() {
                         <button key={s.sessionId} onClick={() => setSelectedSessionId(s.sessionId)}
                           className="w-full px-3 py-2.5 rounded-xl text-left transition-all"
                           style={selected
-                            ? { backgroundColor: 'rgba(245,158,11,0.12)', border: '1.5px solid rgba(245,158,11,0.5)' }
+                            ? { backgroundColor: 'rgba(var(--brand-rgb),0.12)', border: '1.5px solid rgba(var(--brand-rgb),0.5)' }
                             : { backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}>
                           <div className="flex items-center justify-between mb-1">
                             <p className="text-xs font-bold" style={{ color: selected ? 'var(--brand)' : '#ccc' }}>
@@ -1527,7 +1536,7 @@ function MenuPageInner() {
                     <button onClick={() => setSelectedSessionId('__new__')}
                       className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-left transition-all"
                       style={selectedSessionId === '__new__'
-                        ? { backgroundColor: 'rgba(245,158,11,0.12)', border: '1.5px solid rgba(245,158,11,0.5)' }
+                        ? { backgroundColor: 'rgba(var(--brand-rgb),0.12)', border: '1.5px solid rgba(var(--brand-rgb),0.5)' }
                         : { backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a', borderStyle: 'dashed' }}>
                       <span className="text-xs font-bold" style={{ color: selectedSessionId === '__new__' ? 'var(--brand)' : '#666' }}>
                         + New Guest (separate bill)
@@ -1551,7 +1560,7 @@ function MenuPageInner() {
                       <div className="flex flex-wrap gap-1 mt-0.5">
                         {(item.modifiers ?? []).map(m => (
                           <span key={m.optionId} className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                            style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: 'var(--brand)' }}>
+                            style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }}>
                             {m.name}
                           </span>
                         ))}
@@ -1634,10 +1643,15 @@ function MenuPageInner() {
                   <span className="text-amber-300 text-sm">Select a table above to continue</span>
                 </div>
               )}
-              {/* Cash option */}
+              {/* Cash / counter payment option.
+                  DINE_IN:   guest orders food, pays cash at the counter when leaving (tab system).
+                             If they already have an active dine-in order, "Add to My Order" skips the confirm dialog.
+                  TAKEAWAY:  walk-in customer picks up at counter and pays there — shown as "Pay at Counter".
+                             If the same guest also has a dine-in session on a table, the takeaway is added to
+                             their table bill instead ("Add to My Table Bill").
+                  Booking pre-orders are excluded — those require card payment (see fromBooking guard). */}
               {!fromBooking && (() => {
                 const hasDineInSession = cart.orderType === 'TAKEAWAY' && activeOrders.some(o => o.type === 'DINE_IN') && tableId
-                // Returning dine-in guest ordering more — they're already on a cash tab, just add directly
                 const isReturningDineIn = cart.orderType === 'DINE_IN' && activeOrders.some(o => o.type === 'DINE_IN')
                 if (cart.orderType === 'DINE_IN') {
                   return (
@@ -1651,7 +1665,6 @@ function MenuPageInner() {
                   )
                 }
                 if (cart.orderType === 'TAKEAWAY') {
-                  // Walk-in takeaway OR dine-in guest adding takeaway — both can pay at counter
                   const cashLabel = hasDineInSession
                     ? `Add to My Table Bill · AED ${cart.total().toFixed(2)}`
                     : `Pay at Counter · AED ${cart.total().toFixed(2)}`
@@ -1790,8 +1803,14 @@ function MenuPageInner() {
           <FoodImage src={drawerItem.imageUrl} alt={drawerItem.name} className="w-full h-full" />
           <div className="absolute inset-0 bg-gradient-to-t from-black/85 to-transparent" />
           <div className="absolute bottom-3 left-4 right-14">
-            <div className="text-lg font-black text-white leading-tight">{drawerItem.name}</div>
-            {drawerItem.description && <div className="text-xs text-gray-300 mt-0.5 line-clamp-2">{drawerItem.description}</div>}
+            <div className="text-lg font-black text-white leading-tight">
+              {ar && (drawerItem as any).nameAr ? (drawerItem as any).nameAr : drawerItem.name}
+            </div>
+            {(ar ? ((drawerItem as any).descriptionAr || drawerItem.description) : drawerItem.description) && (
+              <div className="text-xs text-gray-300 mt-0.5 line-clamp-2">
+                {ar && (drawerItem as any).descriptionAr ? (drawerItem as any).descriptionAr : drawerItem.description}
+              </div>
+            )}
           </div>
           <div className="absolute top-3 right-3 text-xs font-bold px-2 py-1 rounded-xl"
             style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: 'var(--brand)', backdropFilter: 'blur(4px)' }}>
@@ -1811,7 +1830,7 @@ function MenuPageInner() {
             <div key={group.id} className="mb-5">
               <div className="flex items-center gap-2 mb-2">
                 <div className="text-xs font-bold text-white uppercase tracking-wide">{group.name}</div>
-                {group.required && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#f59e0b22', color: 'var(--brand)' }}>Required</span>}
+                {group.required && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--brand)22', color: 'var(--brand)' }}>Required</span>}
               </div>
               <div className="space-y-2">
                 {group.options.map(opt => {
@@ -1821,7 +1840,7 @@ function MenuPageInner() {
                     <button key={opt.id} onClick={() => setSelectedOptions(p => ({ ...p, [group.id]: opt.id }))}
                       className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all"
                       style={isActive
-                        ? { backgroundColor: 'rgba(245,158,11,0.1)', border: '1.5px solid #f59e0b' }
+                        ? { backgroundColor: 'rgba(var(--brand-rgb),0.1)', border: '1.5px solid var(--brand)' }
                         : { backgroundColor: '#161616', border: '1px solid #2a2a2a' }}>
                       <div className="flex items-center gap-3">
                         <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0"
@@ -1894,7 +1913,7 @@ function MenuPageInner() {
 
   const allCatPills = [
     ...(isLoggedIn && favItems.length > 0 ? [{ id: FAV_ID, name: '♥ Favourites' }] : []),
-    ...categories.map(c => ({ id: c.id, name: c.name })),
+    ...categories.map(c => ({ id: c.id, name: c.name, nameAr: c.nameAr })),
   ]
 
   return (
@@ -1917,6 +1936,12 @@ function MenuPageInner() {
               {qrTableName || 'Kerala & South Indian Cuisine'}
             </div>
           </div>
+          {/* Language toggle */}
+          <button onClick={() => setLang(ar ? 'en' : 'ar')}
+            className="flex-shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
+            style={{ backgroundColor: '#1a1a1a', color: ar ? 'var(--brand)' : '#555', border: '1px solid #2a2a2a' }}>
+            {ar ? 'EN' : 'ع'}
+          </button>
           {/* Cart button — always visible, shows icon only when empty */}
           <button onClick={() => setView('cart')} className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
             style={totalQty > 0
@@ -1935,7 +1960,7 @@ function MenuPageInner() {
               style={activeCategory === c.id
                 ? { backgroundColor: 'var(--brand)', color: '#000' }
                 : { backgroundColor: 'rgba(255,255,255,0.06)', color: '#777' }}>
-              {c.name}
+              {ar && (c as any).nameAr ? (c as any).nameAr : c.name}
             </button>
           ))}
         </div>
@@ -1944,7 +1969,7 @@ function MenuPageInner() {
       {/* Table notice */}
       {fromQr && (qrTableStatus === 'DIRTY' || qrTableStatus === 'BILL_PENDING') && (
         <div className="px-5 py-2.5 text-xs font-semibold flex items-center gap-2"
-          style={{ backgroundColor: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.15)', color: 'var(--brand)' }}>
+          style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)', borderBottom: '1px solid rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }}>
           <span>{qrTableStatus === 'DIRTY' ? '🧹' : '🧾'}</span>
           {qrTableStatus === 'DIRTY'
             ? 'Our team is setting up your table. You can browse and order now.'
@@ -1967,12 +1992,12 @@ function MenuPageInner() {
             <div className="flex items-center gap-3 mb-6">
               <Heart size={14} className="text-red-400 fill-red-400 flex-shrink-0" />
               <h2 className="text-2xl font-black text-white tracking-tight">Favourites</h2>
-              <div className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(245,158,11,0.4), transparent)' }} />
+              <div className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(var(--brand-rgb),0.4), transparent)' }} />
               <span className="text-xs text-gray-600">{favItems.length} items</span>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
               {favItems.map((item, i) => (
-                <FoodCard key={item.id} item={item} index={i}
+                <FoodCard key={item.id} item={item} index={i} lang={lang}
                   qty={cart.items.filter(ci => ci.menuItemId === item.id).reduce((s, ci) => s + ci.quantity, 0)}
                   isFav={favs.includes(item.id)} isLoggedIn={isLoggedIn}
                   onToggleFav={() => { setFavs(prev => prev.includes(item.id) ? prev.filter(f => f !== item.id) : [...prev, item.id]); toggleFavOnServer(item.id) }}
@@ -1990,16 +2015,18 @@ function MenuPageInner() {
             {/* Section header */}
             <div className="flex items-center gap-4 mb-6">
               <div>
-                <h2 className="text-2xl font-black text-white tracking-tight">{cat.name}</h2>
+                <h2 className="text-2xl font-black text-white tracking-tight">
+                  {ar && cat.nameAr ? cat.nameAr : cat.name}
+                </h2>
                 <div className="text-xs text-gray-600 mt-0.5">{cat.itemCount ?? cat.items.length} {(cat.itemCount ?? cat.items.length) === 1 ? 'dish' : 'dishes'}</div>
               </div>
-              <div className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(245,158,11,0.35), transparent)' }} />
+              <div className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(var(--brand-rgb),0.35), transparent)' }} />
             </div>
 
             {/* Cards grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
               {cat.items.map((item, i) => (
-                <FoodCard key={item.id} item={item} index={i}
+                <FoodCard key={item.id} item={item} index={i} lang={lang}
                   qty={cart.items.filter(ci => ci.menuItemId === item.id).reduce((s, ci) => s + ci.quantity, 0)}
                   isFav={favs.includes(item.id)} isLoggedIn={isLoggedIn}
                   onToggleFav={() => { setFavs(prev => prev.includes(item.id) ? prev.filter(f => f !== item.id) : [...prev, item.id]); toggleFavOnServer(item.id) }}
@@ -2028,9 +2055,9 @@ function MenuPageInner() {
         <div className="fixed bottom-5 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:w-auto sm:min-w-72 z-30" style={{ animation: 'fadeUp 0.3s ease both' }}>
           <button onClick={() => setView('tracking')}
             className="w-full flex items-center justify-between gap-4 py-3.5 px-5 rounded-2xl font-bold transition-all active:scale-[0.98]"
-            style={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(245,158,11,0.4)', color: 'var(--brand)', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}>
+            style={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(var(--brand-rgb),0.4)', color: 'var(--brand)', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}>
             <span className="text-sm w-7 h-7 rounded-full flex items-center justify-center font-black"
-              style={{ backgroundColor: 'rgba(245,158,11,0.15)' }}>
+              style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)' }}>
               {activeOrders.filter(o => o.status === 'READY').length > 0 ? '🎉' : activeOrders.length}
             </span>
             <span className="flex-1 text-center text-sm font-black">
@@ -2045,7 +2072,7 @@ function MenuPageInner() {
         <div className="fixed bottom-5 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:w-auto sm:min-w-72 z-30" style={{ animation: 'fadeUp 0.3s ease both' }}>
           <button onClick={() => setView('cart')}
             className="w-full flex items-center justify-between gap-4 py-3.5 px-5 rounded-2xl font-bold transition-all active:scale-[0.98]"
-            style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 30px rgba(245,158,11,0.4)' }}>
+            style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 30px rgba(var(--brand-rgb),0.4)' }}>
             <span className="text-sm w-7 h-7 rounded-full flex items-center justify-center font-black bg-black/20">{totalQty}</span>
             <span className="flex-1 text-center text-sm font-black">Review Order</span>
             <span className="text-sm font-black">AED {cart.total().toFixed(0)}</span>

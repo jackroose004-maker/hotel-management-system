@@ -15,6 +15,10 @@ export class CreateMenuItemDto {
   @IsOptional()
   description?: string
 
+  @IsString()
+  @IsOptional()
+  descriptionAr?: string
+
   @IsNumber()
   price: number
 
@@ -40,6 +44,10 @@ export class UpdateMenuItemDto {
   @IsOptional()
   name?: string
 
+  @IsString()
+  @IsOptional()
+  nameAr?: string
+
   @IsNumber()
   @IsOptional()
   price?: number
@@ -47,6 +55,14 @@ export class UpdateMenuItemDto {
   @IsString()
   @IsOptional()
   description?: string
+
+  @IsString()
+  @IsOptional()
+  descriptionAr?: string
+
+  @IsString()
+  @IsOptional()
+  descriptionAr?: string
 
   @IsString()
   @IsOptional()
