@@ -60,8 +60,24 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.passwordHash)
     if (!valid) throw new UnauthorizedException('Invalid credentials')
 
+    const STAFF_ROLES = ['OWNER', 'MANAGER', 'KITCHEN', 'WAITER']
+    if (STAFF_ROLES.includes(user.role)) throw new UnauthorizedException('STAFF_PORTAL')
+
     if (!user.isActive) throw new UnauthorizedException('This account has been deactivated. Contact your manager.')
 
+    const { passwordHash: _, ...result } = user
+    return { user: result, token: this.signToken(user.id, user.email, user.role) }
+  }
+
+  async staffLogin(dto: LoginDto) {
+    const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
+    if (!user) throw new UnauthorizedException('Invalid credentials')
+    if (!user.passwordHash) throw new UnauthorizedException('This account uses Google sign-in.')
+    const valid = await bcrypt.compare(dto.password, user.passwordHash)
+    if (!valid) throw new UnauthorizedException('Invalid credentials')
+    const STAFF_ROLES = ['OWNER', 'MANAGER', 'KITCHEN', 'WAITER']
+    if (!STAFF_ROLES.includes(user.role)) throw new UnauthorizedException('No staff account found with this email.')
+    if (!user.isActive) throw new UnauthorizedException('This account has been deactivated.')
     const { passwordHash: _, ...result } = user
     return { user: result, token: this.signToken(user.id, user.email, user.role) }
   }

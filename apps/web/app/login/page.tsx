@@ -25,7 +25,14 @@ function LoginForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [quoteIdx, setQuoteIdx] = useState(0)
+  const [brand, setBrand] = useState<{ name: string; logoUrl: string | null }>({ name: 'Al Manzil', logoUrl: null })
   useEffect(() => { setQuoteIdx(Math.floor(Math.random() * HERO_QUOTES.length)) }, [])
+  useEffect(() => {
+    fetch(`${API}/settings`).then(r => r.json()).then(j => {
+      const d = j?.data ?? j
+      if (d?.restaurantName) setBrand({ name: d.restaurantName, logoUrl: d.logoUrl ?? null })
+    }).catch(() => {})
+  }, [])
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' })
 
   const redirect = searchParams.get('redirect') ?? '/account'
@@ -75,7 +82,10 @@ function LoginForm() {
       const json = await r.json()
       // Unwrap NestJS interceptor: { success, data: { user, token }, timestamp }
       const payload = json?.data ?? json
-      if (!r.ok) throw new Error(payload?.message ?? json?.message ?? 'Something went wrong')
+      if (!r.ok) {
+        const msg = payload?.message ?? json?.message ?? 'Something went wrong'
+        throw new Error(msg)
+      }
 
       setAuth(payload.user, payload.token)
       toast.success(tab === 'login' ? `Welcome back, ${payload.user?.name?.split(' ')[0]}! 👋` : `Account created! Welcome, ${payload.user?.name?.split(' ')[0]}! 🎉`)
@@ -104,19 +114,22 @@ function LoginForm() {
             src="https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=900&q=80"
             alt="" className="w-full h-full object-cover"
           />
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-950/90 via-gray-900/80 to-orange-950/70" />
+          <div className="absolute inset-0 bg-gradient-to-br from-gray-950/90 via-gray-900/80 to-neutral-950/70" />
         </div>
 
         {/* Content */}
         <div className="relative flex flex-col h-full p-10">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2.5 mb-auto">
-            <div className="w-9 h-9 bg-orange-500 rounded-xl flex items-center justify-center">
-              <UtensilsCrossed size={18} className="text-white" />
-            </div>
+            {brand.logoUrl
+              ? <img src={brand.logoUrl} alt={brand.name} className="w-9 h-9 rounded-xl object-cover" />
+              : <div className="w-9 h-9 bg-[var(--brand)] rounded-xl flex items-center justify-center">
+                  <UtensilsCrossed size={18} className="text-black" />
+                </div>
+            }
             <div>
-              <div className="font-bold text-white text-base leading-none">Al Manzil</div>
-              <div className="text-orange-300/70 text-xs">Hotel · Dubai</div>
+              <div className="font-bold text-white text-base leading-none">{brand.name}</div>
+              <div className="text-[var(--brand)]/70 text-xs">Hotel · Dubai</div>
             </div>
           </Link>
 
@@ -124,7 +137,7 @@ function LoginForm() {
           <div className="mb-auto">
             <h2 className="text-3xl xl:text-4xl font-black text-white leading-tight mb-4">
               Kerala flavours,<br />
-              <span className="text-orange-400">right at your table.</span>
+              <span className="text-[var(--brand)]">right at your table.</span>
             </h2>
             <p className="text-gray-300 text-base leading-relaxed max-w-xs">
               Order fresh Kerala & South Indian cuisine, track your meal live, and book your table — all in one place.
@@ -137,13 +150,13 @@ function LoginForm() {
               {[1,2,3,4,5].map(i => <span key={i} className="text-yellow-400 text-sm">★</span>)}
             </div>
             <p className="text-white/80 text-sm leading-relaxed mb-3 italic">&ldquo;{quote.text}&rdquo;</p>
-            <p className="text-orange-300/70 text-xs font-medium">— {quote.by}</p>
+            <p className="text-[var(--brand-light)]/70 text-xs font-medium">— {quote.by}</p>
           </div>
         </div>
       </div>
 
       {/* ── Right panel — form ── */}
-      <div className="flex-1 flex flex-col bg-gray-950 lg:bg-white dark:bg-gray-950 min-h-screen overflow-auto">
+      <div className="flex-1 flex flex-col min-h-screen overflow-auto" style={{ backgroundColor: '#0c0c0c' }}>
 
         {/* Mobile header */}
         <div className="lg:hidden relative">
@@ -160,12 +173,15 @@ function LoginForm() {
           </div>
           <div className="absolute bottom-4 left-4">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
-                <UtensilsCrossed size={15} className="text-white" />
-              </div>
+              {brand.logoUrl
+                ? <img src={brand.logoUrl} alt={brand.name} className="w-8 h-8 rounded-lg object-cover" />
+                : <div className="w-8 h-8 bg-[var(--brand)] rounded-lg flex items-center justify-center">
+                    <UtensilsCrossed size={15} className="text-black" />
+                  </div>
+              }
               <div>
                 <div className="font-bold text-white text-sm">Al Manzil</div>
-                <div className="text-orange-300/80 text-xs">Authentic Kerala Cuisine</div>
+                <div className="text-[var(--brand-light)]/80 text-xs">Authentic Kerala Cuisine</div>
               </div>
             </div>
           </div>
@@ -176,10 +192,10 @@ function LoginForm() {
 
           {/* Heading */}
           <div className="mb-7">
-            <h1 className="text-2xl font-black text-white lg:text-gray-900 dark:text-white mb-1.5">
+            <h1 className="text-2xl font-black text-white mb-1.5">
               {tab === 'login' ? 'Welcome back' : 'Create your account'}
             </h1>
-            <p className="text-gray-400 lg:text-gray-500 dark:text-gray-400 text-sm">
+            <p className="text-gray-400 text-sm">
               {comingForBooking
                 ? 'Sign in or register to complete your table reservation.'
                 : tab === 'login'
@@ -190,9 +206,9 @@ function LoginForm() {
 
           {/* Context banner for booking redirect */}
           {comingForBooking && (
-            <div className="mb-5 flex items-center gap-2.5 bg-orange-500/10 border border-orange-500/20 rounded-xl px-4 py-3">
+            <div className="mb-5 flex items-center gap-2.5 bg-[var(--brand)]/10 border border-[var(--brand)]/20 rounded-xl px-4 py-3">
               <span className="text-lg">📅</span>
-              <p className="text-orange-300 text-xs leading-relaxed">
+              <p className="text-[var(--brand-light)] text-xs leading-relaxed">
                 You&apos;re one step away from reserving your table. Sign in or create a free account to confirm.
               </p>
             </div>
@@ -200,7 +216,7 @@ function LoginForm() {
 
           {/* Google button */}
           <button type="button" onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center gap-3 bg-white lg:border lg:border-gray-200 dark:bg-gray-800 dark:border-gray-700 border border-white/10 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 font-semibold py-3 rounded-2xl text-sm transition-colors shadow-sm mb-4">
+            className="w-full flex items-center justify-center gap-3 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-semibold py-3 rounded-2xl text-sm transition-colors shadow-sm mb-4">
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
               <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
               <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z" fill="#34A853"/>
@@ -212,19 +228,19 @@ function LoginForm() {
 
           {/* Divider */}
           <div className="flex items-center gap-3 mb-4">
-            <div className="flex-1 h-px bg-white/10 lg:bg-gray-200 dark:bg-white/10" />
+            <div className="flex-1 h-px bg-white/10" />
             <span className="text-xs text-gray-500">or continue with email</span>
-            <div className="flex-1 h-px bg-white/10 lg:bg-gray-200 dark:bg-white/10" />
+            <div className="flex-1 h-px bg-white/10" />
           </div>
 
           {/* Tab switcher */}
-          <div className="flex bg-white/5 lg:bg-gray-100 dark:bg-white/5 rounded-2xl p-1 mb-5">
+          <div className="flex bg-white/5 rounded-2xl p-1 mb-5">
             {(['login', 'signup'] as const).map(t => (
               <button key={t} onClick={() => switchTab(t)}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
                   tab === t
-                    ? 'bg-orange-500 text-white shadow-sm'
-                    : 'text-gray-400 lg:text-gray-500 dark:text-gray-400 hover:text-gray-200 lg:hover:text-gray-700 dark:hover:text-gray-200'
+                    ? 'text-white shadow-sm'
+                    : 'text-gray-400 hover:text-gray-200 lg:hover:text-gray-700 dark:hover:text-gray-200'
                 }`}>
                 {t === 'login' ? 'Sign In' : 'Sign Up'}
               </button>
@@ -235,53 +251,66 @@ function LoginForm() {
           <form onSubmit={submit} className="space-y-3.5">
             {tab === 'signup' && (
               <div>
-                <label className="block text-xs font-semibold text-gray-400 lg:text-gray-600 dark:text-gray-400 mb-1.5">Full Name</label>
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5">Full Name</label>
                 <input type="text" required placeholder="Your name" value={form.name}
                   onChange={e => setField('name', e.target.value)}
-                  className="w-full bg-white/5 lg:bg-white dark:bg-white/5 border border-white/10 lg:border-gray-200 dark:border-white/10 text-white lg:text-gray-800 dark:text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 placeholder:text-gray-600 lg:placeholder:text-gray-300 dark:placeholder:text-gray-600 transition-colors" />
+                  className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
               </div>
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-gray-400 lg:text-gray-600 dark:text-gray-400 mb-1.5">Email Address</label>
+              <label className="block text-xs font-semibold text-gray-400 mb-1.5">Email Address</label>
               <input type="email" required placeholder="you@email.com" value={form.email}
                 onChange={e => setField('email', e.target.value)}
-                className="w-full bg-white/5 lg:bg-white dark:bg-white/5 border border-white/10 lg:border-gray-200 dark:border-white/10 text-white lg:text-gray-800 dark:text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 placeholder:text-gray-600 lg:placeholder:text-gray-300 dark:placeholder:text-gray-600 transition-colors" />
+                className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
             </div>
 
             {tab === 'signup' && (
               <div>
-                <label className="block text-xs font-semibold text-gray-400 lg:text-gray-600 dark:text-gray-400 mb-1.5">
+                <label className="block text-xs font-semibold text-gray-400 mb-1.5">
                   Phone <span className="font-normal text-gray-500">(optional)</span>
                 </label>
                 <input type="tel" placeholder="+971 50 000 0000" value={form.phone}
                   onChange={e => setField('phone', e.target.value)}
-                  className="w-full bg-white/5 lg:bg-white dark:bg-white/5 border border-white/10 lg:border-gray-200 dark:border-white/10 text-white lg:text-gray-800 dark:text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-orange-500 placeholder:text-gray-600 lg:placeholder:text-gray-300 dark:placeholder:text-gray-600 transition-colors" />
+                  className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
               </div>
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-gray-400 lg:text-gray-600 dark:text-gray-400 mb-1.5">Password</label>
+              <label className="block text-xs font-semibold text-gray-400 mb-1.5">Password</label>
               <div className="relative">
                 <input type={showPass ? 'text' : 'password'} required minLength={6}
                   placeholder="••••••••" value={form.password}
                   onChange={e => setField('password', e.target.value)}
-                  className="w-full bg-white/5 lg:bg-white dark:bg-white/5 border border-white/10 lg:border-gray-200 dark:border-white/10 text-white lg:text-gray-800 dark:text-white rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:border-orange-500 placeholder:text-gray-600 lg:placeholder:text-gray-300 dark:placeholder:text-gray-600 transition-colors" />
+                  className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
                 <button type="button" onClick={() => setShowPass(v => !v)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 lg:hover:text-gray-600 dark:hover:text-gray-300">
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
                   {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
             </div>
 
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl px-4 py-2.5">
-                {error}
-              </div>
+              error === 'STAFF_PORTAL' ? (
+                <div className="rounded-xl px-4 py-3 text-xs" style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
+                  <p className="font-bold text-[var(--brand)] mb-1">Staff account detected</p>
+                  <p className="text-gray-400 mb-2.5">This email is registered as a staff member. Please use the Staff Portal to sign in.</p>
+                  <Link href="/staff/login"
+                    className="inline-flex items-center gap-1.5 font-bold text-black px-3 py-1.5 rounded-lg text-[11px]"
+                    style={{ backgroundColor: 'var(--brand)' }}>
+                    Go to Staff Portal →
+                  </Link>
+                </div>
+              ) : (
+                <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl px-4 py-2.5">
+                  {error}
+                </div>
+              )
             )}
 
             <button type="submit" disabled={loading}
-              className="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-orange-500/20 hover:shadow-orange-500/30 hover:scale-[1.01] active:scale-100 mt-1">
+              className="w-full text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-black/20 hover:shadow-black/30 hover:scale-[1.01] active:scale-100 mt-1"
+              style={{ backgroundColor: 'var(--brand)' }}>
               {loading
                 ? (tab === 'login' ? 'Signing in…' : 'Creating account…')
                 : (tab === 'login' ? 'Sign In' : 'Create Free Account')}

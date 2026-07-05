@@ -7,7 +7,7 @@ import {
   Zap, ChevronRight, Layout, Trash2, UtensilsCrossed,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { applyFavicon } from '@/store/brand'
+import { applyFavicon, applyBrandColor } from '@/store/brand'
 import ImageUpload from '@/components/ui/ImageUpload'
 import toast from 'react-hot-toast'
 
@@ -40,6 +40,7 @@ type HeroConfig = {
   ambienceTagline: string; ambienceHeadline: string; ambienceHeadlinePart2: string; ambienceDesc: string
   reviewsHeadline: string
   ambienceImg1: string; ambienceImg2: string; ambienceImg3: string; ambienceImg4: string
+  ambienceImg5: string; ambienceImg6: string; ambienceImg7: string; ambienceImg8: string
 }
 
 type Cfg = {
@@ -50,6 +51,8 @@ type Cfg = {
   peakStart: string; peakEnd: string; noShowWindowOffPeak: number; noShowWindowPeak: number
   maxBookingDaysAhead: number; requireLoginToBook: boolean; remindersEnabled: boolean; reminderMinsBefore: number
   heroConfig: HeroConfig
+  brandColor: string
+  showLanguageToggle: boolean
 }
 
 const UPDATABLE: (keyof Cfg)[] = [
@@ -58,6 +61,7 @@ const UPDATABLE: (keyof Cfg)[] = [
   'bookingsEnabled','slotDurationMins','walkInBuffer','peakHoursEnabled',
   'peakStart','peakEnd','noShowWindowOffPeak','noShowWindowPeak',
   'maxBookingDaysAhead','requireLoginToBook','remindersEnabled','reminderMinsBefore',
+  'brandColor','showLanguageToggle',
 ]
 
 const TIMEZONES = ['Asia/Dubai','Asia/Riyadh','Asia/Kuwait','Asia/Bahrain','Asia/Qatar','Asia/Muscat']
@@ -419,6 +423,50 @@ export default function SettingsPage() {
                   className="max-w-[160px]"
                 />
               </FieldBlock>
+
+              <SectionLabel text="Brand Color" />
+              <FieldBlock>
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <input
+                      type="color"
+                      value={cfg.brandColor ?? '#f59e0b'}
+                      onChange={e => { set('brandColor', e.target.value); applyBrandColor(e.target.value) }}
+                      className="w-12 h-12 rounded-xl cursor-pointer border-0 p-0.5"
+                      style={{ backgroundColor: 'var(--input-bg)', border: '1px solid var(--card-border)' }}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium mb-0.5" style={{ color: 'var(--text-primary)' }}>
+                      Accent color — used across all public pages
+                    </p>
+                    <p className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                      {cfg.brandColor ?? '#f59e0b'}
+                    </p>
+                  </div>
+                  {/* Quick presets */}
+                  <div className="flex gap-2 ml-auto">
+                    {['#f59e0b','#ef4444','#10b981','#3b82f6','#8b5cf6','#f43f5e'].map(c => (
+                      <button key={c} onClick={() => { set('brandColor', c); applyBrandColor(c) }}
+                        className="w-7 h-7 rounded-lg border-2 transition-all"
+                        style={{ backgroundColor: c, borderColor: cfg.brandColor === c ? '#fff' : 'transparent' }}
+                        title={c}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </FieldBlock>
+
+              <SectionLabel text="Localization" />
+              <FieldBlock>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Show language toggle</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Displays an AR / EN switcher on the public website navbar and mobile menu</p>
+                  </div>
+                  <Toggle checked={cfg.showLanguageToggle ?? false} onChange={v => set('showLanguageToggle', v)} />
+                </div>
+              </FieldBlock>
             </>}
 
             {/* ── LANDING PAGE ── */}
@@ -561,7 +609,7 @@ export default function SettingsPage() {
                 <SectionLabel text="Signature Dish Cards (up to 6)" />
                 <FieldBlock border={false}>
                   <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                    Pick up to 6 dishes from your menu to feature on the landing page. Leave empty to auto-show the top 6 dishes with photos.
+                    Pick up to 12 dishes from your menu to feature on the landing page. They rotate 6 at a time. Leave empty to auto-show the top dishes with photos.
                   </p>
                   {menuItems.length === 0 ? (
                     <p className="text-xs py-3 text-center" style={{ color: 'var(--text-muted)' }}>Loading menu items…</p>
@@ -570,7 +618,7 @@ export default function SettingsPage() {
                       {menuItems.map(item => {
                         const selected = (hc.signatureDishIds ?? []).includes(item.id)
                         const count = (hc.signatureDishIds ?? []).length
-                        const disabled = !selected && count >= 6
+                        const disabled = !selected && count >= 12
                         return (
                           <button
                             key={item.id}
@@ -613,7 +661,7 @@ export default function SettingsPage() {
                     </button>
                   )}
                   <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-                    {(hc.signatureDishIds ?? []).length}/6 selected
+                    {(hc.signatureDishIds ?? []).length}/12 selected
                   </p>
                 </FieldBlock>
 
@@ -656,17 +704,21 @@ export default function SettingsPage() {
                 </FieldBlock>
 
                 {/* AMBIENCE IMAGES */}
-                <SectionLabel text="Ambience Photos (4 images)" />
+                <SectionLabel text="Ambience Photos (up to 8 — rotates 4 at a time)" />
                 <FieldBlock border={false}>
                   <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                    Upload photos or paste a URL. Leave blank to use built-in defaults.
+                    Upload up to 8 photos. The first 4 show by default; if you add more they rotate automatically every 6 s.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     {([
-                      { key: 'ambienceImg1', label: 'Image 1 — left tall photo',  pid: 'amb1' },
-                      { key: 'ambienceImg2', label: 'Image 2 — top right',         pid: 'amb2' },
-                      { key: 'ambienceImg3', label: 'Image 3 — middle right',      pid: 'amb3' },
-                      { key: 'ambienceImg4', label: 'Image 4 — bottom right',      pid: 'amb4' },
+                      { key: 'ambienceImg1', label: 'Image 1', pid: 'amb1' },
+                      { key: 'ambienceImg2', label: 'Image 2', pid: 'amb2' },
+                      { key: 'ambienceImg3', label: 'Image 3', pid: 'amb3' },
+                      { key: 'ambienceImg4', label: 'Image 4', pid: 'amb4' },
+                      { key: 'ambienceImg5', label: 'Image 5', pid: 'amb5' },
+                      { key: 'ambienceImg6', label: 'Image 6', pid: 'amb6' },
+                      { key: 'ambienceImg7', label: 'Image 7', pid: 'amb7' },
+                      { key: 'ambienceImg8', label: 'Image 8', pid: 'amb8' },
                     ] as { key: keyof HeroConfig; label: string; pid: string }[]).map(({ key, label, pid }) => (
                       <div key={key}>
                         <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>{label}</p>

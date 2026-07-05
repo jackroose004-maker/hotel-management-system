@@ -41,6 +41,8 @@ export class SettingsService {
     remindersEnabled: boolean
     reminderMinsBefore: number
     brandPreset: string
+    brandColor: string
+    showLanguageToggle: boolean
   }>) {
     const current = await this.get()
     return this.prisma.restaurantSettings.update({

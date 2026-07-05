@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import Lenis from 'lenis'
-import { UtensilsCrossed, Star, Clock, ArrowRight, Phone, MapPin, ChevronDown, CalendarDays, User, ShoppingCart, Check } from 'lucide-react'
+import { UtensilsCrossed, Star, Clock, ArrowRight, Phone, MapPin, ChevronDown, CalendarDays, User, ShoppingCart, Check, LogOut } from 'lucide-react'
 import AccountNavLink from '@/components/AccountNavLink'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { useCartStore } from '@/store/cart'
+import { useBrandStore } from '@/store/brand'
+import { useLangStore, applyLangDir, t } from '@/store/lang'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
@@ -27,6 +29,7 @@ interface HeroConfig {
   ambienceTagline?: string; ambienceHeadline?: string; ambienceHeadlinePart2?: string; ambienceDesc?: string
   reviewsHeadline?: string
   ambienceImg1?: string; ambienceImg2?: string; ambienceImg3?: string; ambienceImg4?: string
+  ambienceImg5?: string; ambienceImg6?: string; ambienceImg7?: string; ambienceImg8?: string
 }
 interface RestaurantSettings {
   restaurantName: string; tagline: string | null; phone: string | null
@@ -110,7 +113,7 @@ function FoodShowcase({ items }: { items: { name: string; img: string }[] }) {
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 4, padding: '0 48px 44px' }}
         className="flex items-end justify-between">
         <div>
-          <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', marginBottom: 10 }}>
+          <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', marginBottom: 10 }}>
             Featured Dish · {idx + 1} / {count}
           </p>
           <h3 style={{ color: '#fff', fontSize: 'clamp(1.8rem,4vw,3rem)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.02em' }}>
@@ -118,14 +121,14 @@ function FoodShowcase({ items }: { items: { name: string; img: string }[] }) {
           </h3>
         </div>
         <Link href="/menu"
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 24px', borderRadius: 12, fontWeight: 700, fontSize: 13, color: '#000', backgroundColor: '#f59e0b', textDecoration: 'none', flexShrink: 0 }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 24px', borderRadius: 12, fontWeight: 700, fontSize: 13, color: '#000', backgroundColor: 'var(--brand)', textDecoration: 'none', flexShrink: 0 }}>
           View Menu <ArrowRight size={14} />
         </Link>
       </div>
 
       {/* Progress bar */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, backgroundColor: 'rgba(255,255,255,0.08)', zIndex: 5 }}>
-        <div style={{ height: '100%', backgroundColor: '#f59e0b', width: `${((idx + 1) / count) * 100}%`, transition: 'width 5s linear' }} />
+        <div style={{ height: '100%', backgroundColor: 'var(--brand)', width: `${((idx + 1) / count) * 100}%`, transition: 'width 5s linear' }} />
       </div>
     </div>
   )
@@ -187,10 +190,10 @@ function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
                 style={{ filter: 'brightness(0.72) saturate(0.9)' }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-black/10" />
-              <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-br from-[var(--brand)]/10 via-transparent to-transparent" />
 
               <div className="absolute top-5 left-5 right-5 flex items-start justify-between gap-3">
-                <span className="text-[10px] font-bold tracking-[0.22em] uppercase text-amber-400/90">
+                <span className="text-[10px] font-bold tracking-[0.22em] uppercase text-[var(--brand)]/90">
                   Signature · {String(i + 1).padStart(2, '0')}
                 </span>
               </div>
@@ -226,7 +229,7 @@ function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
             className="h-1.5 rounded-full transition-all duration-300"
             style={{
               width: i === active ? 24 : 6,
-              backgroundColor: i === active ? '#f59e0b' : dotInactive,
+              backgroundColor: i === active ? 'var(--brand)' : dotInactive,
             }}
           />
         ))}
@@ -318,7 +321,7 @@ function DishCard({ name, desc, price, time, img, index, menuItemId, basePrice }
                 style={{ transition: 'transform 0.55s ease', willChange: 'transform' }}
                 onError={() => setImgFailed(true)} />
             : <div className="w-full h-full flex items-center justify-center" style={{ background: '#1a1000' }}>
-                <UtensilsCrossed size={32} className="text-amber-900/40" />
+                <UtensilsCrossed size={32} className="text-[var(--brand)]/40" />
               </div>
           }
 
@@ -333,7 +336,7 @@ function DishCard({ name, desc, price, time, img, index, menuItemId, basePrice }
           }}>
             <div style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              backgroundColor: '#f59e0b', color: '#000',
+              backgroundColor: 'var(--brand)', color: '#000',
               fontWeight: 800, fontSize: 12, letterSpacing: '0.04em',
               padding: '9px 20px', borderRadius: 100,
               boxShadow: '0 4px 20px rgba(245,158,11,0.5)',
@@ -387,7 +390,7 @@ function ReviewsMobile({ active, onSelect, dark, pal }: {
         <div className="flex items-center justify-between mb-3">
           <div className="flex gap-0.5">
             {[...Array(t.stars)].map((_, si) => (
-              <Star key={si} size={11} style={{ color: '#f59e0b', fill: '#f59e0b' }} />
+              <Star key={si} size={11} style={{ color: 'var(--brand)', fill: 'var(--brand)' }} />
             ))}
           </div>
           <span className="text-[10px] font-bold tracking-widest uppercase" style={{ color: 'rgba(245,158,11,0.65)' }}>
@@ -423,7 +426,7 @@ function ReviewsMobile({ active, onSelect, dark, pal }: {
             className="h-1.5 rounded-full transition-all duration-300"
             style={{
               width: i === active ? 22 : 6,
-              backgroundColor: i === active ? '#f59e0b' : (dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'),
+              backgroundColor: i === active ? 'var(--brand)' : (dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'),
             }}
           />
         ))}
@@ -475,7 +478,7 @@ function ReviewCard({ t, i, dark }: {
 
           <div style={{ display: 'flex', gap: 2, marginBottom: 12 }}>
             {[...Array(t.stars)].map((_, si) => (
-              <Star key={si} size={11} style={{ color: '#f59e0b', fill: '#f59e0b', filter: 'drop-shadow(0 0 3px rgba(245,158,11,0.7))' }} />
+              <Star key={si} size={11} style={{ color: 'var(--brand)', fill: 'var(--brand)', filter: 'drop-shadow(0 0 3px rgba(245,158,11,0.7))' }} />
             ))}
           </div>
           <p style={{ color: textMain, fontSize: 13.5, lineHeight: 1.68, fontStyle: 'italic', flex: 1 }}>
@@ -514,7 +517,7 @@ function ReviewCard({ t, i, dark }: {
           {/* Stars */}
           <div style={{ display: 'flex', gap: 3 }}>
             {[...Array(t.stars)].map((_, si) => (
-              <Star key={si} size={12} style={{ color: '#f59e0b', fill: '#f59e0b' }} />
+              <Star key={si} size={12} style={{ color: 'var(--brand)', fill: 'var(--brand)' }} />
             ))}
           </div>
         </div>
@@ -526,7 +529,10 @@ function ReviewCard({ t, i, dark }: {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   const { dark } = useThemeStore()
-  const { user, token } = useAuthStore()
+  const { user, token, logout } = useAuthStore()
+  const showLanguageToggle = useBrandStore(s => s.showLanguageToggle)
+  const { lang, setLang } = useLangStore()
+  useEffect(() => { applyLangDir(lang) }, [lang])
   const pal = dark ? {
     bg: '#0c0c0c', bg2: '#080808', bg3: '#101010',
     text: '#f5f3ef', muted: 'rgba(245,243,239,0.45)', faint: 'rgba(245,243,239,0.18)',
@@ -545,6 +551,10 @@ export default function LandingPage() {
   const [dishes,     setDishes]     = useState<typeof DISHES_FALLBACK>(DISHES_FALLBACK)
   const [showcase,   setShowcase]   = useState<typeof SHOWCASE_FALLBACK>(SHOWCASE_FALLBACK)
   const [reviewIdx,  setReviewIdx]  = useState(0)
+  const [dishPage,   setDishPage]   = useState(0)
+  const [dishFading, setDishFading] = useState(false)
+  const [ambPage,    setAmbPage]    = useState(0)
+  const [ambFading,  setAmbFading]  = useState(false)
   const [scrolled,   setScrolled]   = useState(false)
   const [navOpen,    setNavOpen]    = useState(false)
   const [hasActiveOrder, setHasActiveOrder] = useState(false)
@@ -682,6 +692,34 @@ export default function LandingPage() {
     return () => clearInterval(t)
   }, [])
 
+  // Auto-rotate ambience photos — only when more than 4 are set
+  useEffect(() => {
+    const allAmb = [1,2,3,4,5,6,7,8]
+      .map(i => cfg.heroConfig?.[`ambienceImg${i}` as keyof typeof cfg.heroConfig] as string | undefined)
+      .filter(Boolean) as string[]
+    if (allAmb.length <= 4) return
+    const pages = Math.ceil(allAmb.length / 4)
+    const t = setInterval(() => {
+      setAmbFading(true)
+      setTimeout(() => { setAmbPage(p => (p + 1) % pages); setAmbFading(false) }, 500)
+    }, 6000)
+    return () => clearInterval(t)
+  }, [cfg.heroConfig])
+
+  // Auto-rotate signature dishes — only when there are more than 6
+  useEffect(() => {
+    const pages = Math.ceil(dishes.length / 6)
+    if (pages <= 1) return
+    const t = setInterval(() => {
+      setDishFading(true)
+      setTimeout(() => {
+        setDishPage(p => (p + 1) % pages)
+        setDishFading(false)
+      }, 450)
+    }, 5000)
+    return () => clearInterval(t)
+  }, [dishes.length])
+
   useEffect(() => {
     // Fetch both in parallel, then apply: signatureDishIds (pinned picks) > top-with-image (auto)
     Promise.all([
@@ -705,8 +743,8 @@ export default function LandingPage() {
           return
         }
       }
-      // Auto: top items that have images
-      const top = withImg.slice(0, 6)
+      // Auto: top items that have images (no hard cap — rotation handles paging)
+      const top = withImg.slice(0, 12)
       if (top.length >= 4) setDishes(top.map(i => ({ name: i.name, desc: i.description ?? '', price: i.price, time: i.prepTimeMins, img: i.imageUrl!, menuItemId: i.id, basePrice: Number(i.price) })))
     })
   }, [])
@@ -725,7 +763,7 @@ export default function LandingPage() {
           <Link href="/" className="flex items-center gap-2.5">
             {cfg.logoUrl
               ? <img src={cfg.logoUrl} alt={cfg.restaurantName} className="w-11 h-11 rounded-xl object-cover" style={{ boxShadow: '0 2px 12px rgba(0,0,0,0.4)' }} />
-              : <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#f59e0b', boxShadow: '0 2px 12px rgba(245,158,11,0.4)' }}><UtensilsCrossed size={16} className="text-black" /></div>
+              : <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'var(--brand)', boxShadow: '0 2px 12px rgba(245,158,11,0.4)' }}><UtensilsCrossed size={16} className="text-black" /></div>
             }
             <span className="font-black text-sm tracking-tight" style={{ color: scrolled ? pal.text : '#fff' }}>{cfg.restaurantName}</span>
           </Link>
@@ -745,7 +783,7 @@ export default function LandingPage() {
             {hasActiveOrder && (
               <Link href="/menu"
                 className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-200 animate-pulse"
-                style={{ backgroundColor: 'rgba(245,158,11,0.18)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}
+                style={{ backgroundColor: 'rgba(245,158,11,0.18)', color: 'var(--brand)', border: '1px solid rgba(245,158,11,0.4)' }}
                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'rgba(245,158,11,0.28)'; e.currentTarget.style.animationPlayState = 'paused' }}
                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(245,158,11,0.18)'; e.currentTarget.style.animationPlayState = 'running' }}>
                 🔴 Track Order
@@ -766,14 +804,24 @@ export default function LandingPage() {
               Book a Table
             </Link>
 
+            {/* Language toggle — desktop, only shown when enabled in settings */}
+            {showLanguageToggle && (
+              <button
+                onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200"
+                style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.7)', border: `1px solid ${scrolled ? pal.border : 'rgba(255,255,255,0.2)'}` }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = scrolled ? pal.text : '#fff' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.7)' }}>
+                {lang === 'en' ? 'ع' : 'EN'}
+              </button>
+            )}
+
             {/* Account — avatar pill: shows name when logged in, "Sign In" when not */}
             {token && user ? (
               <Link href="/account"
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold transition-all duration-200"
-                style={{ backgroundColor: scrolled ? pal.bg3 : 'rgba(255,255,255,0.1)', color: scrolled ? pal.text : '#fff' }}
-                onMouseEnter={e => e.currentTarget.style.backgroundColor = scrolled ? pal.border : 'rgba(255,255,255,0.18)'}
-                onMouseLeave={e => e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.1)'}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 900, color: '#000' }}>
+                style={{ backgroundColor: scrolled ? pal.bg3 : 'rgba(255,255,255,0.1)', color: scrolled ? pal.text : '#fff' }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', backgroundColor: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 900, color: '#000' }}>
                   {user.name?.[0]?.toUpperCase() ?? '?'}
                 </div>
                 {user.name?.split(' ')[0]}
@@ -794,11 +842,22 @@ export default function LandingPage() {
             {/* Order Now pill — always visible on md+ */}
             <Link href="/menu"
               className="hidden md:flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-bold transition-all duration-200"
-              style={{ backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 2px 16px rgba(245,158,11,0.28)' }}
+              style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 2px 16px rgba(245,158,11,0.28)' }}
               onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 4px 24px rgba(245,158,11,0.45)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
               onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 2px 16px rgba(245,158,11,0.28)'; e.currentTarget.style.transform = 'translateY(0)' }}>
               Order Now
             </Link>
+            {/* Sign out icon — after Order Now, desktop only, shown when logged in */}
+            {token && user && (
+              <button onClick={() => logout()}
+                title="Sign out"
+                className="hidden md:flex items-center justify-center w-9 h-9 rounded-full transition-colors"
+                style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.55)', backgroundColor: 'transparent' }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.55)'; (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent' }}>
+                <LogOut size={15} />
+              </button>
+            )}
             {/* Hamburger mobile */}
             <button onClick={() => setNavOpen(v => !v)} className="md:hidden p-2.5 rounded-lg transition-colors"
               style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.7)', backgroundColor: navOpen ? (scrolled ? pal.bg3 : 'rgba(255,255,255,0.1)') : 'transparent' }}>
@@ -841,9 +900,10 @@ export default function LandingPage() {
               {/* Header */}
               <div className="flex items-center justify-between p-5 border-b" style={{ borderColor: pal.border }}>
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#f59e0b' }}>
-                    <UtensilsCrossed size={14} className="text-black" />
-                  </div>
+                  {cfg.logoUrl
+                    ? <img src={cfg.logoUrl} alt={cfg.restaurantName} className="w-8 h-8 rounded-lg object-cover" />
+                    : <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}><UtensilsCrossed size={14} className="text-black" /></div>
+                  }
                   <span className="font-black text-sm" style={{ color: pal.text }}>{cfg.restaurantName}</span>
                 </div>
                 <button onClick={() => setNavOpen(false)} className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors"
@@ -867,23 +927,28 @@ export default function LandingPage() {
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
                     <span>{n.icon}</span>
                     {n.label}
-                    <ArrowRight size={13} className="ml-auto" style={{ color: '#f59e0b' }} />
+                    <ArrowRight size={13} className="ml-auto" style={{ color: 'var(--brand)' }} />
                   </Link>
                 ))}
               </nav>
 
-              {/* CTA block */}
-              <div className="p-5 space-y-3 border-t" style={{ borderColor: pal.border }}>
-                <Link href="/menu" onClick={() => setNavOpen(false)}
-                  className="flex items-center justify-center gap-2 py-3.5 rounded-2xl font-bold text-sm w-full"
-                  style={{ backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 4px 20px rgba(245,158,11,0.35)' }}>
-                  Order Now <ArrowRight size={13} />
-                </Link>
-                <Link href="/book" onClick={() => setNavOpen(false)}
-                  className="flex items-center justify-center gap-2 py-3 rounded-2xl font-semibold text-sm w-full"
-                  style={{ border: `1px solid ${pal.border}`, color: pal.muted }}>
-                  <CalendarDays size={13} /> Reserve a Table
-                </Link>
+              {/* Footer actions */}
+              <div className="p-5 border-t space-y-3" style={{ borderColor: pal.border }}>
+                {showLanguageToggle && (
+                  <button
+                    onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-2xl font-bold text-sm w-full"
+                    style={{ border: `1px solid ${pal.border}`, color: pal.muted }}>
+                    {lang === 'en' ? '🇦🇪 العربية' : '🇬🇧 English'}
+                  </button>
+                )}
+                {token && user && (
+                  <button onClick={() => { setNavOpen(false); logout() }}
+                    className="flex items-center justify-center gap-2 py-3 rounded-2xl font-semibold text-sm w-full"
+                    style={{ border: '1px solid rgba(239,68,68,0.25)', color: '#ef4444' }}>
+                    <LogOut size={13} /> Sign out
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -940,8 +1005,8 @@ export default function LandingPage() {
 
         <div className="relative z-10 text-center flex flex-col items-center" style={{ padding: '0 clamp(1.5rem,8vw,10rem)', width: '100%' }}>
           <div ref={heroBadgeRef} className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold mb-10 opacity-0"
-            style={{ backgroundColor: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.28)', color: '#f59e0b', backdropFilter: 'blur(10px)' }}>
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: '#f59e0b' }} />
+            style={{ backgroundColor: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.28)', color: 'var(--brand)', backdropFilter: 'blur(10px)' }}>
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ backgroundColor: 'var(--brand)' }} />
             {cfg.heroConfig?.badgeText || `Now Open · ${cfg.address ?? 'Dubai, UAE'}`}
           </div>
 
@@ -951,7 +1016,7 @@ export default function LandingPage() {
               {cfg.heroConfig?.line1 || 'Taste of'}
             </h1>
             <h1 className="hero-line font-black leading-none opacity-0"
-              style={{ fontSize: 'clamp(3.8rem,11vw,9rem)', color: '#f59e0b', letterSpacing: '-0.035em', lineHeight: 0.92, fontStyle: 'italic' }}>
+              style={{ fontSize: 'clamp(3.8rem,11vw,9rem)', color: 'var(--brand)', letterSpacing: '-0.035em', lineHeight: 0.92, fontStyle: 'italic' }}>
               {cfg.heroConfig?.line2 || 'Kerala'}
             </h1>
             <p className="hero-line mt-6 font-light opacity-0"
@@ -963,7 +1028,7 @@ export default function LandingPage() {
           <div ref={heroCtaRef} className="flex flex-row gap-2.5 items-center justify-center mt-10 opacity-0 flex-wrap">
             <Link href="/menu"
               className="flex items-center gap-2 rounded-2xl font-bold"
-              style={{ backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 8px 40px rgba(245,158,11,0.38)', padding: 'clamp(10px,2.5vw,16px) clamp(20px,5vw,32px)', fontSize: 'clamp(13px,3.5vw,16px)' }}>
+              style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 40px rgba(245,158,11,0.38)', padding: 'clamp(10px,2.5vw,16px) clamp(20px,5vw,32px)', fontSize: 'clamp(13px,3.5vw,16px)' }}>
               {cfg.heroConfig?.ctaLabel || 'Order Now'} <ArrowRight size={14} />
             </Link>
             <Link href="/book"
@@ -987,7 +1052,7 @@ export default function LandingPage() {
                 {i > 0 && <div style={{ width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' }} />}
                 <div className="text-center">
                   <p className="font-black text-xl leading-none" style={{ color: '#fff' }}>{s.value}</p>
-                  {s.sub && <div className="flex gap-0.5 justify-center my-1">{[...Array(5)].map((_, j) => <Star key={j} size={9} style={{ color: '#f59e0b', fill: '#f59e0b' }} />)}</div>}
+                  {s.sub && <div className="flex gap-0.5 justify-center my-1">{[...Array(5)].map((_, j) => <Star key={j} size={9} style={{ color: 'var(--brand)', fill: 'var(--brand)' }} />)}</div>}
                   <p className="text-[10px] mt-1" style={{ color: 'rgba(255,255,255,0.28)' }}>{s.label}</p>
                 </div>
               </div>
@@ -1062,7 +1127,7 @@ export default function LandingPage() {
                 {/* Eyebrow with lines */}
                 <div className="relay-el" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14, marginBottom: 20 }}>
                   <span style={{ flex: 1, maxWidth: 40, height: 1, backgroundColor: 'rgba(245,158,11,0.4)' }} />
-                  <p style={{ color: '#f59e0b', fontSize: 10, letterSpacing: '0.26em', textTransform: 'uppercase', fontWeight: 700 }}>{cfg.heroConfig?.relayTagline || "The Kitchen's Finest"}</p>
+                  <p style={{ color: 'var(--brand)', fontSize: 10, letterSpacing: '0.26em', textTransform: 'uppercase', fontWeight: 700 }}>{cfg.heroConfig?.relayTagline || "The Kitchen's Finest"}</p>
                   <span style={{ flex: 1, maxWidth: 40, height: 1, backgroundColor: 'rgba(245,158,11,0.4)' }} />
                 </div>
 
@@ -1078,7 +1143,7 @@ export default function LandingPage() {
                 </h2>
 
                 <Link className="relay-el" href="/menu"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', borderRadius: 100, fontWeight: 700, fontSize: 14, backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 0 0 1px rgba(245,158,11,0.3), 0 8px 48px rgba(245,158,11,0.42)', letterSpacing: '0.01em', textDecoration: 'none', transition: 'transform 0.2s, box-shadow 0.2s' }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', borderRadius: 100, fontWeight: 700, fontSize: 14, backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 0 0 1px rgba(245,158,11,0.3), 0 8px 48px rgba(245,158,11,0.42)', letterSpacing: '0.01em', textDecoration: 'none', transition: 'transform 0.2s, box-shadow 0.2s' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 0 0 1px rgba(245,158,11,0.4), 0 12px 56px rgba(245,158,11,0.55)' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 0 0 1px rgba(245,158,11,0.3), 0 8px 48px rgba(245,158,11,0.42)' }}>
                   Explore Menu <ArrowRight size={15} />
@@ -1095,28 +1160,59 @@ export default function LandingPage() {
       <section className="px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)]" style={{ backgroundColor: pal.bg, paddingTop: 'clamp(3rem,8vh,6rem)', paddingBottom: 'clamp(3rem,8vh,6rem)' }}>
         <div ref={dishHeadRef} className="flex flex-col sm:flex-row sm:items-end justify-between mb-6 md:mb-10 gap-3">
           <div>
-            <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 10 }}>{cfg.heroConfig?.dishesSubtext || 'Signature Dishes'}</p>
+            <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 10 }}>{cfg.heroConfig?.dishesSubtext || 'Signature Dishes'}</p>
             <h2 style={{ color: pal.text, fontSize: 'clamp(1.6rem,7vw,3rem)', fontWeight: 900, lineHeight: 1.12, letterSpacing: '-0.025em' }}>
               {cfg.heroConfig?.dishesHeadline || "Dishes you'll dream about."}
             </h2>
           </div>
           <Link href="/menu" className="flex items-center gap-2 text-sm font-semibold flex-shrink-0 self-start sm:self-auto"
-            style={{ color: '#f59e0b' }}>
+            style={{ color: 'var(--brand)' }}>
             Full Menu <ArrowRight size={14} />
           </Link>
         </div>
-        <div ref={dishGridRef}>
-          <div className="md:hidden">
-            <SignatureDishesMobile
-              dishes={dishes}
-              mutedColor={pal.muted}
-              dotInactive={dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)'}
-            />
-          </div>
-          <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-4">
-            {dishes.map((d, i) => <DishCard key={d.name} {...d} index={i} />)}
-          </div>
-        </div>
+        {(() => {
+          const visibleDishes = dishes.slice(dishPage * 6, dishPage * 6 + 6)
+          const pages = Math.ceil(dishes.length / 6)
+          return (
+            <div ref={dishGridRef}>
+              <div
+                style={{ opacity: dishFading ? 0 : 1, transition: 'opacity 0.45s ease' }}
+              >
+                <div className="md:hidden">
+                  <SignatureDishesMobile
+                    dishes={visibleDishes}
+                    mutedColor={pal.muted}
+                    dotInactive={dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)'}
+                  />
+                </div>
+                <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-4">
+                  {visibleDishes.map((d, i) => <DishCard key={`${dishPage}-${d.name}`} {...d} index={i} />)}
+                </div>
+              </div>
+              {/* Page dots — only shown when there are multiple pages */}
+              {pages > 1 && (
+                <div className="flex justify-center gap-2 mt-6">
+                  {Array.from({ length: pages }).map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => { setDishFading(true); setTimeout(() => { setDishPage(i); setDishFading(false) }, 450) }}
+                      style={{
+                        width: i === dishPage ? 20 : 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: i === dishPage ? 'var(--brand)' : (dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)'),
+                        transition: 'all 0.3s ease',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })()}
       </section>
 
 
@@ -1124,18 +1220,20 @@ export default function LandingPage() {
           AMBIENCE + LOCATION — editorial mosaic
       ══════════════════════════════════════ */}
       {(() => {
-        const imgs = [
-          cfg.heroConfig?.ambienceImg1 || AMBIENCE[0],
-          cfg.heroConfig?.ambienceImg2 || AMBIENCE[1],
-          cfg.heroConfig?.ambienceImg3 || AMBIENCE[2],
-          cfg.heroConfig?.ambienceImg4 || AMBIENCE[3],
-        ]
+        const allAmb = [1,2,3,4,5,6,7,8]
+          .map(i => cfg.heroConfig?.[`ambienceImg${i}` as keyof typeof cfg.heroConfig] as string | undefined)
+          .filter(Boolean) as string[]
+        const fallback = AMBIENCE
+        const pool = allAmb.length >= 4 ? allAmb : fallback
+        const imgs = pool.slice(ambPage * 4, ambPage * 4 + 4)
+        // pad to 4 if last page is short
+        while (imgs.length < 4) imgs.push(pool[imgs.length % pool.length])
         return (
       <section ref={ambienceRef} className="px-4 sm:px-6 lg:px-[clamp(1.5rem,5vw,6rem)]" style={{ backgroundColor: '#060606', paddingTop: 'clamp(4rem,9vh,6rem)', paddingBottom: 'clamp(4rem,9vh,6rem)' }}>
 
         {/* Headline above photos */}
         <div className="amb-el text-center mb-8 md:mb-12 px-1">
-          <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 14 }}>{cfg.heroConfig?.ambienceTagline || 'The Space'}</p>
+          <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 14 }}>{cfg.heroConfig?.ambienceTagline || 'The Space'}</p>
           <h2 style={{ color: '#fff', fontSize: 'clamp(1.75rem,8vw,3.8rem)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.03em' }}>
             {cfg.heroConfig?.ambienceHeadline || 'Come for the food.'}<br />
             <span style={{
@@ -1147,31 +1245,44 @@ export default function LandingPage() {
 
         {/* Photo grid — mobile: 2x2, desktop: left tall + right stacked 3 */}
         <div className="amb-el mb-4 md:mb-2.5">
-          <div className="md:hidden grid grid-cols-2 gap-2.5">
-            {imgs.map((src, i) => (
-              <div key={i} className="group relative overflow-hidden aspect-[4/5]" style={{ borderRadius: 14 }}>
-                <img src={src} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ filter: 'brightness(0.78) saturate(0.85)' }} />
-              </div>
-            ))}
-          </div>
-          {/* Desktop: left tall portrait + right 3 stacked */}
-          <div className="hidden md:flex gap-2.5" style={{ height: 'clamp(340px,52vh,520px)' }}>
-            <div className="group flex-shrink-0 relative overflow-hidden" style={{ width: '52%', borderRadius: 18 }}>
-              <img src={imgs[0]} alt="restaurant" className="w-full h-full object-cover transition-all duration-700 group-hover:scale-[1.03]"
-                style={{ filter: 'brightness(0.82) saturate(0.85)' }} />
-              <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 45%)' }} />
-            </div>
-            <div className="flex flex-col gap-2.5 flex-1">
-              {imgs.slice(1).map((src, i) => (
-                <div key={i} className="group relative overflow-hidden flex-1" style={{ borderRadius: 18 }}>
-                  <img src={src} alt="" className="w-full h-full object-cover transition-all duration-700 group-hover:scale-[1.05]"
-                    style={{ filter: 'brightness(0.76) saturate(0.82)' }} />
-                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                    style={{ background: 'rgba(245,158,11,0.07)' }} />
+          <div style={{ opacity: ambFading ? 0 : 1, transition: 'opacity 0.5s ease' }}>
+            <div className="md:hidden grid grid-cols-2 gap-2.5">
+              {imgs.map((src, i) => (
+                <div key={`${ambPage}-${i}`} className="group relative overflow-hidden aspect-[4/5]" style={{ borderRadius: 14 }}>
+                  <img src={src} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ filter: 'brightness(0.78) saturate(0.85)' }} />
                 </div>
               ))}
             </div>
+            {/* Desktop: left tall portrait + right 3 stacked */}
+            <div className="hidden md:flex gap-2.5" style={{ height: 'clamp(340px,52vh,520px)' }}>
+              <div className="group flex-shrink-0 relative overflow-hidden" style={{ width: '52%', borderRadius: 18 }}>
+                <img src={imgs[0]} alt="restaurant" className="w-full h-full object-cover transition-all duration-700 group-hover:scale-[1.03]"
+                  style={{ filter: 'brightness(0.82) saturate(0.85)' }} />
+                <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 45%)' }} />
+              </div>
+              <div className="flex flex-col gap-2.5 flex-1">
+                {imgs.slice(1).map((src, i) => (
+                  <div key={`${ambPage}-r${i}`} className="group relative overflow-hidden flex-1" style={{ borderRadius: 18 }}>
+                    <img src={src} alt="" className="w-full h-full object-cover transition-all duration-700 group-hover:scale-[1.05]"
+                      style={{ filter: 'brightness(0.76) saturate(0.82)' }} />
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+                      style={{ background: 'rgba(245,158,11,0.07)' }} />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
+          {/* Page dots — only when > 4 ambience images */}
+          {pool.length > 4 && (
+            <div className="flex justify-center gap-2 mt-4">
+              {Array.from({ length: Math.ceil(pool.length / 4) }).map((_, i) => (
+                <button key={i}
+                  onClick={() => { setAmbFading(true); setTimeout(() => { setAmbPage(i); setAmbFading(false) }, 500) }}
+                  style={{ width: i === ambPage ? 20 : 6, height: 6, borderRadius: 3, padding: 0, border: 'none', cursor: 'pointer', transition: 'all 0.3s ease', backgroundColor: i === ambPage ? 'var(--brand)' : 'rgba(255,255,255,0.18)' }}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Info strip — stacked cards on mobile, horizontal on desktop */}
@@ -1187,14 +1298,14 @@ export default function LandingPage() {
             {/* Location */}
             <div className="flex items-center gap-3.5 px-4 py-4 md:flex-1 md:min-w-[200px] md:px-6 md:py-5 md:border-r md:border-white/[0.07]">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
-                <MapPin size={15} style={{ color: '#f59e0b' }} />
+                <MapPin size={15} style={{ color: 'var(--brand)' }} />
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-white font-semibold text-sm leading-snug">{cfg.address ?? 'Dubai, UAE'}</p>
                 <a href={`https://maps.google.com/?q=${encodeURIComponent(cfg.address ?? 'Dubai UAE')}`}
                   target="_blank" rel="noopener noreferrer"
                   className="inline-block mt-1 text-[11px] font-semibold no-underline"
-                  style={{ color: '#f59e0b' }}>
+                  style={{ color: 'var(--brand)' }}>
                   Get directions →
                 </a>
               </div>
@@ -1203,7 +1314,7 @@ export default function LandingPage() {
             {/* Hours */}
             <div className="flex items-center gap-3.5 px-4 py-4 md:flex-1 md:min-w-[180px] md:px-6 md:py-5 md:border-r md:border-white/[0.07]">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
-                <Clock size={15} style={{ color: '#f59e0b' }} />
+                <Clock size={15} style={{ color: 'var(--brand)' }} />
               </div>
               <div>
                 <p className="text-white font-semibold text-sm">{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
@@ -1215,7 +1326,7 @@ export default function LandingPage() {
             {cfg.phone && (
               <div className="flex items-center gap-3.5 px-4 py-4 md:flex-1 md:min-w-[160px] md:px-6 md:py-5 md:border-r md:border-white/[0.07]">
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
-                  <Phone size={15} style={{ color: '#f59e0b' }} />
+                  <Phone size={15} style={{ color: 'var(--brand)' }} />
                 </div>
                 <div>
                   <p className="text-white font-semibold text-sm">{cfg.phone}</p>
@@ -1255,7 +1366,7 @@ export default function LandingPage() {
             <div key={i} style={{
               position: 'absolute', top: s.top, left: s.left,
               width: s.size, height: s.size, borderRadius: '50%',
-              backgroundColor: '#f59e0b',
+              backgroundColor: 'var(--brand)',
               animation: `glitterPulse ${2.8 + i * 0.5}s ease-in-out infinite ${s.delay}`,
               boxShadow: `0 0 ${s.size * 4}px rgba(245,158,11,0.9)`,
             }} />
@@ -1264,7 +1375,7 @@ export default function LandingPage() {
 
         {/* Header */}
         <div className="reviews-head text-center mb-6 md:mb-12 px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)] relative z-[1]">
-          <p style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 10 }}>Guest Reviews</p>
+          <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 10 }}>Guest Reviews</p>
           <h2 style={{ color: pal.text, fontSize: 'clamp(1.55rem,6.5vw,3rem)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.08 }}>
             {cfg.heroConfig?.reviewsHeadline || 'Loved by every table'}
           </h2>
@@ -1284,7 +1395,7 @@ export default function LandingPage() {
             <div className="review-relay-strip" style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 38s linear infinite', padding: '8px 16px' }}
               onMouseEnter={e => (e.currentTarget.style.animationPlayState = 'paused')}
               onMouseLeave={e => (e.currentTarget.style.animationPlayState = 'running')}>
-              {[...TESTIMONIALS, ...TESTIMONIALS, ...TESTIMONIALS].map((t, i) => (
+              {[...TESTIMONIALS, ...TESTIMONIALS].map((t, i) => (
                 <ReviewCard key={i} t={t} i={i % TESTIMONIALS.length} dark={dark} />
               ))}
             </div>
@@ -1296,7 +1407,7 @@ export default function LandingPage() {
             <div style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 44s linear infinite reverse', padding: '8px 16px 4px' }}
               onMouseEnter={e => (e.currentTarget.style.animationPlayState = 'paused')}
               onMouseLeave={e => (e.currentTarget.style.animationPlayState = 'running')}>
-              {[...TESTIMONIALS.slice().reverse(), ...TESTIMONIALS.slice().reverse(), ...TESTIMONIALS.slice().reverse()].map((t, i) => (
+              {[...TESTIMONIALS.slice().reverse(), ...TESTIMONIALS.slice().reverse()].map((t, i) => (
                 <ReviewCard key={i} t={t} i={i % TESTIMONIALS.length} dark={dark} />
               ))}
             </div>
@@ -1307,7 +1418,7 @@ export default function LandingPage() {
         <div className="reviews-head flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-3 mt-6 md:mt-10 relative z-[1]">
           <div className="flex items-center gap-2">
             <div style={{ display: 'flex', gap: 3 }}>
-              {[...Array(5)].map((_, i) => <Star key={i} size={12} style={{ color: '#f59e0b', fill: '#f59e0b' }} />)}
+              {[...Array(5)].map((_, i) => <Star key={i} size={12} style={{ color: 'var(--brand)', fill: 'var(--brand)' }} />)}
             </div>
             <span style={{ color: pal.text, fontWeight: 800, fontSize: 14 }}>4.9</span>
           </div>
@@ -1322,19 +1433,19 @@ export default function LandingPage() {
           <div className="grid grid-cols-2 gap-2.5 mb-2.5">
             <Link href="/menu"
               className="col-span-2 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-bold no-underline"
-              style={{ backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 8px 28px rgba(245,158,11,0.28)' }}>
+              style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 28px rgba(245,158,11,0.28)' }}>
               Order Now <ArrowRight size={14} />
             </Link>
             <Link href="/book"
               className="flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold no-underline border border-white/10"
               style={{ color: 'rgba(255,255,255,0.75)', backgroundColor: 'rgba(255,255,255,0.03)' }}>
-              <CalendarDays size={13} style={{ color: '#f59e0b' }} /> Book Table
+              <CalendarDays size={13} style={{ color: 'var(--brand)' }} /> Book Table
             </Link>
             <a href={`https://maps.google.com/?q=${encodeURIComponent(cfg.address ?? 'Dubai UAE')}`}
               target="_blank" rel="noopener noreferrer"
               className="flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold no-underline border border-white/10"
               style={{ color: 'rgba(255,255,255,0.75)', backgroundColor: 'rgba(255,255,255,0.03)' }}>
-              <MapPin size={13} style={{ color: '#f59e0b' }} /> Directions
+              <MapPin size={13} style={{ color: 'var(--brand)' }} /> Directions
             </a>
           </div>
         </div>
@@ -1346,18 +1457,23 @@ export default function LandingPage() {
             {/* Brand — centered on mobile */}
             <div className="w-full lg:max-w-[300px] text-center lg:text-left">
               <div className="flex items-center gap-3 mb-3 justify-center lg:justify-start">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: '#f59e0b', boxShadow: '0 4px 16px rgba(245,158,11,0.3)' }}>
-                  <UtensilsCrossed size={16} className="text-black" />
-                </div>
+                {cfg.logoUrl
+                  ? <img src={cfg.logoUrl} alt={cfg.restaurantName} className="w-10 h-10 rounded-xl object-cover flex-shrink-0" style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }} />
+                  : <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: 'var(--brand)', boxShadow: '0 4px 16px rgba(0,0,0,0.3)' }}>
+                      <UtensilsCrossed size={16} className="text-black" />
+                    </div>
+                }
                 <div className="text-left">
                   <div className="font-black text-sm tracking-tight" style={{ color: '#f5f3ef' }}>{cfg.restaurantName}</div>
-                  <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{cfg.tagline ?? 'Kerala Cuisine'}</div>
+                  <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 11 }}>{cfg.tagline ?? ''}</div>
                 </div>
               </div>
-              <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 12, lineHeight: 1.7 }}>
-                Authentic Kerala flavours, crafted fresh and served with warmth.
-              </p>
+              {cfg.tagline && (
+                <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 12, lineHeight: 1.7 }}>
+                  {cfg.tagline}
+                </p>
+              )}
             </div>
 
             {/* Mobile: visit cards */}
@@ -1368,20 +1484,20 @@ export default function LandingPage() {
                 style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
                   style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
-                  <MapPin size={14} style={{ color: '#f59e0b' }} />
+                  <MapPin size={14} style={{ color: 'var(--brand)' }} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 2 }}>Location</p>
                   <p className="text-sm truncate" style={{ color: 'rgba(255,255,255,0.7)' }}>{cfg.address ?? 'Dubai, UAE'}</p>
                 </div>
-                <ArrowRight size={14} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                <ArrowRight size={14} style={{ color: 'var(--brand)', flexShrink: 0 }} />
               </a>
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="flex items-center gap-2.5 p-3.5 rounded-2xl border border-white/[0.07]"
                   style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
                     style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
-                    <Clock size={14} style={{ color: '#f59e0b' }} />
+                    <Clock size={14} style={{ color: 'var(--brand)' }} />
                   </div>
                   <div>
                     <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>Hours</p>
@@ -1394,7 +1510,7 @@ export default function LandingPage() {
                     style={{ backgroundColor: 'rgba(255,255,255,0.02)' }}>
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
                       style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.18)' }}>
-                      <Phone size={14} style={{ color: '#f59e0b' }} />
+                      <Phone size={14} style={{ color: 'var(--brand)' }} />
                     </div>
                     <div className="min-w-0">
                       <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>Call</p>
@@ -1424,7 +1540,7 @@ export default function LandingPage() {
                 {[{ href: '/menu', l: 'Menu' }, { href: '/book', l: 'Reserve a Table' }].map(n => (
                   <Link key={n.href} href={n.href} className="block mb-2.5 text-sm transition-colors py-0.5"
                     style={{ color: 'rgba(255,255,255,0.45)' }}
-                    onMouseEnter={e => { e.currentTarget.style.color = '#f59e0b' }}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--brand)' }}
                     onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.45)' }}>
                     {n.l}
                   </Link>
@@ -1438,7 +1554,7 @@ export default function LandingPage() {
                 ].map(n => (
                   <Link key={n.href} href={n.href} className="block mb-2.5 text-sm transition-colors py-0.5"
                     style={{ color: 'rgba(255,255,255,0.45)' }}
-                    onMouseEnter={e => { e.currentTarget.style.color = '#f59e0b' }}
+                    onMouseEnter={e => { e.currentTarget.style.color = 'var(--brand)' }}
                     onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.45)' }}>
                     {n.l}
                   </Link>

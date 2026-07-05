@@ -196,9 +196,15 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
 }) {
   const [step, setStep] = useState<'review' | 'method' | 'cash'>('review')
   const [received, setReceived] = useState('')
+  const [confirming, setConfirming] = useState<'CASH' | 'CARD' | null>(null)
   const receivedNum = parseFloat(received) || 0
   const change = receivedNum - amount
   const changeValid = receivedNum >= amount
+
+  const handleConfirm = (method: 'CASH' | 'CARD') => {
+    setConfirming(method)
+    onConfirm(method)
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
@@ -258,7 +264,7 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
               </p>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => setStep('cash')} disabled={busy}
+              <button onClick={() => setStep('cash')} disabled={!!confirming}
                 className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 transition-all hover:opacity-90 disabled:opacity-50"
                 style={{ borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.08)' }}>
                 <Banknote size={24} style={{ color: '#16a34a' }} />
@@ -267,17 +273,17 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
                   <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Physical notes</p>
                 </div>
               </button>
-              <button onClick={() => onConfirm('CARD')} disabled={busy}
+              <button onClick={() => handleConfirm('CARD')} disabled={!!confirming}
                 className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 transition-all hover:opacity-90 disabled:opacity-50"
                 style={{ borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.08)' }}>
-                <CreditCard size={24} style={{ color: '#3b82f6' }} />
+                {confirming === 'CARD' ? <Loader2 size={24} className="animate-spin" style={{ color: '#3b82f6' }} /> : <CreditCard size={24} style={{ color: '#3b82f6' }} />}
                 <div className="text-center">
-                  <p className="text-sm font-black text-blue-600 dark:text-blue-400">Card · Tap</p>
+                  <p className="text-sm font-black text-blue-600 dark:text-blue-400">{confirming === 'CARD' ? 'Recording…' : 'Card · Tap'}</p>
                   <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Online · Transfer</p>
                 </div>
               </button>
             </div>
-            {!busy && (
+            {!confirming && (
               <button onClick={() => setStep('review')}
                 className="w-full py-3 rounded-2xl text-sm font-semibold"
                 style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
@@ -327,11 +333,11 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
                 </span>
               </div>
             )}
-            <button onClick={() => onConfirm('CASH')} disabled={busy || !changeValid}
+            <button onClick={() => handleConfirm('CASH')} disabled={!!confirming || !changeValid}
               className="w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all disabled:opacity-40"
               style={{ backgroundColor: '#16a34a', color: '#fff' }}>
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />}
-              {busy ? 'Recording…' : `Confirm — AED ${amount.toFixed(2)} received`}
+              {confirming === 'CASH' ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />}
+              {confirming === 'CASH' ? 'Recording…' : `Confirm — AED ${amount.toFixed(2)} received`}
             </button>
           </>
         )}

@@ -545,6 +545,8 @@ model RestaurantSettings {
   remindersEnabled    Boolean  @default(false) @map("reminders_enabled")
   reminderMinsBefore  Int      @default(60) @map("reminder_mins_before")
   brandPreset         String   @default("amber") @map("brand_preset")
+  brandColor          String   @default("#f59e0b") @map("brand_color")
+  showLanguageToggle  Boolean  @default(false) @map("show_language_toggle")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@map("restaurant_settings")

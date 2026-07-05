@@ -1,11 +1,14 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2, UtensilsCrossed } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
+import { useBrandStore } from '@/store/brand'
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
 export default function StaffLogin() {
   const router = useRouter()
@@ -13,12 +16,14 @@ export default function StaffLogin() {
   const [form, setForm] = useState({ email: '', password: '' })
   const [loading, setLoading] = useState(false)
   const [showPw, setShowPw] = useState(false)
+  const logoUrl = useBrandStore(s => s.logoUrl)
+  const brandName = useBrandStore(s => s.restaurantName)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
-      const { data } = await api.post('/auth/login', form)
+      const { data } = await api.post('/auth/staff-login', form)
       if (!['OWNER', 'MANAGER', 'STAFF'].includes(data.user.role)) {
         toast.error('Access denied')
         return
@@ -40,8 +45,8 @@ export default function StaffLogin() {
       <div className="hidden lg:flex flex-col flex-1 relative overflow-hidden bg-[#0f0f0f]">
 
         {/* Ambient glow */}
-        <div className="absolute -top-32 -left-32 w-[520px] h-[520px] rounded-full bg-orange-500/10 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-orange-600/8 blur-[100px] pointer-events-none" />
+        <div className="absolute -top-32 -left-32 w-[520px] h-[520px] rounded-full bg-[var(--brand)]/10 blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-[var(--brand)]/8 blur-[100px] pointer-events-none" />
 
         {/* Grid overlay */}
         <div className="absolute inset-0 opacity-[0.03]"
@@ -51,23 +56,24 @@ export default function StaffLogin() {
         <div className="relative z-10 flex flex-col h-full px-12 py-12">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-5 h-5 text-white">
-                <path d="M3 11l19-9-9 19-2-8-8-2z" />
-              </svg>
-            </div>
-            <span className="text-white font-bold text-lg tracking-tight">Al Manzil</span>
+            {logoUrl
+              ? <img src={logoUrl} alt={brandName} className="w-9 h-9 rounded-xl object-cover" />
+              : <div className="w-9 h-9 rounded-xl bg-[var(--brand)] flex items-center justify-center">
+                  <UtensilsCrossed size={18} className="text-black" />
+                </div>
+            }
+            <span className="text-white font-bold text-lg tracking-tight">{brandName}</span>
           </div>
 
           {/* Centre copy */}
           <div className="flex-1 flex flex-col justify-center max-w-sm">
-            <div className="inline-flex items-center gap-2 bg-orange-500/10 border border-orange-500/20 rounded-full px-3 py-1 mb-6 w-fit">
-              <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
-              <span className="text-orange-400 text-xs font-medium">Staff Portal</span>
+            <div className="inline-flex items-center gap-2 bg-[var(--brand)]/10 border border-[var(--brand)]/20 rounded-full px-3 py-1 mb-6 w-fit">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand)] animate-pulse" />
+              <span className="text-[var(--brand)] text-xs font-medium">Staff Portal</span>
             </div>
             <h2 className="text-4xl font-extrabold text-white leading-tight mb-4">
               Run the floor<br />
-              <span className="text-orange-500">seamlessly.</span>
+              <span className="text-[var(--brand)]">seamlessly.</span>
             </h2>
             <p className="text-gray-500 text-sm leading-relaxed">
               Manage orders, tables, and bookings in real time — built for the pace of Dubai hospitality.
@@ -104,12 +110,13 @@ export default function StaffLogin() {
 
         {/* Mobile logo */}
         <div className="flex items-center gap-2 mb-10 lg:hidden">
-          <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-4 h-4 text-white">
-              <path d="M3 11l19-9-9 19-2-8-8-2z" />
-            </svg>
-          </div>
-          <span className="text-white font-bold">Al Manzil</span>
+          {logoUrl
+            ? <img src={logoUrl} alt={brandName} className="w-8 h-8 rounded-lg object-cover" />
+            : <div className="w-8 h-8 rounded-lg bg-[var(--brand)] flex items-center justify-center">
+                <UtensilsCrossed size={16} className="text-black" />
+              </div>
+          }
+          <span className="text-white font-bold">{brandName}</span>
         </div>
 
         <div className="w-full max-w-sm">
@@ -127,7 +134,7 @@ export default function StaffLogin() {
                 value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                 placeholder="staff@almanzil.ae"
-                className="w-full bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.14] focus:border-orange-500 text-white rounded-xl px-4 py-3 text-sm outline-none transition-colors placeholder-gray-600"
+                className="w-full bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.14] focus:border-[var(--brand)] text-white rounded-xl px-4 py-3 text-sm outline-none transition-colors placeholder-gray-600"
               />
             </div>
 
@@ -140,7 +147,7 @@ export default function StaffLogin() {
                   value={form.password}
                   onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
                   placeholder="••••••••"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.14] focus:border-orange-500 text-white rounded-xl px-4 py-3 pr-11 text-sm outline-none transition-colors placeholder-gray-600"
+                  className="w-full bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.14] focus:border-[var(--brand)] text-white rounded-xl px-4 py-3 pr-11 text-sm outline-none transition-colors placeholder-gray-600"
                 />
                 <button type="button" onClick={() => setShowPw(v => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
@@ -152,7 +159,7 @@ export default function StaffLogin() {
             {/* Submit */}
             <button
               type="submit" disabled={loading}
-              className="w-full mt-2 relative overflow-hidden bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
+              className="w-full mt-2 relative overflow-hidden bg-[var(--brand)] hover:bg-[var(--brand-dark)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-black/20"
             >
               {loading ? (
                 <><Loader2 size={16} className="animate-spin" /> Signing in…</>
@@ -177,7 +184,7 @@ export default function StaffLogin() {
                   className="w-full flex items-center justify-between text-left px-3 py-2 rounded-lg hover:bg-white/[0.05] transition-colors group"
                 >
                   <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">{email}</span>
-                  <span className="text-[10px] font-medium text-orange-500/70 bg-orange-500/10 px-2 py-0.5 rounded-full">{role}</span>
+                  <span className="text-[10px] font-medium text-[var(--brand)]/70 bg-[var(--brand)]/10 px-2 py-0.5 rounded-full">{role}</span>
                 </button>
               ))}
             </div>
@@ -187,7 +194,7 @@ export default function StaffLogin() {
             © 2024 Al Manzil · Dubai
           </p>
           <div className="mt-4 text-center">
-            <Link href="/" className="text-xs text-gray-700 hover:text-orange-500 transition-colors">
+            <Link href="/" className="text-xs text-gray-700 hover:text-[var(--brand)] transition-colors">
               ← Return to Al Manzil
             </Link>
           </div>

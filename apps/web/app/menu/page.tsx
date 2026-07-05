@@ -17,6 +17,7 @@ import { getSocket } from '@/lib/socket'
 import { useCartStore } from '@/store/cart'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
+import { useBrandStore } from '@/store/brand'
 import StripePaymentForm from '@/components/StripePaymentForm'
 import ForceDark from '@/components/ForceDark'
 import { getStripe, isStripeConfigured } from '@/lib/stripe'
@@ -134,7 +135,7 @@ function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: () => v
                   <button key={tag} onClick={() => setTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
                     className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
                     style={tags.includes(tag)
-                      ? { backgroundColor: '#f59e0b', color: '#000' }
+                      ? { backgroundColor: 'var(--brand)', color: '#000' }
                       : { backgroundColor: '#1e1e1e', color: '#777', border: '1px solid #2a2a2a' }}>
                     {tag}
                   </button>
@@ -153,7 +154,7 @@ function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: () => v
             <div className="flex gap-2">
               <button onClick={submit} disabled={submitting || !rating}
                 className="flex-1 py-3 rounded-2xl text-sm font-black transition-all disabled:opacity-40"
-                style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
                 {submitting ? 'Sending…' : 'Submit Feedback'}
               </button>
               <button onClick={onClose}
@@ -300,7 +301,7 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
         {/* Reference number — always visible, guests quote this to staff */}
         {o.tokenNumber && (
           <div className="mb-2 px-4 py-1.5 rounded-full font-black text-lg tracking-wider"
-            style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b', letterSpacing: '0.15em' }}>
+            style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: 'var(--brand)', letterSpacing: '0.15em' }}>
             #{o.tokenNumber}
           </div>
         )}
@@ -340,7 +341,7 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
             <div className="absolute top-4 left-4 h-0.5 rounded-full transition-all duration-700"
               style={{
                 width: `calc(${Math.min((sIdx / (steps.length - 1)) * 100, 100)}% - 2rem)`,
-                backgroundColor: '#f59e0b',
+                backgroundColor: 'var(--brand)',
               }} />
             {steps.map((step, i) => {
               const Icon = step.icon
@@ -353,14 +354,14 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
                 <div key={step.label} className="relative flex flex-col items-center gap-1.5 flex-1">
                   <div className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-500 z-10"
                     style={{
-                      backgroundColor: done ? '#f59e0b' : '#1a1a1a',
-                      border: `2px solid ${done ? '#f59e0b' : '#2a2a2a'}`,
+                      backgroundColor: done ? 'var(--brand)' : '#1a1a1a',
+                      border: `2px solid ${done ? 'var(--brand)' : '#2a2a2a'}`,
                       boxShadow: active ? '0 0 14px rgba(245,158,11,0.5)' : 'none',
                     }}>
                     <Icon size={15} style={{ color: done ? '#000' : '#555' }} />
                   </div>
                   <span className="text-[9px] text-center leading-tight px-0.5 font-semibold"
-                    style={{ color: active ? '#f59e0b' : done ? '#aaa' : '#555' }}>
+                    style={{ color: active ? 'var(--brand)' : done ? '#aaa' : '#555' }}>
                     {label}
                   </span>
                 </div>
@@ -374,7 +375,7 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
       <button
         onClick={() => setExpanded(p => !p)}
         className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold transition-colors"
-        style={{ color: expanded ? '#f59e0b' : '#555', borderTop: '1px solid #1e1e1e' }}>
+        style={{ color: expanded ? 'var(--brand)' : '#555', borderTop: '1px solid #1e1e1e' }}>
         {expanded ? '▲ Hide details' : '▼ View order details · AED ' + Number(o.total).toFixed(2)}
       </button>
 
@@ -386,7 +387,7 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
               <p className="text-sm font-bold text-white">Your Order</p>
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
                 style={{ backgroundColor: o.paymentStatus === 'PAID' ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
-                         color: o.paymentStatus === 'PAID' ? '#4ade80' : '#f59e0b' }}>
+                         color: o.paymentStatus === 'PAID' ? '#4ade80' : 'var(--brand)' }}>
                 {o.paymentStatus === 'PAID' ? '✓ Card' : 'Cash'}
               </span>
             </div>
@@ -401,7 +402,7 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
                     </span>
                   </div>
                   {item.notes && (
-                    <p className="text-[10px] mt-0.5 px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}>
+                    <p className="text-[10px] mt-0.5 px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(245,158,11,0.1)', color: 'var(--brand)' }}>
                       📝 {item.notes}
                     </p>
                   )}
@@ -418,7 +419,7 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
               </div>
               <div className="flex justify-between text-sm font-bold pt-1">
                 <span className="text-white">Total</span>
-                <span style={{ color: '#f59e0b' }}>AED {Number(o.total).toFixed(2)}</span>
+                <span style={{ color: 'var(--brand)' }}>AED {Number(o.total).toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -463,7 +464,7 @@ function StripeCheckout({ clientSecret, order, dark, onSuccess, onCancel }: {
   if (stripe === undefined) {
     return (
       <div className="flex justify-center py-10">
-        <Loader2 size={24} className="animate-spin text-amber-500" />
+        <Loader2 size={24} className="animate-spin text-[var(--brand)]" />
       </div>
     )
   }
@@ -544,7 +545,7 @@ function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, onToggleFav, 
         )}
         {qty > 0 && (
           <div className="absolute top-2 right-2 text-xs font-bold px-2.5 py-0.5 rounded-full shadow-lg"
-            style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+            style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
             {qty} in cart
           </div>
         )}
@@ -555,7 +556,7 @@ function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, onToggleFav, 
         )}
         <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent pt-6 pb-2 px-3">
           <div className="flex items-end justify-between">
-            <span className="font-black text-base" style={{ color: '#f59e0b' }}>
+            <span className="font-black text-base" style={{ color: 'var(--brand)' }}>
               AED {vatInclusivePrice.toFixed(0)}
               <span className="text-[9px] text-amber-300/70 font-normal ml-1">incl. VAT</span>
             </span>
@@ -588,7 +589,7 @@ function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, onToggleFav, 
           ) : (
             <div className="text-[9px] text-gray-600">Single size</div>
           )}
-          <div className="text-[10px] text-amber-500/70 font-semibold">Tap →</div>
+          <div className="text-[10px] text-[var(--brand)]/70 font-semibold">Tap →</div>
         </div>
       </div>
     </div>
@@ -649,6 +650,8 @@ function MenuPageInner() {
   const cart = useCartStore()
   const { user: authUser } = useAuthStore()
   const { dark, toggle } = useThemeStore()
+  const brandLogoUrl = useBrandStore(s => s.logoUrl)
+  const brandName = useBrandStore(s => s.restaurantName)
   const isStaff = !!(authUser && ['STAFF', 'MANAGER', 'OWNER'].includes(authUser.role))
 
   // When staff selects a table, load existing guest sessions so they can pick who they're ordering for
@@ -1201,7 +1204,7 @@ function MenuPageInner() {
             ))}
             <div className="pt-2 border-t flex justify-between text-sm font-bold text-white" style={{ borderColor: '#1e1e1e' }}>
               <span>Total</span>
-              <span style={{ color: '#f59e0b' }}>AED {Number(order.total).toFixed(2)}</span>
+              <span style={{ color: 'var(--brand)' }}>AED {Number(order.total).toFixed(2)}</span>
             </div>
           </div>
 
@@ -1210,7 +1213,7 @@ function MenuPageInner() {
             setFeedbackOrderId(order.id)
           }}
             className="w-full py-4 rounded-2xl font-black text-base"
-            style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+            style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
             Track My Order →
           </button>
         </div>
@@ -1251,7 +1254,7 @@ function MenuPageInner() {
                 <span>VAT (5%)</span><span>AED {Number(order.vatAmount).toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-bold text-white">
-                <span>Total</span><span style={{ color: '#f59e0b' }}>AED {Number(order.total).toFixed(2)}</span>
+                <span>Total</span><span style={{ color: 'var(--brand)' }}>AED {Number(order.total).toFixed(2)}</span>
               </div>
             </div>
           </div>
@@ -1291,18 +1294,18 @@ function MenuPageInner() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setView('menu')}
-              className="flex items-center gap-1.5 text-amber-500 hover:text-amber-400 transition-colors mr-1"
+              className="flex items-center gap-1.5 text-[var(--brand)] hover:text-[var(--brand)] transition-colors mr-1"
             >
               <ChevronLeft size={18} />
               <span className="text-xs font-semibold">Menu</span>
             </button>
             <div className="w-px h-4" style={{ backgroundColor: '#2a2a2a' }} />
-            <UtensilsCrossed size={17} className="text-amber-500" />
+            <UtensilsCrossed size={17} className="text-[var(--brand)]" />
             <span className="font-bold text-sm text-white">My Orders</span>
           </div>
           {hasReady && (
             <span className="text-xs font-bold px-2.5 py-1 rounded-full animate-pulse"
-              style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+              style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: 'var(--brand)' }}>
               {allDineIn ? '🔔 Ready to serve!' : '📦 Ready for pickup!'}
             </span>
           )}
@@ -1315,13 +1318,13 @@ function MenuPageInner() {
             style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
             <div>
               <p className="text-xs text-gray-500 mb-0.5">{displayOrders.length} order{displayOrders.length > 1 ? 's' : ''} active</p>
-              <p className="text-base font-black text-white">Total <span style={{ color: '#f59e0b' }}>AED {grandTotal.toFixed(2)}</span></p>
+              <p className="text-base font-black text-white">Total <span style={{ color: 'var(--brand)' }}>AED {grandTotal.toFixed(2)}</span></p>
             </div>
             <div className="text-right">
               <p className="text-[10px] text-gray-600 mb-1">Payment</p>
               {displayOrders.every(o => o.paymentStatus === 'PAID')
                 ? <span className="text-xs font-bold text-green-400">✓ All Paid</span>
-                : <span className="text-xs font-bold text-amber-400">💵 Pay at Exit</span>}
+                : <span className="text-xs font-bold text-[var(--brand)]">💵 Pay at Exit</span>}
             </div>
           </div>
 
@@ -1333,13 +1336,13 @@ function MenuPageInner() {
 
           {/* Order More CTA */}
           <div className="rounded-2xl p-4" style={{ border: '1px solid rgba(245,158,11,0.25)', backgroundColor: 'rgba(245,158,11,0.04)' }}>
-            <p className="text-xs font-semibold text-amber-400 mb-0.5">Want to add more?</p>
-            <p className="text-xs text-amber-400/50 mb-3">
+            <p className="text-xs font-semibold text-[var(--brand)] mb-0.5">Want to add more?</p>
+            <p className="text-xs text-[var(--brand)]/50 mb-3">
               {allDineIn ? 'All new items will be added to your bill for this table.' : 'Add to your existing order.'}
             </p>
             <button onClick={() => setView('menu')}
               className="w-full py-2.5 rounded-xl text-sm font-bold transition-colors"
-              style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+              style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
               + Order More Items
             </button>
           </div>
@@ -1351,9 +1354,9 @@ function MenuPageInner() {
               <p className="text-xs text-gray-500 mb-3">Create a free account to track past orders and check out faster.</p>
               <div className="flex gap-2">
                 <Link href="/login?redirect=/menu" className="flex-1 py-2.5 rounded-xl text-sm font-bold text-center"
-                  style={{ backgroundColor: '#f59e0b', color: '#000' }}>Sign Up Free</Link>
+                  style={{ backgroundColor: 'var(--brand)', color: '#000' }}>Sign Up Free</Link>
                 <Link href="/login?redirect=/menu" className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-center"
-                  style={{ border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b' }}>Sign In</Link>
+                  style={{ border: '1px solid rgba(245,158,11,0.4)', color: 'var(--brand)' }}>Sign In</Link>
               </div>
             </div>
           )}
@@ -1389,8 +1392,8 @@ function MenuPageInner() {
           <div className="rounded-2xl p-4 mb-4 animate-[fadeUp_0.35s_ease_forwards]" style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">How would you like it?</div>
             {fromBooking ? (
-              <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5">
-                <Table2 size={14} className="text-amber-400 flex-shrink-0" />
+              <div className="flex items-center gap-2 bg-[var(--brand)]/10 border border-[var(--brand)]/30 rounded-xl px-3 py-2.5">
+                <Table2 size={14} className="text-[var(--brand)] flex-shrink-0" />
                 <span className="text-sm text-white font-semibold">Dine In — {allTables.find(t => t.id === tableId)?.name ?? `Table ${tableNum}`}</span>
                 <span className="text-xs text-gray-500 ml-auto">from booking</span>
               </div>
@@ -1398,7 +1401,7 @@ function MenuPageInner() {
               <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid #2a2a2a' }}>
                 {(['DINE_IN', 'TAKEAWAY'] as const).map(type => (
                   <button key={type} onClick={() => { cart.setOrderType(type); if (type === 'TAKEAWAY') { setTableId(''); setTableNum(null); setTableInput('') } }}
-                    style={cart.orderType === type ? { backgroundColor: '#f59e0b', color: '#000' } : { backgroundColor: '#1a1a1a', color: '#888' }}
+                    style={cart.orderType === type ? { backgroundColor: 'var(--brand)', color: '#000' } : { backgroundColor: '#1a1a1a', color: '#888' }}
                     className="flex-1 py-3 text-sm font-semibold transition-colors">
                     {type === 'DINE_IN' ? '🍽  Dine In' : '📦  Takeaway'}
                   </button>
@@ -1426,9 +1429,9 @@ function MenuPageInner() {
 
             {/* Table already known from localStorage — show locked tile so guest doesn't re-select */}
             {cart.orderType === 'DINE_IN' && !fromBooking && !fromQr && tableId && (
-              <div className="mt-3 flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5">
-                <Table2 size={14} className="text-amber-400 flex-shrink-0" />
-                <span className="text-sm font-semibold text-amber-400">
+              <div className="mt-3 flex items-center gap-2 bg-[var(--brand)]/10 border border-[var(--brand)]/30 rounded-xl px-3 py-2.5">
+                <Table2 size={14} className="text-[var(--brand)] flex-shrink-0" />
+                <span className="text-sm font-semibold text-[var(--brand)]">
                   {allTables.find(t => t.id === tableId)?.name ?? `Table ${tableNum}`}
                 </span>
                 <button onClick={() => { setTableId(''); setTableNum(null); setTableInput('') }}
@@ -1445,7 +1448,7 @@ function MenuPageInner() {
                   <Table2 size={11} /> Select your table
                 </div>
                 {selectable.length === 0 ? (
-                  <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2.5">
+                  <p className="text-xs text-[var(--brand)] bg-[var(--brand)]/10 border border-[var(--brand)]/20 rounded-xl px-3 py-2.5">
                     No tables available right now. Please ask a staff member.
                   </p>
                 ) : (
@@ -1453,7 +1456,7 @@ function MenuPageInner() {
                     {selectable.map(t => (
                       <button key={t.id} onClick={() => { setTableId(t.id); setTableNum(t.tableNumber); cart.setTableId(t.id) }}
                           style={tableId === t.id
-                          ? { backgroundColor: '#f59e0b', border: '1px solid #f59e0b', boxShadow: '0 4px 12px rgba(245,158,11,0.2)' }
+                          ? { backgroundColor: 'var(--brand)', border: '1px solid #f59e0b', boxShadow: '0 4px 12px rgba(245,158,11,0.2)' }
                           : { backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}
                         className="rounded-xl py-3 px-2 text-center transition-all">
                         <div className={`font-bold text-sm ${tableId === t.id ? 'text-black' : 'text-white'}`}>
@@ -1482,7 +1485,7 @@ function MenuPageInner() {
             {/* ── Staff session picker ── shown only when staff has selected a table with existing guests */}
             {isStaff && tableId && cart.orderType === 'DINE_IN' && (
               <div className="mt-3 pt-3 border-t" style={{ borderColor: '#2a2a2a' }}>
-                <div className="text-xs text-amber-500 font-semibold mb-2 flex items-center gap-1.5">
+                <div className="text-xs text-[var(--brand)] font-semibold mb-2 flex items-center gap-1.5">
                   <span>👤</span> Who are you ordering for?
                 </div>
                 {sessionsLoading ? (
@@ -1503,18 +1506,18 @@ function MenuPageInner() {
                             ? { backgroundColor: 'rgba(245,158,11,0.12)', border: '1.5px solid rgba(245,158,11,0.5)' }
                             : { backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}>
                           <div className="flex items-center justify-between mb-1">
-                            <p className="text-xs font-bold" style={{ color: selected ? '#f59e0b' : '#ccc' }}>
+                            <p className="text-xs font-bold" style={{ color: selected ? 'var(--brand)' : '#ccc' }}>
                               {s.label}
                               {time && <span className="font-normal text-gray-500 ml-1.5">· {time}</span>}
                             </p>
-                            {selected && <span className="text-[10px] font-bold" style={{ color: '#f59e0b' }}>✓ Selected</span>}
+                            {selected && <span className="text-[10px] font-bold" style={{ color: 'var(--brand)' }}>✓ Selected</span>}
                           </div>
                           <p className="text-[10px] text-gray-500 leading-relaxed">
                             {s.itemSummary.length > 0
                               ? s.itemSummary.join(', ')
                               : `${s.itemCount} item${s.itemCount !== 1 ? 's' : ''}`}
                           </p>
-                          <p className="text-[10px] font-semibold mt-0.5" style={{ color: selected ? '#f59e0b' : '#555' }}>
+                          <p className="text-[10px] font-semibold mt-0.5" style={{ color: selected ? 'var(--brand)' : '#555' }}>
                             AED {s.total.toFixed(2)}
                           </p>
                         </button>
@@ -1526,7 +1529,7 @@ function MenuPageInner() {
                       style={selectedSessionId === '__new__'
                         ? { backgroundColor: 'rgba(245,158,11,0.12)', border: '1.5px solid rgba(245,158,11,0.5)' }
                         : { backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a', borderStyle: 'dashed' }}>
-                      <span className="text-xs font-bold" style={{ color: selectedSessionId === '__new__' ? '#f59e0b' : '#666' }}>
+                      <span className="text-xs font-bold" style={{ color: selectedSessionId === '__new__' ? 'var(--brand)' : '#666' }}>
                         + New Guest (separate bill)
                       </span>
                     </button>
@@ -1548,7 +1551,7 @@ function MenuPageInner() {
                       <div className="flex flex-wrap gap-1 mt-0.5">
                         {(item.modifiers ?? []).map(m => (
                           <span key={m.optionId} className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                            style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+                            style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: 'var(--brand)' }}>
                             {m.name}
                           </span>
                         ))}
@@ -1561,7 +1564,7 @@ function MenuPageInner() {
                       <Minus size={12} className="text-gray-300" />
                     </button>
                     <span className="text-sm font-bold w-5 text-center text-white">{item.quantity}</span>
-                    <button onClick={() => cart.updateQty(item.cartKey, 1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: '#f59e0b' }}>
+                    <button onClick={() => cart.updateQty(item.cartKey, 1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}>
                       <Plus size={12} style={{ color: '#000' }} />
                     </button>
                     <button onClick={() => cart.removeItem(item.cartKey)} className="ml-1 text-gray-600 hover:text-red-400 transition-colors">
@@ -1570,7 +1573,7 @@ function MenuPageInner() {
                   </div>
                 </div>
                 <button onClick={() => setNotesOpen(notesOpen === item.cartKey ? null : item.cartKey)}
-                  className="text-xs text-amber-500 hover:underline">
+                  className="text-xs text-[var(--brand)] hover:underline">
                   {item.notes ? `📝 ${item.notes}` : '+ Add note (spice, allergies...)'}
                 </button>
                 {notesOpen === item.cartKey && (
@@ -1592,7 +1595,7 @@ function MenuPageInner() {
           {cart.items.length > 0 && (
             <div className="rounded-2xl p-4 mb-5" style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
               <div className="flex justify-between text-base font-bold text-white mb-2">
-                <span>Total (incl. VAT)</span><span style={{ color: '#f59e0b' }}>AED {cart.total().toFixed(2)}</span>
+                <span>Total (incl. VAT)</span><span style={{ color: 'var(--brand)' }}>AED {cart.total().toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-xs text-gray-500 mb-1">
                 <span>Dish prices (net)</span><span>AED {(cart.total() - cart.vatPortion()).toFixed(2)}</span>
@@ -1626,8 +1629,8 @@ function MenuPageInner() {
           {cart.items.length > 0 && (
             <div className="space-y-3">
               {cart.orderType === 'DINE_IN' && !tableId && (
-                <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-2xl px-4 py-3">
-                  <AlertCircle size={15} className="text-amber-400 flex-shrink-0" />
+                <div className="flex items-center gap-2 bg-[var(--brand)]/10 border border-[var(--brand)]/30 rounded-2xl px-4 py-3">
+                  <AlertCircle size={15} className="text-[var(--brand)] flex-shrink-0" />
                   <span className="text-amber-300 text-sm">Select a table above to continue</span>
                 </div>
               )}
@@ -1725,7 +1728,7 @@ function MenuPageInner() {
               ))}
               <div className="flex justify-between px-4 py-3">
                 <span className="font-black text-white">Total</span>
-                <span className="font-black text-lg" style={{ color: '#f59e0b' }}>AED {cart.total().toFixed(2)}</span>
+                <span className="font-black text-lg" style={{ color: 'var(--brand)' }}>AED {cart.total().toFixed(2)}</span>
               </div>
             </div>
             <p className="text-[11px] text-gray-600 text-center">Prices include 5% VAT</p>
@@ -1791,7 +1794,7 @@ function MenuPageInner() {
             {drawerItem.description && <div className="text-xs text-gray-300 mt-0.5 line-clamp-2">{drawerItem.description}</div>}
           </div>
           <div className="absolute top-3 right-3 text-xs font-bold px-2 py-1 rounded-xl"
-            style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: '#f59e0b', backdropFilter: 'blur(4px)' }}>
+            style={{ backgroundColor: 'rgba(0,0,0,0.7)', color: 'var(--brand)', backdropFilter: 'blur(4px)' }}>
             <Clock size={10} className="inline mr-1" />{drawerItem.prepTimeMins}m
           </div>
         </div>
@@ -1800,7 +1803,7 @@ function MenuPageInner() {
           {/* Base price row */}
           <div className="flex justify-between items-center mb-4 pb-3" style={{ borderBottom: '1px solid #1e1e1e' }}>
             <div className="text-xs text-gray-500">Base price</div>
-            <div className="text-sm font-bold" style={{ color: '#f59e0b' }}>AED {(drawerBasePrice * 1.05).toFixed(2)} <span className="text-[10px] text-gray-600 font-normal">incl. VAT</span></div>
+            <div className="text-sm font-bold" style={{ color: 'var(--brand)' }}>AED {(drawerBasePrice * 1.05).toFixed(2)} <span className="text-[10px] text-gray-600 font-normal">incl. VAT</span></div>
           </div>
 
           {/* Modifier groups */}
@@ -1808,7 +1811,7 @@ function MenuPageInner() {
             <div key={group.id} className="mb-5">
               <div className="flex items-center gap-2 mb-2">
                 <div className="text-xs font-bold text-white uppercase tracking-wide">{group.name}</div>
-                {group.required && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#f59e0b22', color: '#f59e0b' }}>Required</span>}
+                {group.required && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: '#f59e0b22', color: 'var(--brand)' }}>Required</span>}
               </div>
               <div className="space-y-2">
                 {group.options.map(opt => {
@@ -1822,13 +1825,13 @@ function MenuPageInner() {
                         : { backgroundColor: '#161616', border: '1px solid #2a2a2a' }}>
                       <div className="flex items-center gap-3">
                         <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0"
-                          style={{ borderColor: isActive ? '#f59e0b' : '#444' }}>
-                          {isActive && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#f59e0b' }} />}
+                          style={{ borderColor: isActive ? 'var(--brand)' : '#444' }}>
+                          {isActive && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--brand)' }} />}
                         </div>
                         <span className={`text-sm font-semibold ${isActive ? 'text-white' : 'text-gray-400'}`}>{opt.name}</span>
                       </div>
                       <div className="text-right">
-                        <div className={`text-sm font-bold ${isActive ? 'text-amber-400' : 'text-gray-500'}`}>
+                        <div className={`text-sm font-bold ${isActive ? 'text-[var(--brand)]' : 'text-gray-500'}`}>
                           AED {finalP.toFixed(2)}
                         </div>
                         {Number(opt.priceAdd) > 0 && (
@@ -1876,7 +1879,7 @@ function MenuPageInner() {
                 setDrawerItem(null)
               }}
               className="w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all active:scale-95"
-              style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+              style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
               <Plus size={18} />
               Add to Order · AED {drawerVatPrice.toFixed(2)}
             </button>
@@ -1905,16 +1908,19 @@ function MenuPageInner() {
           <Link href="/" className="text-gray-600 hover:text-white transition-colors flex-shrink-0">
             <ArrowLeft size={18} />
           </Link>
+          {brandLogoUrl && (
+            <img src={brandLogoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
+          )}
           <div className="flex-1 min-w-0">
-            <div className="font-black text-sm text-white tracking-wide leading-none">AL MANZIL</div>
-            <div className="text-[9px] tracking-widest uppercase truncate" style={{ color: '#f59e0b' }}>
+            <div className="font-black text-sm text-white tracking-wide leading-none">{brandName || 'AL MANZIL'}</div>
+            <div className="text-[9px] tracking-widest uppercase truncate" style={{ color: 'var(--brand)' }}>
               {qrTableName || 'Kerala & South Indian Cuisine'}
             </div>
           </div>
           {/* Cart button — always visible, shows icon only when empty */}
           <button onClick={() => setView('cart')} className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
             style={totalQty > 0
-              ? { backgroundColor: '#f59e0b', color: '#000' }
+              ? { backgroundColor: 'var(--brand)', color: '#000' }
               : { backgroundColor: '#1a1a1a', color: '#666', border: '1px solid #2a2a2a' }}>
             <ShoppingCart size={15} />
             {totalQty > 0 && <span className="text-xs font-black whitespace-nowrap">{totalQty} · AED {cart.total().toFixed(0)}</span>}
@@ -1927,7 +1933,7 @@ function MenuPageInner() {
             <button key={c.id} data-cat={c.id} onClick={() => scrollToCategory(c.id)}
               className="flex-shrink-0 px-3.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap"
               style={activeCategory === c.id
-                ? { backgroundColor: '#f59e0b', color: '#000' }
+                ? { backgroundColor: 'var(--brand)', color: '#000' }
                 : { backgroundColor: 'rgba(255,255,255,0.06)', color: '#777' }}>
               {c.name}
             </button>
@@ -1938,7 +1944,7 @@ function MenuPageInner() {
       {/* Table notice */}
       {fromQr && (qrTableStatus === 'DIRTY' || qrTableStatus === 'BILL_PENDING') && (
         <div className="px-5 py-2.5 text-xs font-semibold flex items-center gap-2"
-          style={{ backgroundColor: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+          style={{ backgroundColor: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.15)', color: 'var(--brand)' }}>
           <span>{qrTableStatus === 'DIRTY' ? '🧹' : '🧾'}</span>
           {qrTableStatus === 'DIRTY'
             ? 'Our team is setting up your table. You can browse and order now.'
@@ -2007,7 +2013,7 @@ function MenuPageInner() {
               className="flex justify-center py-6 min-h-[48px]"
             >
               {categoryPages[cat.id]?.loading && (
-                <Loader2 size={20} className="animate-spin text-amber-500/60" />
+                <Loader2 size={20} className="animate-spin text-[var(--brand)]/60" />
               )}
             </div>
           </section>
@@ -2022,7 +2028,7 @@ function MenuPageInner() {
         <div className="fixed bottom-5 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:w-auto sm:min-w-72 z-30" style={{ animation: 'fadeUp 0.3s ease both' }}>
           <button onClick={() => setView('tracking')}
             className="w-full flex items-center justify-between gap-4 py-3.5 px-5 rounded-2xl font-bold transition-all active:scale-[0.98]"
-            style={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}>
+            style={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(245,158,11,0.4)', color: 'var(--brand)', boxShadow: '0 8px 30px rgba(0,0,0,0.4)' }}>
             <span className="text-sm w-7 h-7 rounded-full flex items-center justify-center font-black"
               style={{ backgroundColor: 'rgba(245,158,11,0.15)' }}>
               {activeOrders.filter(o => o.status === 'READY').length > 0 ? '🎉' : activeOrders.length}
@@ -2039,7 +2045,7 @@ function MenuPageInner() {
         <div className="fixed bottom-5 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:w-auto sm:min-w-72 z-30" style={{ animation: 'fadeUp 0.3s ease both' }}>
           <button onClick={() => setView('cart')}
             className="w-full flex items-center justify-between gap-4 py-3.5 px-5 rounded-2xl font-bold transition-all active:scale-[0.98]"
-            style={{ backgroundColor: '#f59e0b', color: '#000', boxShadow: '0 8px 30px rgba(245,158,11,0.4)' }}>
+            style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 30px rgba(245,158,11,0.4)' }}>
             <span className="text-sm w-7 h-7 rounded-full flex items-center justify-center font-black bg-black/20">{totalQty}</span>
             <span className="flex-1 text-center text-sm font-black">Review Order</span>
             <span className="text-sm font-black">AED {cart.total().toFixed(0)}</span>

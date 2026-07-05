@@ -21,6 +21,11 @@ export class AuthController {
     return this.auth.login(dto)
   }
 
+  @Post('staff-login')
+  staffLogin(@Body() dto: LoginDto) {
+    return this.auth.staffLogin(dto)
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@Request() req) {

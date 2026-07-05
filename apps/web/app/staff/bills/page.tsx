@@ -97,6 +97,12 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
 }) {
   const [step, setStep] = useState<'review' | 'method' | 'cash'>('review')
   const [received, setReceived] = useState('')
+  const [confirming, setConfirming] = useState<'CASH' | 'CARD' | null>(null)
+
+  const handleConfirm = (method: 'CASH' | 'CARD') => {
+    setConfirming(method)
+    onConfirm(method)
+  }
 
   const receivedNum = parseFloat(received) || 0
   const change = receivedNum - amount
@@ -161,7 +167,7 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => setStep('cash')} disabled={busy}
+              <button onClick={() => setStep('cash')} disabled={!!confirming}
                 className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 transition-all hover:opacity-90 disabled:opacity-50"
                 style={{ borderColor: 'var(--c-success-fg)', backgroundColor: 'rgba(22,163,74,0.08)' }}>
                 <Banknote size={24} style={{ color: 'var(--c-success-fg)' }} />
@@ -171,12 +177,12 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
                 </div>
               </button>
 
-              <button onClick={() => onConfirm('CARD')} disabled={busy}
+              <button onClick={() => handleConfirm('CARD')} disabled={!!confirming}
                 className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 transition-all hover:opacity-90 disabled:opacity-50"
                 style={{ borderColor: 'var(--c-info-fg)', backgroundColor: 'rgba(59,130,246,0.08)' }}>
-                <CreditCard size={24} style={{ color: 'var(--c-info-fg)' }} />
+                {confirming === 'CARD' ? <Loader2 size={24} className="animate-spin" style={{ color: 'var(--c-info-fg)' }} /> : <CreditCard size={24} style={{ color: 'var(--c-info-fg)' }} />}
                 <div className="text-center">
-                  <p className="text-sm font-black" style={{ color: 'var(--c-info-fg)' }}>Card · Tap</p>
+                  <p className="text-sm font-black" style={{ color: 'var(--c-info-fg)' }}>{confirming === 'CARD' ? 'Recording…' : 'Card · Tap'}</p>
                   <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Online · Transfer</p>
                 </div>
               </button>
@@ -242,17 +248,17 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
             )}
 
             <button
-              onClick={() => onConfirm('CASH')}
-              disabled={busy || !changeValid}
+              onClick={() => handleConfirm('CASH')}
+              disabled={!!confirming || !changeValid}
               className="w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all disabled:opacity-40"
               style={{ backgroundColor: 'var(--c-success-fg)', color: '#fff' }}>
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />}
-              {busy ? 'Recording…' : `Confirm — AED ${amount.toFixed(2)} received`}
+              {confirming === 'CASH' ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />}
+              {confirming === 'CASH' ? 'Recording…' : `Confirm — AED ${amount.toFixed(2)} received`}
             </button>
           </>
         )}
 
-        {!busy && step === 'method' && (
+        {!confirming && step === 'method' && (
           <button onClick={() => setStep('review')}
             className="w-full py-3 rounded-2xl text-sm font-semibold transition-colors"
             style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>

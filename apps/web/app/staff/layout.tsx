@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
-import { initBrand } from '@/store/brand'
+import { initBrand, useBrandStore } from '@/store/brand'
 import { requestNotifyPermission } from '@/lib/notify'
 
 const NAV = [
@@ -29,6 +29,8 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   const router   = useRouter()
   const { user, token, init, logout } = useAuthStore()
   const { dark, toggle }              = useThemeStore()
+  const logoUrl    = useBrandStore(s => s.logoUrl)
+  const brandName  = useBrandStore(s => s.restaurantName)
   const [collapsed, setCollapsed]     = useState(false)
   const [mobileOpen, setMobileOpen]   = useState(false)
   const [ready, setReady]             = useState(false)
@@ -107,19 +109,24 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         <div className="h-14 flex items-center justify-between px-3 border-b border-white/10">
           {!collapsed && (
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 bg-white/20">
-                <UtensilsCrossed size={13} className="text-white" />
-              </div>
+              {logoUrl
+                ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
+                : <div className="w-7 h-7 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 bg-white/20">
+                    <UtensilsCrossed size={13} className="text-white" />
+                  </div>
+              }
               <div className="min-w-0">
-                <div className="font-black text-sm truncate text-white">Al Manzil</div>
+                <div className="font-black text-sm truncate text-white">{brandName}</div>
                 <div className="text-[10px] text-white/40 truncate">Staff Portal</div>
               </div>
             </div>
           )}
           {collapsed && (
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center mx-auto bg-white/20">
-              <UtensilsCrossed size={13} className="text-white" />
-            </div>
+            logoUrl
+              ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover mx-auto" />
+              : <div className="w-7 h-7 rounded-lg flex items-center justify-center mx-auto bg-white/20">
+                  <UtensilsCrossed size={13} className="text-white" />
+                </div>
           )}
           {!collapsed && (
             <button onClick={() => setCollapsed(v => !v)}
@@ -145,11 +152,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
             style={{ backgroundColor: '#1a1816' }}>
             <div className="h-14 flex items-center justify-between px-4 border-b border-white/10">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-white/20">
-                  <UtensilsCrossed size={13} className="text-white" />
-                </div>
+                {logoUrl
+                  ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover" />
+                  : <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-white/20">
+                      <UtensilsCrossed size={13} className="text-white" />
+                    </div>
+                }
                 <div>
-                  <div className="font-black text-sm text-white">Al Manzil</div>
+                  <div className="font-black text-sm text-white">{brandName}</div>
                   <div className="text-[10px] text-white/40">Staff Portal</div>
                 </div>
               </div>
@@ -172,10 +182,13 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
             className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-white/5">
             <Menu size={18} />
           </button>
-          <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}>
-            <UtensilsCrossed size={11} className="text-white" />
-          </div>
-          <span className="font-black text-sm text-gray-800 dark:text-white">Al Manzil</span>
+          {logoUrl
+            ? <img src={logoUrl} alt={brandName} className="w-6 h-6 rounded-md object-cover" />
+            : <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}>
+                <UtensilsCrossed size={11} className="text-white" />
+              </div>
+          }
+          <span className="font-black text-sm text-gray-800 dark:text-white">{brandName}</span>
           <div className="ml-auto">
             <button onClick={toggle} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5">
               {dark ? <Sun size={15} style={{ color: 'var(--brand)' }} /> : <Moon size={15} />}

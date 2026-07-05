@@ -2,21 +2,51 @@ import { create } from 'zustand'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
-const BRAND_HEX = '#f59e0b'
-const BRAND_DARK = '#d97706'
-const BRAND_LIGHT = '#fffbeb'
+const DEFAULT_COLOR = '#f59e0b'
 
 interface BrandStore {
   ready: boolean
   logoUrl: string
+  restaurantName: string
+  brandColor: string
+  showLanguageToggle: boolean
 }
 
-function applyBrand() {
+function hexToHsl(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  let h = 0, s = 0
+  const l = (max + min) / 2
+  if (max !== min) {
+    const d = max - min
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break
+      case g: h = ((b - r) / d + 2) / 6; break
+      case b: h = ((r - g) / d + 4) / 6; break
+    }
+  }
+  return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)]
+}
+
+function darken(hex: string, amount = 15): string {
+  const [h, s, l] = hexToHsl(hex)
+  return `hsl(${h}, ${s}%, ${Math.max(0, l - amount)}%)`
+}
+
+function lighten(hex: string, amount = 45): string {
+  const [h, s, l] = hexToHsl(hex)
+  return `hsl(${h}, ${Math.min(100, s + 10)}%, ${Math.min(97, l + amount)}%)`
+}
+
+export function applyBrandColor(color: string) {
   if (typeof document === 'undefined') return
   const root = document.documentElement
-  root.style.setProperty('--brand',       BRAND_HEX)
-  root.style.setProperty('--brand-dark',  BRAND_DARK)
-  root.style.setProperty('--brand-light', BRAND_LIGHT)
+  root.style.setProperty('--brand', color)
+  root.style.setProperty('--brand-dark', darken(color))
+  root.style.setProperty('--brand-light', lighten(color))
 }
 
 export function applyFavicon(url: string) {
@@ -30,20 +60,34 @@ export function applyFavicon(url: string) {
   link.href = url
 }
 
-export const useBrandStore = create<BrandStore>(() => ({ ready: false, logoUrl: '' }))
+export const useBrandStore = create<BrandStore>(() => ({
+  ready: false,
+  logoUrl: '',
+  restaurantName: 'Al Manzil',
+  brandColor: DEFAULT_COLOR,
+  showLanguageToggle: false,
+}))
 
 export async function initBrand() {
   if (typeof window === 'undefined') return
-  applyBrand()
+  applyBrandColor(DEFAULT_COLOR)
   try {
     const res = await fetch(`${API}/settings`)
     if (res.ok) {
       const data = await res.json()
-      const logoUrl = data?.logoUrl ?? data?.data?.logoUrl ?? ''
-      if (logoUrl) {
-        useBrandStore.setState({ logoUrl })
-        applyFavicon(logoUrl)
-      }
+      const d = data?.data ?? data
+      const logoUrl = d?.logoUrl ?? ''
+      const restaurantName = d?.restaurantName ?? ''
+      const brandColor = d?.brandColor ?? DEFAULT_COLOR
+      const showLanguageToggle = d?.showLanguageToggle ?? false
+      if (logoUrl) applyFavicon(logoUrl)
+      applyBrandColor(brandColor)
+      useBrandStore.setState({
+        logoUrl,
+        ...(restaurantName ? { restaurantName } : {}),
+        brandColor,
+        showLanguageToggle,
+      })
     }
   } catch {}
   useBrandStore.setState({ ready: true })

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { useCartStore } from '@/store/cart'
+import { useBrandStore } from '@/store/brand'
 import { StatusBadge, bookingStatusVariant } from '@/components/ui/StatusBadge'
 import toast from 'react-hot-toast'
 
@@ -99,6 +100,7 @@ function AccountContent() {
   const searchParams = useSearchParams()
   const { user, token, logout, init } = useAuthStore()
   const cart = useCartStore()
+  const logoUrl = useBrandStore(s => s.logoUrl)
 
   const [tab, setTab] = useState<TabId>('home')
 
@@ -117,6 +119,8 @@ function AccountContent() {
 
   const [featuredItems,  setFeaturedItems]  = useState<any[]>([])
   const [homeLoaded,     setHomeLoaded]     = useState(false)
+  const [mustTryPage,    setMustTryPage]    = useState(0)
+  const [mustTryFading,  setMustTryFading]  = useState(false)
 
   // Feedback
   const [feedback, setFeedback] = useState<Record<string, { rating: number; comment: string; submitting: boolean; done: boolean }>>({})
@@ -162,17 +166,40 @@ function AccountContent() {
     if (tab === 'favourites' && !favsLoaded)       loadFavourites()
   }, [tab])
 
+  useEffect(() => {
+    if (featuredItems.length <= 4) return
+    const pages = Math.ceil(featuredItems.length / 4)
+    const t = setInterval(() => {
+      setMustTryFading(true)
+      setTimeout(() => { setMustTryPage(p => (p + 1) % pages); setMustTryFading(false) }, 400)
+    }, 5000)
+    return () => clearInterval(t)
+  }, [featuredItems.length])
+
   async function authFetch(url: string, opts: RequestInit = {}) {
     return fetch(url, { ...opts, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers ?? {}) } })
   }
 
   async function loadHome() {
     try {
-      const mRes = await fetch(`${API}/menu/items`)
+      const [mRes, sRes] = await Promise.all([
+        fetch(`${API}/menu/items`),
+        fetch(`${API}/settings`),
+      ])
       const mJson = await mRes.json()
       const mData = mJson?.data ?? mJson
       const allItems: any[] = Array.isArray(mData) ? mData : []
-      setFeaturedItems(allItems.filter(i => i.imageUrl).slice(0, 4))
+      const withImg = allItems.filter(i => i.imageUrl)
+
+      const sJson = sRes.ok ? await sRes.json() : null
+      const pinnedIds: string[] | undefined = (sJson?.data ?? sJson)?.heroConfig?.signatureDishIds
+      if (pinnedIds?.length) {
+        const byId = Object.fromEntries(withImg.map(i => [i.id, i]))
+        const pinned = pinnedIds.map(id => byId[id]).filter(Boolean).slice(0, 12)
+        if (pinned.length) { setFeaturedItems(pinned); } else { setFeaturedItems(withImg.slice(0, 12)) }
+      } else {
+        setFeaturedItems(withImg.slice(0, 12))
+      }
 
       // Quick stats — load orders count & total spent without full data
       const oRes = await authFetch(`${API}/orders/mine`)
@@ -183,13 +210,20 @@ function AccountContent() {
         setTotalSpent(oData.reduce((s: number, o: any) => s + Number(o.total), 0))
         setOrders(oData)
         setOrdersLoaded(true)
+        // Visits = unique paid sessions (dine-in groups by tableSessionId, takeaway counts individually)
+        const paid = oData.filter((o: any) => o.paymentStatus === 'PAID')
+        const sessions = new Set<string>()
+        let visitCount = 0
+        for (const o of paid) {
+          if (o.tableSessionId) { sessions.add(o.tableSessionId) }
+          else { visitCount++ }
+        }
+        setVisits(sessions.size + visitCount)
       }
-      // visits from bookings
       const bRes = await authFetch(`${API}/bookings/mine`)
       if (bRes.ok) {
         const bJson = await bRes.json()
         const bData: any[] = Array.isArray(bJson?.data ?? bJson) ? (bJson?.data ?? bJson) : []
-        setVisits(bData.filter((b: any) => b.status === 'ARRIVED').length)
         setBookings(bData)
         setBookingsLoaded(true)
       }
@@ -242,7 +276,6 @@ function AccountContent() {
         const json = await res.json()
         const data: any[] = Array.isArray(json?.data ?? json) ? (json?.data ?? json) : []
         setBookings(data)
-        setVisits(data.filter((b: any) => b.status === 'ARRIVED').length)
         setBookingsLoaded(true)
       }
     } finally { setBookingsLoading(false) }
@@ -342,13 +375,16 @@ function AccountContent() {
           <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(245,158,11,0.06)', transform: 'translate(30%,-30%)' }} />
         </div>
 
-        <div className="relative px-5 sm:px-8 lg:px-16 pt-5 pb-5 max-w-5xl mx-auto">
+        <div className="relative px-4 sm:px-6 pt-5 pb-5 max-w-2xl mx-auto">
           {/* Nav row */}
           <div className="flex items-center justify-between mb-6">
             <Link href="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#f59e0b' }}>
-                <UtensilsCrossed size={14} className="text-black" />
-              </div>
+              {logoUrl
+                ? <img src={logoUrl} alt="Logo" className="w-8 h-8 rounded-xl object-cover" />
+                : <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#f59e0b' }}>
+                    <UtensilsCrossed size={14} className="text-black" />
+                  </div>
+              }
               <span className="font-black text-sm text-white tracking-wide">AL MANZIL</span>
             </Link>
             <button onClick={() => { logout(); router.push('/') }}
@@ -396,7 +432,7 @@ function AccountContent() {
       </div>
 
       {/* ── Tab bar ── */}
-      <div className="sticky top-0 z-10 px-5 sm:px-8 py-2" style={{ backgroundColor: 'rgba(8,8,8,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+      <div className="sticky top-0 z-10 py-2" style={{ backgroundColor: 'rgba(8,8,8,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
         <div className="flex gap-1 rounded-2xl p-1" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
           {TABS.map(({ id, label, Icon, badge }) => (
             <button key={id} onClick={() => setTab(id)}
@@ -416,7 +452,7 @@ function AccountContent() {
       </div>
 
       {/* ── Tab Content ── */}
-      <div className="px-5 sm:px-8 lg:px-16 py-5 pb-16 max-w-5xl mx-auto">
+      <div className="px-4 sm:px-6 py-5 pb-16 max-w-2xl mx-auto">
 
         {/* ═══ HOME ═══ */}
         {tab === 'home' && (
@@ -514,11 +550,7 @@ function AccountContent() {
                   {favItems.slice(0, 6).map((item: any) => (
                     <div key={item.id} className="flex-shrink-0 w-28 rounded-2xl overflow-hidden cursor-pointer transition-all active:scale-[0.97]"
                       style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}
-                      onClick={() => {
-                        cart.addItem({ menuItemId: item.id, name: item.name, basePrice: Number(item.price), modifiers: [], prepTimeMins: item.prepTimeMins })
-                        toast.success(`${item.name} added!`, { position: 'bottom-center', duration: 1500 })
-                        router.push('/menu')
-                      }}>
+                      onClick={() => router.push(`/menu?open=${item.id}`)}>
                       {item.imageUrl
                         ? <img src={item.imageUrl} alt={item.name} className="w-full h-20 object-cover"
                             onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
@@ -535,46 +567,55 @@ function AccountContent() {
             )}
 
             {/* Must try */}
-            {featuredItems.length > 0 && (
-              <FadeIn delay={160}>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Must Try</p>
-                  <Link href="/menu" style={{ color: '#f59e0b' }} className="text-xs flex items-center gap-1">
-                    View all <ArrowRight size={11} />
-                  </Link>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {featuredItems.map((item: any, i) => (
-                    <div key={item.id}
-                      className="group rounded-2xl overflow-hidden cursor-pointer transition-all active:scale-[0.97]"
-                      style={{ backgroundColor: '#111', border: '1px solid #1e1e1e', transitionDelay: `${i * 40}ms` }}
-                      onClick={() => {
-                        cart.addItem({ menuItemId: item.id, name: item.name, basePrice: Number(item.price), modifiers: [], prepTimeMins: item.prepTimeMins })
-                        toast.success(`${item.name} added!`, { position: 'bottom-center', duration: 1500 })
-                        router.push('/menu')
-                      }}>
-                      <div className="h-28 overflow-hidden relative">
-                        <img src={item.imageUrl} alt={item.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                          onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
-                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
-                          <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: '#f59e0b' }}>
-                            <Plus size={16} className="text-black" />
+            {featuredItems.length > 0 && (() => {
+              const mustTryPages = Math.ceil(featuredItems.length / 4)
+              const visibleMustTry = featuredItems.slice(mustTryPage * 4, mustTryPage * 4 + 4)
+              return (
+                <FadeIn delay={160}>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Must Try</p>
+                    <Link href="/menu" style={{ color: '#f59e0b' }} className="text-xs flex items-center gap-1">
+                      View all <ArrowRight size={11} />
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3"
+                    style={{ opacity: mustTryFading ? 0 : 1, transition: 'opacity 0.4s ease' }}>
+                    {visibleMustTry.map((item: any, i) => (
+                      <div key={item.id}
+                        className="group rounded-2xl overflow-hidden cursor-pointer transition-all active:scale-[0.97]"
+                        style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}
+                        onClick={() => router.push(`/menu?open=${item.id}`)}>
+                        <div className="h-28 overflow-hidden relative">
+                          <img src={item.imageUrl} alt={item.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
+                            <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: '#f59e0b' }}>
+                              <Plus size={16} className="text-black" />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="p-3">
+                          <div className="font-semibold text-white text-xs truncate">{item.name}</div>
+                          <div className="flex items-center justify-between mt-1">
+                            <span className="font-black text-sm" style={{ color: '#f59e0b' }}>AED {Number(item.price).toFixed(0)}</span>
+                            <span className="text-gray-700 text-[10px] flex items-center gap-0.5"><Clock size={9} /> {item.prepTimeMins}m</span>
                           </div>
                         </div>
                       </div>
-                      <div className="p-3">
-                        <div className="font-semibold text-white text-xs truncate">{item.name}</div>
-                        <div className="flex items-center justify-between mt-1">
-                          <span className="font-black text-sm" style={{ color: '#f59e0b' }}>AED {Number(item.price).toFixed(0)}</span>
-                          <span className="text-gray-700 text-[10px] flex items-center gap-0.5"><Clock size={9} /> {item.prepTimeMins}m</span>
-                        </div>
-                      </div>
+                    ))}
+                  </div>
+                  {mustTryPages > 1 && (
+                    <div className="flex justify-center gap-1.5 mt-3">
+                      {Array.from({ length: mustTryPages }).map((_, i) => (
+                        <div key={i} className="rounded-full transition-all duration-300"
+                          style={{ width: i === mustTryPage ? 18 : 6, height: 6, backgroundColor: i === mustTryPage ? '#f59e0b' : '#333' }} />
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </FadeIn>
-            )}
+                  )}
+                </FadeIn>
+              )
+            })()}
 
             {/* Testimonial */}
             <FadeIn delay={200}>
@@ -853,14 +894,10 @@ function AccountContent() {
                           <div className="flex items-center justify-between">
                             <span className="font-black text-sm" style={{ color: '#f59e0b' }}>AED {Number(item.price).toFixed(0)}</span>
                             <button
-                              onClick={() => {
-                                cart.addItem({ menuItemId: item.id, name: item.name, basePrice: Number(item.price), modifiers: [], prepTimeMins: item.prepTimeMins })
-                                toast.success(`${item.name} added!`, { position: 'bottom-center', duration: 1500 })
-                                router.push('/menu')
-                              }}
+                              onClick={() => router.push(`/menu?open=${item.id}`)}
                               className="flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-lg"
                               style={{ backgroundColor: '#f59e0b', color: '#000' }}>
-                              <Plus size={10} /> Add
+                              <Plus size={10} /> View
                             </button>
                           </div>
                         </div>
