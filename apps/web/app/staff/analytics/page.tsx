@@ -101,8 +101,7 @@ function HourlyChart({ hourly }: { hourly: { hour: number; count: number }[] }) 
               <div className={`w-full rounded-sm transition-all ${h.count === 0
                 ? 'bg-gray-100 dark:bg-white/[0.03]'
                 : isPeak ? '' : 'bg-blue-400 dark:bg-blue-500/70'}`}
-                style={isPeak && h.count > 0 ? { backgroundColor: 'var(--brand)' } : undefined}
-                style={{ height: `${Math.max(pct, h.count > 0 ? 8 : 0)}%` }} />
+                style={{ height: `${Math.max(pct, h.count > 0 ? 8 : 0)}%`, ...(isPeak && h.count > 0 ? { backgroundColor: 'var(--brand)' } : {}) }} />
               {h.hour % 6 === 0 && <div className="text-[8px] text-gray-400 mt-1">{fmt(h.hour)}</div>}
             </div>
           )
