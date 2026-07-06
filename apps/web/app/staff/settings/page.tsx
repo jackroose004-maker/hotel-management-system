@@ -530,7 +530,7 @@ export default function SettingsPage() {
                       folder="almanzil/login"
                       publicId="login-desktop"
                       hint="Landscape · 900 × 1200 px recommended"
-                      aspectRatio="portrait"
+                      aspectRatio="free"
                     />
                   </div>
                   <div>
