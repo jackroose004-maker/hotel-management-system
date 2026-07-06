@@ -11,8 +11,15 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard'
 export class AuthController {
   constructor(private auth: AuthService, private config: ConfigService) {}
 
+  // Step 1: request OTP (checks email uniqueness + sends code)
+  @Post('send-otp')
+  sendOtp(@Body('email') email: string, @Body('name') name: string) {
+    return this.auth.sendOtp(email, name)
+  }
+
+  // Step 2: verify OTP + create account
   @Post('register')
-  register(@Body() dto: RegisterDto) {
+  register(@Body() dto: RegisterDto & { otp: string }) {
     return this.auth.register(dto)
   }
 

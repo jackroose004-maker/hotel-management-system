@@ -105,7 +105,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       {/* ── Desktop sidebar ── */}
       <aside
         className={`hidden md:flex ${collapsed ? 'w-16' : 'w-56'} flex-shrink-0 text-white flex-col transition-all duration-200`}
-        style={{ backgroundColor: '#1a1816' }}>
+        style={{ backgroundColor: 'var(--brand-sidebar, #1a1816)' }}>
         <div className="h-14 flex items-center justify-between px-3 border-b border-white/10">
           {!collapsed && (
             <div className="flex items-center gap-2.5 min-w-0">
@@ -149,7 +149,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         <div className="md:hidden fixed inset-0 z-50 flex">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <aside className="relative w-64 text-white flex flex-col h-full shadow-2xl"
-            style={{ backgroundColor: '#1a1816' }}>
+            style={{ backgroundColor: 'var(--brand-sidebar, #1a1816)' }}>
             <div className="h-14 flex items-center justify-between px-4 border-b border-white/10">
               <div className="flex items-center gap-2.5">
                 {logoUrl

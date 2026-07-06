@@ -24,20 +24,31 @@ function LoginForm() {
   const ar = lang === 'ar'
   useEffect(() => { applyLangDir(lang) }, [lang])
 
-  const [tab, setTab] = useState<'login' | 'signup'>('login')
+  const initialTab = searchParams.get('tab') === 'signup' ? 'signup' : 'login'
+  const [tab, setTab] = useState<'login' | 'signup'>(initialTab)
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [otpSent, setOtpSent] = useState(false)
+  const [otp, setOtp] = useState('')
   const [quoteIdx, setQuoteIdx] = useState(0)
-  const [brand, setBrand] = useState<{ name: string; logoUrl: string | null }>({ name: 'Al Manzil', logoUrl: null })
+  const [brand, setBrand] = useState<{
+    name: string; logoUrl: string | null
+    loginDesktopImage?: string | null; loginMobileImage?: string | null
+  }>({ name: 'Al Manzil', logoUrl: null })
   useEffect(() => { setQuoteIdx(Math.floor(Math.random() * HERO_QUOTES.length)) }, [])
   useEffect(() => {
     fetch(`${API}/settings`).then(r => r.json()).then(j => {
       const d = j?.data ?? j
-      if (d?.restaurantName) setBrand({ name: d.restaurantName, logoUrl: d.logoUrl ?? null })
+      if (d?.restaurantName) setBrand({
+        name: d.restaurantName,
+        logoUrl: d.logoUrl ?? null,
+        loginDesktopImage: d.loginDesktopImage ?? null,
+        loginMobileImage: d.loginMobileImage ?? null,
+      })
     }).catch(() => {})
   }, [])
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirmPassword: '' })
 
   const redirect = searchParams.get('redirect') ?? '/account'
   const slotDate = searchParams.get('date')
@@ -60,7 +71,8 @@ function LoginForm() {
   }
 
   function switchTab(t: 'login' | 'signup') {
-    setTab(t); setError('')
+    setTab(t); setError(''); setOtpSent(false); setOtp('')
+    setForm(f => ({ ...f, confirmPassword: '' }))
   }
 
   function handleGoogleLogin() {
@@ -68,36 +80,52 @@ function LoginForm() {
     window.location.href = `${BACKEND}/api/v1/auth/google?state=${state}`
   }
 
+  async function apiFetch(endpoint: string, body: object) {
+    const r = await fetch(`${API}/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const json = await r.json()
+    const payload = json?.data ?? json
+    if (!r.ok) throw new Error(json?.error?.message ?? payload?.message ?? json?.message ?? 'Something went wrong')
+    return payload
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      const endpoint = tab === 'login' ? 'auth/login' : 'auth/register'
-      const body = tab === 'login'
-        ? { email: form.email, password: form.password }
-        : { name: form.name, email: form.email, phone: form.phone, password: form.password, role: 'USER' }
-
-      const r = await fetch(`${API}/${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      const json = await r.json()
-      // Unwrap NestJS interceptor: { success, data: { user, token }, timestamp }
-      const payload = json?.data ?? json
-      if (!r.ok) {
-        const msg = payload?.message ?? json?.message ?? 'Something went wrong'
-        throw new Error(msg)
+      if (tab === 'login') {
+        const payload = await apiFetch('auth/login', { email: form.email, password: form.password })
+        setAuth(payload.user, payload.token)
+        toast.success(`Welcome back, ${payload.user?.name?.split(' ')[0]}! 👋`)
+        const isStaff = payload.user?.role && ['STAFF', 'MANAGER', 'OWNER'].includes(payload.user.role)
+        router.push(isStaff ? '/staff' : slotDate && slotTime ? `${redirect}?date=${slotDate}&slot=${slotTime}` : redirect)
+        return
       }
 
-      setAuth(payload.user, payload.token)
-      toast.success(tab === 'login' ? `Welcome back, ${payload.user?.name?.split(' ')[0]}! 👋` : `Account created! Welcome, ${payload.user?.name?.split(' ')[0]}! 🎉`)
+      // Signup — step 1: send OTP
+      if (!otpSent) {
+        if (form.password !== form.confirmPassword) {
+          setError('Passwords do not match')
+          return
+        }
+        await apiFetch('auth/send-otp', { email: form.email, name: form.name })
+        setOtpSent(true)
+        toast.success('Check your email — a 6-digit code is on its way!')
+        return
+      }
 
-      const dest = slotDate && slotTime
-        ? `${redirect}?date=${slotDate}&slot=${slotTime}`
-        : redirect
-      router.push(dest)
+      // Signup — step 2: verify OTP + create account
+      const payload = await apiFetch('auth/register', {
+        name: form.name, email: form.email, phone: form.phone,
+        password: form.password, role: 'USER', otp,
+      })
+      setAuth(payload.user, payload.token)
+      toast.success(`Account created! Welcome, ${payload.user?.name?.split(' ')[0]}! 🎉`)
+      router.push(slotDate && slotTime ? `${redirect}?date=${slotDate}&slot=${slotTime}` : redirect)
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -115,7 +143,7 @@ function LoginForm() {
         {/* Background food photo */}
         <div className="absolute inset-0">
           <img
-            src="https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=900&q=80"
+            src={brand.loginDesktopImage ?? 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=900&q=80'}
             alt="" className="w-full h-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-br from-gray-950/90 via-gray-900/80 to-neutral-950/70" />
@@ -165,7 +193,7 @@ function LoginForm() {
         {/* Mobile header */}
         <div className="lg:hidden relative">
           <div className="h-52 overflow-hidden">
-            <img src="https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=600&q=80"
+            <img src={brand.loginMobileImage ?? 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=600&q=80'}
               alt="" className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-gray-950" />
           </div>
@@ -262,46 +290,101 @@ function LoginForm() {
 
           {/* Form */}
           <form onSubmit={submit} className="space-y-3.5">
-            {tab === 'signup' && (
-              <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1.5">{ar ? 'الاسم الكامل' : 'Full Name'}</label>
-                <input type="text" required placeholder="Your name" value={form.name}
-                  onChange={e => setField('name', e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
-              </div>
-            )}
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-400 mb-1.5">{ar ? 'البريد الإلكتروني' : 'Email Address'}</label>
-              <input type="email" required placeholder="you@email.com" value={form.email}
-                onChange={e => setField('email', e.target.value)}
-                className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
-            </div>
-
-            {tab === 'signup' && (
-              <div>
-                <label className="block text-xs font-semibold text-gray-400 mb-1.5">
-                  Phone <span className="font-normal text-gray-500">(optional)</span>
-                </label>
-                <input type="tel" placeholder="+971 50 000 0000" value={form.phone}
-                  onChange={e => setField('phone', e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-400 mb-1.5">{ar ? 'كلمة المرور' : 'Password'}</label>
-              <div className="relative">
-                <input type={showPass ? 'text' : 'password'} required minLength={6}
-                  placeholder="••••••••" value={form.password}
-                  onChange={e => setField('password', e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
-                <button type="button" onClick={() => setShowPass(v => !v)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
-                  {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
+            {/* Signup step 2 — OTP entry */}
+            {tab === 'signup' && otpSent ? (
+              <>
+                <div className="rounded-2xl px-4 py-4 text-center" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.06)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
+                  <p className="text-xs text-gray-400 mb-0.5">Code sent to</p>
+                  <p className="text-sm font-bold text-white">{form.email}</p>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-1.5">6-digit verification code</label>
+                  <input
+                    type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6}
+                    required placeholder="000000" value={otp}
+                    onChange={e => { setOtp(e.target.value.replace(/\D/g, '')); setError('') }}
+                    className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3.5 text-2xl font-black text-center tracking-[0.4em] focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-700 transition-colors"
+                    autoFocus
+                  />
+                </div>
+                <button type="button" onClick={() => { setOtpSent(false); setOtp(''); setError('') }}
+                  className="text-xs text-gray-500 hover:text-gray-300 underline w-full text-center pt-1">
+                  ← Change email or resend code
                 </button>
-              </div>
-            </div>
+              </>
+            ) : (
+              <>
+                {tab === 'signup' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-400 mb-1.5">{ar ? 'الاسم الكامل' : 'Full Name'}</label>
+                    <input type="text" required placeholder="Your name" value={form.name}
+                      onChange={e => setField('name', e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-1.5">{ar ? 'البريد الإلكتروني' : 'Email Address'}</label>
+                  <input type="email" required placeholder="you@email.com" value={form.email}
+                    onChange={e => setField('email', e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
+                </div>
+
+                {tab === 'signup' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-400 mb-1.5">
+                      Phone <span className="font-normal text-gray-500">(optional)</span>
+                    </label>
+                    <input type="tel" placeholder="+971 50 000 0000" value={form.phone}
+                      onChange={e => setField('phone', e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-1.5">{ar ? 'كلمة المرور' : 'Password'}</label>
+                  <div className="relative">
+                    <input type={showPass ? 'text' : 'password'} required minLength={6}
+                      placeholder="••••••••" value={form.password}
+                      onChange={e => setField('password', e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 text-white rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:border-[var(--brand)] placeholder:text-gray-600 transition-colors" />
+                    <button type="button" onClick={() => setShowPass(v => !v)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300">
+                      {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+
+                {tab === 'signup' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-400 mb-1.5">
+                      {ar ? 'تأكيد كلمة المرور' : 'Confirm Password'}
+                    </label>
+                    <div className="relative">
+                      <input type={showPass ? 'text' : 'password'} required minLength={6}
+                        placeholder="••••••••" value={form.confirmPassword}
+                        onChange={e => setField('confirmPassword', e.target.value)}
+                        className={`w-full bg-white/5 border text-white rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none placeholder:text-gray-600 transition-colors ${
+                          form.confirmPassword && form.password !== form.confirmPassword
+                            ? 'border-red-500/60 focus:border-red-500'
+                            : form.confirmPassword && form.password === form.confirmPassword
+                              ? 'border-emerald-500/60 focus:border-emerald-500'
+                              : 'border-white/10 focus:border-[var(--brand)]'
+                        }`} />
+                      {form.confirmPassword && (
+                        <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm">
+                          {form.password === form.confirmPassword ? '✓' : '✗'}
+                        </span>
+                      )}
+                    </div>
+                    {form.confirmPassword && form.password !== form.confirmPassword && (
+                      <p className="text-[11px] text-red-400 mt-1.5">Passwords do not match</p>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
 
             {error && (
               error === 'STAFF_PORTAL' ? (
@@ -325,8 +408,12 @@ function LoginForm() {
               className="w-full text-white font-bold py-3.5 rounded-2xl text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-black/20 hover:shadow-black/30 hover:scale-[1.01] active:scale-100 mt-1"
               style={{ backgroundColor: 'var(--brand)' }}>
               {loading
-                ? (tab === 'login' ? (ar ? 'جارٍ الدخول…' : 'Signing in…') : (ar ? 'جارٍ إنشاء الحساب…' : 'Creating account…'))
-                : (tab === 'login' ? (ar ? 'تسجيل الدخول' : 'Sign In') : (ar ? 'إنشاء حساب مجاني' : 'Create Free Account'))}
+                ? '…'
+                : tab === 'login'
+                  ? (ar ? 'تسجيل الدخول' : 'Sign In')
+                  : otpSent
+                    ? 'Verify & Create Account'
+                    : (ar ? 'إنشاء حساب مجاني' : 'Send Verification Code')}
             </button>
           </form>
 

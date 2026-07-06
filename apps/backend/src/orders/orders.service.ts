@@ -62,10 +62,17 @@ export class OrdersService {
         // Guest: device token IS their tab — use directly
         tableSessionId = dto.guestTabToken
       } else if (userId) {
-        // Logged-in customer: find their tab at this table today
+        // Logged-in customer: find their open (unsettled) tab at this table today
         const today = new Date(); today.setHours(0, 0, 0, 0)
+        // Only reuse a session if it has at least one unpaid order — once fully settled start fresh
         const existing = await this.prisma.order.findFirst({
-          where: { tableId: dto.tableId, userId, tableSessionId: { not: null }, createdAt: { gte: today } },
+          where: {
+            tableId: dto.tableId,
+            userId,
+            tableSessionId: { not: null },
+            createdAt: { gte: today },
+            paymentStatus: 'UNPAID',
+          },
           orderBy: { createdAt: 'desc' },
           select: { tableSessionId: true },
         })
@@ -415,7 +422,7 @@ export class OrdersService {
       // All distinct sessions (personal tabs) active at this table today
       const sessionRows = await this.prisma.order.groupBy({
         by: ['tableSessionId'],
-        where: { tableId: table.id, tableSessionId: { not: null }, createdAt: { gte: today }, status: { not: 'CANCELLED' } },
+        where: { tableId: table.id, tableSessionId: { not: null }, createdAt: { gte: today }, status: { not: 'CANCELLED' }, paymentStatus: 'UNPAID' },
       })
 
       const tabs = await Promise.all(sessionRows.map(async ({ tableSessionId }) => {

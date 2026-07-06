@@ -36,6 +36,7 @@ enum OrderStatus {
 enum PaymentStatus {
   UNPAID
   PAID
+  REFUND_REQUESTED
   REFUNDED
 }
 
@@ -94,9 +95,12 @@ model User {
   role         Role     @default(GUEST)
   isActive     Boolean  @default(true) @map("is_active")
   phone        String?
-  dietaryTags           String  @default("") @map("dietary_tags")
-  notifOrderUpdates     Boolean @default(true) @map("notif_order_updates")
-  notifBookingReminders Boolean @default(true) @map("notif_booking_reminders")
+  dietaryTags           String    @default("") @map("dietary_tags")
+  notifOrderUpdates     Boolean   @default(true) @map("notif_order_updates")
+  notifBookingReminders Boolean   @default(true) @map("notif_booking_reminders")
+  isVerified            Boolean   @default(false) @map("is_verified")
+  otpCode               String?   @map("otp_code")
+  otpExpiry             DateTime? @map("otp_expiry")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -157,6 +161,7 @@ model MenuItem {
   descriptionAr   String?  @map("description_ar")
   price        Decimal  @db.Decimal(10, 2)
   imageUrl     String?  @map("image_url")
+  videoUrl     String?  @map("video_url")
   isAvailable  Boolean  @default(true) @map("is_available")
   prepTimeMins Int      @default(15) @map("prep_time_mins")
   isSpecialDay Boolean  @default(false) @map("is_special_day")
@@ -244,6 +249,7 @@ model Order {
   paymentStatus   PaymentStatus  @default(UNPAID) @map("payment_status")
   paymentMethod   PaymentMethod? @map("payment_method")
   notes           String?
+  clientIp        String?        @map("client_ip")
   contactPhone    String?        @map("contact_phone")
   promoId         String?        @map("promo_id")
   approvedById    String?        @map("approved_by_id")
@@ -550,6 +556,10 @@ model RestaurantSettings {
   brandPreset         String   @default("amber") @map("brand_preset")
   brandColor          String   @default("#f59e0b") @map("brand_color")
   showLanguageToggle  Boolean  @default(false) @map("show_language_toggle")
+  loginDesktopImage   String?  @map("login_desktop_image")
+  loginMobileImage    String?  @map("login_mobile_image")
+  vatNumber           String?  @map("vat_number")
+  billConfig          Json?    @map("bill_config")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@map("restaurant_settings")

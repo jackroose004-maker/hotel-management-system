@@ -67,6 +67,8 @@ export default function TablesPage() {
   const [menuItems, setMenuItems]         = useState<MenuItem[]>([])
   const [cart, setCart]                   = useState<Record<string, number>>({})
   const [addingOrder, setAddingOrder]     = useState(false)
+  const [tableSessions, setTableSessions] = useState<{ sessionId: string; label: string }[]>([])
+  const [selectedSession, setSelectedSession] = useState<string>('') // '' = new session
   const [filter, setFilter]               = useState<Status | 'ALL'>('ALL')
   const now = useNow(30000)
 
@@ -75,11 +77,25 @@ export default function TablesPage() {
 
   const openAddOrder = async (table: Table) => {
     setCart({})
+    setTableSessions([])
+    setSelectedSession('')
     setAddOrderModal(table)
     if (menuItems.length === 0) {
       const r = await api.get('/menu/items')
       setMenuItems(r.data.filter((m: any) => m.isAvailable !== false))
     }
+    // Load existing sessions at this table so staff can pick which guest to add to
+    try {
+      const { data: sessions } = await api.get(`/orders/table/${table.id}/sessions`)
+      if (sessions?.length > 0) {
+        const mapped = sessions.map((s: any, i: number) => ({
+          sessionId: s.sessionId,
+          label: s.userName ? s.userName.split(' ')[0] : `Guest ${i + 1}`,
+        }))
+        setTableSessions(mapped)
+        setSelectedSession(mapped[0].sessionId)
+      }
+    } catch {}
   }
 
   const cartQty = (id: string) => cart[id] ?? 0
@@ -92,29 +108,15 @@ export default function TablesPage() {
     if (!items.length) { notify.error('Add at least one item'); return }
     setAddingOrder(true)
     try {
-      // Fetch existing customer sessions so we can attach this order to their bill
-      let guestTabToken: string | undefined
-      try {
-        const { data: sessions } = await api.get(`/orders/table/${addOrderModal.id}/sessions`)
-        if (sessions?.length === 1) {
-          // Only one guest — add directly to their session
-          guestTabToken = sessions[0].sessionId
-        } else if (sessions?.length > 1) {
-          // Multiple guests — pick the first non-staff session (fallback: first one)
-          guestTabToken = sessions[0].sessionId
-        }
-        // If no sessions yet (table is empty), no guestTabToken → backend creates a fresh table session
-      } catch {}
-
       await api.post(`/orders/table/${addOrderModal.id}/staff-order`, {
         type: 'DINE_IN', tableId: addOrderModal.id, items, paymentMethod: 'CASH',
-        ...(guestTabToken ? { guestTabToken } : {}),
+        ...(selectedSession ? { guestTabToken: selectedSession } : {}),
       })
       notify.success('Order added to the bill')
       setAddOrderModal(null)
       setCart({})
-    } catch {
-      notify.error('Could not place order')
+    } catch (e: any) {
+      notify.error(e?.message ?? 'Could not place order')
     } finally { setAddingOrder(false) }
   }
 
@@ -123,8 +125,8 @@ export default function TablesPage() {
     try {
       const r = await api.get(`/orders/table/${table.id}/bill`)
       setBillModal({ table, bill: r.data })
-    } catch {
-      notify.error('Could not load bill')
+    } catch (e: any) {
+      notify.error(e?.message ?? 'Could not load bill')
     } finally {
       setBillLoading(false) }
   }
@@ -224,8 +226,9 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
               <div className="w-10 h-1 bg-gray-200 rounded-full" />
             </div>
 
-            {/* Warm cream header */}
-            <div className="relative bg-gradient-to-br from-amber-50 to-orange-50 border-b border-amber-100 px-6 pt-5 pb-6 text-center">
+            {/* Header */}
+            <div className="relative border-b px-6 pt-5 pb-6 text-center"
+              style={{ background: 'linear-gradient(135deg, rgba(var(--brand-rgb),0.06), rgba(var(--brand-rgb),0.12))', borderColor: 'rgba(var(--brand-rgb),0.15)' }}>
               {/* Close — desktop only */}
               <button onClick={() => { setQrModal(null); setQrRegenConfirm(false) }}
                 className="hidden sm:flex absolute top-3 right-3 w-8 h-8 rounded-full bg-black/5 hover:bg-black/10 items-center justify-center transition-colors">
@@ -234,12 +237,13 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
 
               {/* Brand dot + name */}
               <div className="flex items-center justify-center gap-2 mb-1">
-                <div className="w-7 h-7 rounded-lg bg-orange-500 flex items-center justify-center shadow-sm shadow-orange-200">
-                  <span className="text-white text-xs font-black">A</span>
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0"
+                  style={{ backgroundColor: 'var(--brand)' }}>
+                  <span className="text-black text-xs font-black">A</span>
                 </div>
                 <span className="font-black text-gray-900 text-lg tracking-tight">Al Manzil</span>
               </div>
-              <p className="text-amber-600 text-xs font-medium">اطلب عبر الرمز · Scan to order</p>
+              <p className="text-xs font-medium" style={{ color: 'var(--brand)' }}>اطلب عبر الرمز · Scan to order</p>
             </div>
 
             {/* QR code — centre stage */}
@@ -257,17 +261,17 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                   />
                 </div>
                 {/* Corner accents */}
-                <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 border-orange-400 rounded-tl-lg" />
-                <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 border-orange-400 rounded-tr-lg" />
-                <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 border-orange-400 rounded-bl-lg" />
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 border-orange-400 rounded-br-lg" />
+                <div className="absolute -top-1 -left-1 w-4 h-4 border-t-2 border-l-2 rounded-tl-lg" style={{ borderColor: 'var(--brand)' }} />
+                <div className="absolute -top-1 -right-1 w-4 h-4 border-t-2 border-r-2 rounded-tr-lg" style={{ borderColor: 'var(--brand)' }} />
+                <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-2 border-l-2 rounded-bl-lg" style={{ borderColor: 'var(--brand)' }} />
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 border-b-2 border-r-2 rounded-br-lg" style={{ borderColor: 'var(--brand)' }} />
               </div>
             </div>
 
             {/* Table badge */}
             <div className="text-center px-6 pb-5">
               <div className="inline-flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-full mb-2">
-                <span className="text-orange-400 font-black text-base">{qrModal.name ?? `Table ${qrModal.tableNumber}`}</span>
+                <span className="font-black text-base" style={{ color: 'var(--brand)' }}>{qrModal.name ?? `Table ${qrModal.tableNumber}`}</span>
                 <span className="w-1 h-1 rounded-full bg-gray-600" />
                 <span className="text-gray-400 text-xs">{qrModal.capacity} seats</span>
               </div>
@@ -277,7 +281,8 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
             {/* Actions */}
             <div className="px-5 pb-6 space-y-2.5">
               <button onClick={() => { printQr(qrModal); setQrModal(null); setQrRegenConfirm(false) }}
-                className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 active:scale-[0.98] text-white font-bold py-3.5 rounded-2xl text-sm transition-all shadow-lg shadow-orange-200">
+                className="w-full flex items-center justify-center gap-2 active:scale-[0.98] text-black font-bold py-3.5 rounded-2xl text-sm transition-all"
+              style={{ backgroundColor: 'var(--brand)' }}>
                 <Printer size={16} /> Print QR Code
               </button>
 
@@ -412,7 +417,8 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
               </div>
               <button
                 onClick={() => printBill(billModal.table, billModal.bill)}
-                className="w-full mt-2 flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+                className="w-full mt-2 flex items-center justify-center gap-2 text-black font-semibold py-2.5 rounded-xl text-sm transition-colors"
+                style={{ backgroundColor: 'var(--brand)' }}>
                 <Printer size={15} /> Print Receipt / Invoice
               </button>
             </div>
@@ -442,7 +448,7 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
               {menuItems.length === 0 && (
                 <div className="flex items-center justify-center py-12">
-                  <div className="w-5 h-5 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--brand)', borderTopColor: 'transparent' }} />
                 </div>
               )}
               {/* Group by category */}
@@ -452,7 +458,7 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                   <div key={cat}>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 mb-1.5">{cat}</p>
                     {items.map(item => (
-                      <div key={item.id} className="flex items-center justify-between py-2.5 px-3 rounded-xl hover:bg-amber-50 dark:hover:bg-amber-900/10 transition-colors">
+                      <div key={item.id} className="flex items-center justify-between py-2.5 px-3 rounded-xl brand-hover transition-colors">
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{item.name}</p>
                           <p className="text-xs text-gray-400">AED {Number(item.price).toFixed(2)}</p>
@@ -488,10 +494,10 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
 
             {/* Cart summary + submit */}
             {Object.keys(cart).length > 0 && (
-              <div className="border-t border-gray-100 dark:border-[var(--card-border)] px-5 py-4 flex-shrink-0">
-                <div className="flex items-center justify-between mb-3">
+              <div className="border-t border-gray-100 dark:border-[var(--card-border)] px-5 py-4 flex-shrink-0 space-y-3">
+                <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-500">
-                    {Object.values(cart).reduce((a, b) => a + b, 0)} item{Object.values(cart).reduce((a, b) => a + b, 0) !== 1 ? 's' : ''} selected
+                    {Object.values(cart).reduce((a, b) => a + b, 0)} item{Object.values(cart).reduce((a, b) => a + b, 0) !== 1 ? 's' : ''}
                   </span>
                   <span className="text-sm font-bold text-gray-900 dark:text-white">
                     AED {Object.entries(cart).reduce((s, [id, qty]) => {
@@ -500,6 +506,32 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                     }, 0).toFixed(2)}
                   </span>
                 </div>
+
+                {/* Session picker — shown when table has multiple guests */}
+                {tableSessions.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Add to which guest?</p>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {tableSessions.map(s => (
+                        <button key={s.sessionId} onClick={() => setSelectedSession(s.sessionId)}
+                          className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+                          style={selectedSession === s.sessionId
+                            ? { backgroundColor: 'var(--brand)', color: '#000' }
+                            : { backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+                          {s.label}
+                        </button>
+                      ))}
+                      <button onClick={() => setSelectedSession('')}
+                        className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+                        style={selectedSession === ''
+                          ? { backgroundColor: 'var(--brand)', color: '#000' }
+                          : { backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+                        + New tab
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <button onClick={submitStaffOrder} disabled={addingOrder}
                   className="w-full flex items-center justify-center gap-2 text-white py-3 rounded-2xl text-sm font-bold transition-colors disabled:opacity-60"
                   style={{ backgroundColor: 'var(--brand, #f97316)' }}>
@@ -528,7 +560,8 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
             ))}
           </div>
         </div>
-        <button onClick={load} className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white transition-colors flex-shrink-0">
+        <button onClick={load} className="p-2.5 rounded-xl transition-colors flex-shrink-0"
+          style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)', border: '1px solid rgba(var(--brand-rgb),0.15)', color: 'var(--text-muted)' }}>
           <RefreshCw size={14} />
         </button>
       </div>
@@ -539,8 +572,9 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
           <button key={key} onClick={() => setFilter(key as Status | 'ALL')}
             className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors
               ${filter === key
-                ? 'bg-orange-500 text-white shadow-sm shadow-orange-200 dark:shadow-none'
-                : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
+                ? ''
+                : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+            style={filter === key ? { backgroundColor: 'var(--brand)', color: '#000' } : {}}>
             {label}
             <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${filter === key ? 'bg-white/20' : 'bg-white dark:bg-gray-900 text-gray-400'}`}>{count}</span>
           </button>
@@ -550,9 +584,11 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
       {/* Grid */}
       <div className="p-4 sm:p-6">
         {visible.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 gap-4 bg-[var(--card-bg)] rounded-2xl border border-dashed border-amber-200 dark:border-[var(--card-border)]">
-            <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center">
-              <Table2 size={28} className="text-amber-400 dark:text-amber-600" />
+          <div className="flex flex-col items-center justify-center py-20 gap-4 bg-[var(--card-bg)] rounded-2xl"
+            style={{ border: '1px dashed rgba(var(--brand-rgb),0.3)' }}>
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
+              style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)' }}>
+              <Table2 size={28} style={{ color: 'var(--brand)' }} />
             </div>
             <div className="text-center">
               <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">

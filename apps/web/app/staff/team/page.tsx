@@ -450,7 +450,7 @@ export default function TeamPage() {
               <span className="text-[11px] font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
                 {activeCount} active
               </span>
-              <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ color: 'var(--brand)', backgroundColor: 'rgba(var(--brand-rgb),0.1)' }}>
                 {counts.OWNER} owner{counts.OWNER !== 1 ? 's' : ''}
               </span>
               <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded-full">
@@ -468,12 +468,13 @@ export default function TeamPage() {
               <input
                 value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Search by name or email…"
-                className="w-full pl-8 pr-4 py-2.5 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl text-sm focus:outline-none focus:border-orange-400 focus:bg-white dark:focus:bg-gray-900 transition-all placeholder-gray-400"
+                className="w-full pl-8 pr-4 py-2.5 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl text-sm focus:outline-none focus:border-[var(--brand)] focus:bg-white dark:focus:bg-gray-900 transition-all placeholder-gray-400"
               />
             </div>
             {isOwner && (
               <button onClick={() => setModal('create')}
-                className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm shadow-orange-200 dark:shadow-none flex-shrink-0">
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm flex-shrink-0"
+                style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
                 <Plus size={14} /> Add Member
               </button>
             )}
@@ -488,8 +489,9 @@ export default function TeamPage() {
               <button key={r} onClick={() => setFilter(r)}
                 className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors
                   ${isActive
-                    ? 'bg-orange-500 text-white shadow-sm shadow-orange-200 dark:shadow-none'
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}>
+                    ? ''
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
+                style={isActive ? { backgroundColor: 'var(--brand)', color: '#000' } : undefined}>
                 {r === 'ALL' ? 'All' : ROLE_META[r].label}
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${isActive ? 'bg-white/20' : 'bg-white dark:bg-gray-900 text-gray-400'}`}>
                   {counts[r]}

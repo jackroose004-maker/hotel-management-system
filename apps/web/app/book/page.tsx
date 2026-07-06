@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
 import { useLangStore, applyLangDir } from '@/store/lang'
+import { initBrand } from '@/store/brand'
 import {
   CalendarDays, Clock, Users,
   AlertTriangle, CheckCircle2, ArrowLeft, MapPin, UtensilsCrossed,
@@ -33,7 +34,7 @@ export default function BookPage() {
   const { user, token } = useAuthStore()
   const { lang, setLang } = useLangStore()
   const ar = lang === 'ar'
-  useEffect(() => { applyLangDir(lang) }, [lang])
+  useEffect(() => { applyLangDir(lang); initBrand() }, [lang])
 
   useEffect(() => {
     const t = setTimeout(() => {

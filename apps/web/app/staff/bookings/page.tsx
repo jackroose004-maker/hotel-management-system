@@ -110,9 +110,10 @@ export default function StaffBookingsPage() {
           <button key={f.key} onClick={() => setFilter(f.key)}
             className={`flex-shrink-0 px-3.5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors ${
               filter === f.key
-                ? 'bg-orange-500 text-white shadow-sm shadow-orange-200 dark:shadow-none'
+                ? ''
                 : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-            }`}>
+            }`}
+            style={filter === f.key ? { backgroundColor: 'var(--brand)', color: '#000' } : undefined}>
             {f.label}
           </button>
         ))}

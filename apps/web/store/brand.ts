@@ -45,32 +45,17 @@ function lighten(hex: string, amount = 45): string {
 }
 
 // Mix brand hue into a dark base at `strength` (0–1). Keeps luminance near the base value.
-function tintDark(hex: string, baseLightness: number, strength = 0.06): string {
-  const [h, s] = hexToHsl(hex)
-  // Use a fraction of the brand saturation so very muted brands still tint subtly
-  const ts = Math.round(Math.min(s, 60) * strength * 10)
-  return `hsl(${h}, ${ts}%, ${baseLightness}%)`
-}
-
 export function applyBrandColor(color: string) {
   if (typeof document === 'undefined') return
   const root = document.documentElement
   const r = parseInt(color.slice(1, 3), 16)
   const g = parseInt(color.slice(3, 5), 16)
   const b = parseInt(color.slice(5, 7), 16)
-  root.style.setProperty('--brand', color)
-  root.style.setProperty('--brand-rgb', `${r}, ${g}, ${b}`)
-  root.style.setProperty('--brand-dark', darken(color))
+  // Brand accent only — surfaces stay pure neutral via CSS
+  root.style.setProperty('--brand',       color)
+  root.style.setProperty('--brand-rgb',   `${r}, ${g}, ${b}`)
+  root.style.setProperty('--brand-dark',  darken(color))
   root.style.setProperty('--brand-light', lighten(color))
-
-  // Dark-mode surface tints — very subtle hue wash so the UI feels cohesive
-  root.style.setProperty('--brand-tint-bg',      tintDark(color, 7))   // body background
-  root.style.setProperty('--brand-tint-card',     tintDark(color, 11))  // card / panel
-  root.style.setProperty('--brand-tint-header',   tintDark(color, 9))   // navbar
-  root.style.setProperty('--brand-tint-input',    tintDark(color, 11))  // inputs
-  root.style.setProperty('--brand-tint-muted',    tintDark(color, 8))   // muted blocks
-  root.style.setProperty('--brand-tint-border',   tintDark(color, 17))  // card borders
-  root.style.setProperty('--brand-tint-hborder',  tintDark(color, 15))  // header border
 }
 
 export function applyFavicon(url: string) {

@@ -3,10 +3,11 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   Receipt, RefreshCw, Printer, CreditCard, Banknote, Clock,
   CheckCircle2, History, Users, ChevronDown, ChevronRight,
-  Package, Phone, Loader2, BadgeCheck, ArrowRight,
+  Package, Phone, Loader2, BadgeCheck, ArrowRight, RotateCcw, AlertTriangle,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { notify } from '@/lib/notify'
+import { useAuthStore } from '@/store/auth'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -84,6 +85,95 @@ function TotalsBlock({ subtotal, vat, total }: { subtotal: number; vat: number; 
   )
 }
 
+// ── Refund / Void modal ───────────────────────────────────────────────────────
+function RefundModal({ orderId, amount, onClose, onDone }: {
+  orderId: string; amount: number; onClose: () => void; onDone: () => void
+}) {
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const PRESETS = ['Wrong amount charged', 'Customer dissatisfied', 'Order mistake', 'Duplicate charge', 'Item not available']
+
+  const confirm = async () => {
+    if (!reason.trim()) return
+    setBusy(true)
+    try {
+      await api.post(`/orders/${orderId}/refund`, { reason })
+      onDone()
+    } catch (e: any) {
+      notify.error(e?.message ?? 'Refund failed — try again')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center px-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(6px)' }}
+      onClick={onClose}>
+      <div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 space-y-4"
+        style={{ backgroundColor: 'var(--card-bg)', border: '1px solid rgba(239,68,68,0.3)' }}
+        onClick={e => e.stopPropagation()}>
+
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ backgroundColor: 'rgba(239,68,68,0.12)' }}>
+            <RotateCcw size={16} style={{ color: '#f87171' }} />
+          </div>
+          <div>
+            <p className="font-black text-sm" style={{ color: 'var(--text-primary)' }}>Void / Refund</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              AED {amount.toFixed(2)} · This marks the order as refunded and logs it.
+              <br />For card payments, reverse the transaction on your POS terminal separately.
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl p-3 flex items-start gap-2"
+          style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
+          <AlertTriangle size={13} className="flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
+          <p className="text-xs" style={{ color: '#f59e0b' }}>
+            This action is logged. Manager approval may be required depending on policy.
+          </p>
+        </div>
+
+        <div>
+          <p className="text-[10px] font-semibold mb-2 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Reason</p>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {PRESETS.map(p => (
+              <button key={p} onClick={() => setReason(p)}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all"
+                style={reason === p
+                  ? { backgroundColor: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.5)', color: '#f87171' }
+                  : { backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+                {p}
+              </button>
+            ))}
+          </div>
+          <input
+            className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
+            style={{ backgroundColor: 'var(--muted-bg)', border: `1px solid ${reason ? 'rgba(239,68,68,0.4)' : 'var(--card-border)'}`, color: 'var(--text-primary)' }}
+            placeholder="Or type a custom reason…"
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+          />
+        </div>
+
+        <button
+          onClick={confirm}
+          disabled={!reason.trim() || busy}
+          className="w-full py-3.5 rounded-2xl font-black text-sm flex items-center justify-center gap-2 disabled:opacity-40 transition-all"
+          style={{ backgroundColor: '#ef4444', color: '#fff' }}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+          {busy ? 'Processing…' : 'Confirm Refund'}
+        </button>
+        <button onClick={onClose}
+          className="w-full py-2.5 rounded-2xl text-sm font-semibold"
+          style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Payment method picker modal ───────────────────────────────────────────────
 // Common AED note denominations for quick-select
 const CASH_NOTES = [5, 10, 20, 50, 100, 200, 500]
@@ -95,7 +185,7 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
   onClose: () => void
   busy: boolean
 }) {
-  const [step, setStep] = useState<'review' | 'method' | 'cash'>('review')
+  const [step, setStep] = useState<'review' | 'method' | 'cash' | 'card'>('review')
   const [received, setReceived] = useState('')
   const [confirming, setConfirming] = useState<'CASH' | 'CARD' | null>(null)
 
@@ -177,16 +267,64 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
                 </div>
               </button>
 
-              <button onClick={() => handleConfirm('CARD')} disabled={!!confirming}
+              <button onClick={() => setStep('card')} disabled={!!confirming}
                 className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 transition-all hover:opacity-90 disabled:opacity-50"
                 style={{ borderColor: 'var(--c-info-fg)', backgroundColor: 'rgba(59,130,246,0.08)' }}>
-                {confirming === 'CARD' ? <Loader2 size={24} className="animate-spin" style={{ color: 'var(--c-info-fg)' }} /> : <CreditCard size={24} style={{ color: 'var(--c-info-fg)' }} />}
+                <CreditCard size={24} style={{ color: 'var(--c-info-fg)' }} />
                 <div className="text-center">
-                  <p className="text-sm font-black" style={{ color: 'var(--c-info-fg)' }}>{confirming === 'CARD' ? 'Recording…' : 'Card · Tap'}</p>
+                  <p className="text-sm font-black" style={{ color: 'var(--c-info-fg)' }}>Card · Tap</p>
                   <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Online · Transfer</p>
                 </div>
               </button>
             </div>
+
+            <button onClick={() => setStep('review')}
+              className="w-full py-3 rounded-2xl text-sm font-semibold transition-colors"
+              style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+              ← Back to Review
+            </button>
+          </>
+        )}
+
+        {step === 'card' && (
+          <>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setStep('method')} style={{ color: 'var(--text-muted)' }}>←</button>
+              <h2 className="text-base font-black" style={{ color: 'var(--text-primary)' }}>Card Payment</h2>
+            </div>
+
+            <div className="rounded-2xl p-5 text-center space-y-2"
+              style={{ backgroundColor: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)' }}>
+              <CreditCard size={32} className="mx-auto" style={{ color: 'var(--c-info-fg)' }} />
+              <p className="text-2xl font-black" style={{ color: 'var(--text-primary)' }}>AED {amount.toFixed(2)}</p>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Tap the card / present QR on the POS device.<br />
+                Only confirm below after the terminal shows <strong>Approved</strong>.
+              </p>
+            </div>
+
+            <div className="rounded-xl px-4 py-3 flex items-start gap-2"
+              style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
+              <span className="text-sm mt-0.5">⚠️</span>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Double-check the amount on the POS before the guest taps. Wrong amount? Cancel here and void the transaction on the terminal first.
+              </p>
+            </div>
+
+            <button
+              onClick={() => handleConfirm('CARD')}
+              disabled={!!confirming}
+              className="w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+              style={{ backgroundColor: 'var(--c-info-fg)', color: '#fff' }}>
+              {confirming === 'CARD' ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+              {confirming === 'CARD' ? 'Recording…' : 'Terminal approved — Confirm'}
+            </button>
+
+            <button onClick={() => setStep('method')}
+              className="w-full py-2.5 rounded-2xl text-sm font-semibold"
+              style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+              Cancel
+            </button>
           </>
         )}
 
@@ -257,14 +395,6 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
             </button>
           </>
         )}
-
-        {!confirming && step === 'method' && (
-          <button onClick={() => setStep('review')}
-            className="w-full py-3 rounded-2xl text-sm font-semibold transition-colors"
-            style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
-            ← Back to Review
-          </button>
-        )}
       </div>
     </div>
   )
@@ -281,6 +411,7 @@ function TabRow({ tab, idx, tableName, onSettle, busy }: {
   const label = tabLabel(tab, idx)
   const isMember = !!tab.orders.find(o => o.user)
   const total = Number(tab.summary.total)
+  const hasUnapproved = tab.orders.some(o => o.status === 'PENDING')
 
   const itemMap = new Map<string, { name: string; qty: number; price: number }>()
   for (const o of tab.orders) {
@@ -294,8 +425,7 @@ function TabRow({ tab, idx, tableName, onSettle, busy }: {
   const items = [...itemMap.values()]
 
   function printTab() {
-    const rows = items.map(i => ({ name: i.name, qty: i.qty, total: i.price }))
-    openPrint(buildReceiptHtml(`${tableName} — ${label}`, rows, tab.summary))
+    window.open(`/receipt/${tab.sessionId}`, '_blank')
   }
 
   return (
@@ -357,6 +487,13 @@ function TabRow({ tab, idx, tableName, onSettle, busy }: {
           <div className="flex items-center gap-2 pt-1">
             {!tab.summary.allPaid ? (
               <>
+              {hasUnapproved && (
+                <div className="flex-1 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
+                  style={{ backgroundColor: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b' }}>
+                  ⏳ Order still pending approval — settle after kitchen accepts
+                </div>
+              )}
+              {!hasUnapproved && (
               <button
                 onClick={() => setShowSettle(true)} disabled={busy}
                 className="flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50 transition-opacity hover:opacity-90 text-white"
@@ -365,6 +502,7 @@ function TabRow({ tab, idx, tableName, onSettle, busy }: {
                 {busy ? <Loader2 size={11} className="animate-spin" /> : <ArrowRight size={11} />}
                 Settle Bill
               </button>
+              )}
               {showSettle && (
                 <SettleModal
                   amount={total}
@@ -404,18 +542,7 @@ function ActiveTableCard({ entry, onSettle, busySession }: {
   const allSettled = pendingTabs === 0
 
   const printCombined = () => {
-    const allOrders = entry.tabs.flatMap(t => t.orders)
-    const itemMap = new Map<string, { name: string; qty: number; price: number }>()
-    for (const o of allOrders) {
-      for (const i of o.items) {
-        const k = i.menuItem.name
-        const ex = itemMap.get(k)
-        if (ex) { ex.qty += i.quantity; ex.price += i.quantity * Number(i.unitPrice) }
-        else itemMap.set(k, { name: k, qty: i.quantity, price: i.quantity * Number(i.unitPrice) })
-      }
-    }
-    const rows = [...itemMap.values()].map(i => ({ name: i.name, qty: i.qty, total: i.price }))
-    openPrint(buildReceiptHtml(tableName, rows, entry.combined))
+    entry.tabs.forEach(t => window.open(`/receipt/${t.sessionId}`, '_blank'))
   }
 
   return (
@@ -490,8 +617,9 @@ function ActiveTableCard({ entry, onSettle, busySession }: {
 }
 
 // ── Closed session card ───────────────────────────────────────────────────────
-function ClosedSessionCard({ s }: { s: ClosedSession }) {
+function ClosedSessionCard({ s, onRefund }: { s: ClosedSession; onRefund: () => void }) {
   const [expanded, setExpanded] = useState(false)
+  const [refundOrder, setRefundOrder] = useState<BillOrder | null>(null)
   const tableName = s.table.name ?? `Table ${s.table.tableNumber}`
   const userName = s.orders.find(o => o.user)?.user?.name?.split(' ')[0] ?? 'Guest'
 
@@ -541,15 +669,52 @@ function ClosedSessionCard({ s }: { s: ClosedSession }) {
             </div>
           ))}
           <TotalsBlock subtotal={Number(s.summary.subtotal)} vat={Number(s.summary.vatAmount)} total={Number(s.summary.total)} />
-          <div className="flex justify-end pt-1">
-            <button onClick={() => {
-              const rows = items.map(i => ({ name: i.name, qty: i.qty, total: i.price }))
-              openPrint(buildReceiptHtml(`${tableName} — ${userName}`, rows, s.summary))
-            }} className="flex items-center gap-1.5 text-xs border px-3 py-1.5 rounded-lg transition-colors">
-              <Printer size={11} /> Reprint
-            </button>
+          <div className="flex justify-between items-center pt-1">
+            <div className="flex gap-1.5 flex-wrap">
+              {s.orders.filter(o => o.paymentStatus === 'PAID' || o.paymentStatus === 'REFUND_REQUESTED').map((o, oi) => (
+                <button key={o.id} onClick={() => o.paymentStatus === 'PAID' ? setRefundOrder(o) : undefined}
+                  disabled={o.paymentStatus === 'REFUND_REQUESTED'}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: o.paymentStatus === 'REFUND_REQUESTED' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${o.paymentStatus === 'REFUND_REQUESTED' ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.25)'}`, color: o.paymentStatus === 'REFUND_REQUESTED' ? '#f59e0b' : '#f87171' }}>
+                  <RotateCcw size={10} />
+                  {o.paymentStatus === 'REFUND_REQUESTED' ? `Order ${oi + 1} — Pending approval` : `Refund order ${s.orders.length > 1 ? oi + 1 : ''}`}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button onClick={() => window.open(`/receipt/${s.sessionId}`, '_blank')}
+                className="flex items-center gap-1.5 text-xs border border-[var(--card-border)] px-3 py-1.5 rounded-lg transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
+                <Printer size={11} /> Reprint
+              </button>
+              <button onClick={() => {
+                const url = `${window.location.origin}/receipt/${s.sessionId}`
+                window.open(url, '_blank')
+              }} className="flex items-center gap-1.5 text-xs border border-[var(--card-border)] px-3 py-1.5 rounded-lg transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
+                <Receipt size={11} /> View / PDF
+              </button>
+              <button onClick={() => {
+                const url = `${window.location.origin}/receipt/${s.sessionId}`
+                if (navigator.share) {
+                  navigator.share({ title: 'Your Receipt', url })
+                } else {
+                  navigator.clipboard.writeText(url)
+                  notify.success('Receipt link copied!')
+                }
+              }} className="flex items-center gap-1.5 text-xs border border-[var(--card-border)] px-3 py-1.5 rounded-lg transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
+                Share
+              </button>
+            </div>
           </div>
         </div>
+      )}
+
+      {refundOrder && (
+        <RefundModal
+          orderId={refundOrder.id}
+          amount={Number(refundOrder.total)}
+          onClose={() => setRefundOrder(null)}
+          onDone={() => { setRefundOrder(null); onRefund() }}
+        />
       )}
     </div>
   )
@@ -628,25 +793,33 @@ function TakeawayCard({ entry }: { entry: TakeawayEntry }) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function BillsPage() {
-  const [active, setActive]     = useState<ActiveTableEntry[]>([])
-  const [closed, setClosed]     = useState<ClosedSession[]>([])
-  const [takeaway, setTakeaway] = useState<TakeawayEntry[]>([])
-  const [loading, setLoading]   = useState(true)
+  const { user } = useAuthStore()
+  const isManager = user?.role === 'OWNER' || user?.role === 'MANAGER'
+
+  const [active, setActive]         = useState<ActiveTableEntry[]>([])
+  const [closed, setClosed]         = useState<ClosedSession[]>([])
+  const [takeaway, setTakeaway]     = useState<TakeawayEntry[]>([])
+  const [pendingRefunds, setPendingRefunds] = useState<any[]>([])
+  const [loading, setLoading]       = useState(true)
   const [busySession, setBusySession] = useState<Record<string, boolean>>({})
+  const [approvingRefund, setApprovingRefund] = useState<Record<string, boolean>>({})
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [activeRes, closedRes, takeawayRes] = await Promise.all([
+      const requests: Promise<any>[] = [
         api.get('/orders/active-bills'),
         api.get('/orders/closed-bills-today'),
         api.get('/orders/takeaway-today'),
-      ])
+      ]
+      if (isManager) requests.push(api.get('/orders/pending-refunds'))
+      const [activeRes, closedRes, takeawayRes, refundsRes] = await Promise.all(requests)
       setActive(activeRes.data ?? [])
       setClosed(closedRes.data ?? [])
       setTakeaway(takeawayRes.data ?? [])
+      if (refundsRes) setPendingRefunds(refundsRes.data ?? [])
     } finally { setLoading(false) }
-  }, [])
+  }, [isManager])
 
   useEffect(() => { load() }, [load])
 
@@ -657,10 +830,23 @@ export default function BillsPage() {
       const label = method === 'CARD' ? 'Card payment recorded' : 'Cash collected'
       notify.order.cashCollected(label)
       await load()
-    } catch {
-      notify.error('Failed to settle')
+    } catch (e: any) {
+      notify.error(e?.message ?? 'Failed to settle')
     } finally {
       setBusySession(p => ({ ...p, [sessionId]: false }))
+    }
+  }
+
+  const approveRefund = async (orderId: string) => {
+    setApprovingRefund(p => ({ ...p, [orderId]: true }))
+    try {
+      await api.post(`/orders/${orderId}/approve-refund`, {})
+      notify.success('Refund approved')
+      await load()
+    } catch (e: any) {
+      notify.error(e?.message ?? 'Failed to approve refund')
+    } finally {
+      setApprovingRefund(p => ({ ...p, [orderId]: false }))
     }
   }
 
@@ -723,6 +909,48 @@ export default function BillsPage() {
           </div>
         )}
 
+        {/* ── Pending Refund Approvals (manager/owner only) ── */}
+        {!loading && isManager && pendingRefunds.length > 0 && (
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle size={14} className="text-amber-500" />
+              <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Refund Requests</h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                {pendingRefunds.length}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {pendingRefunds.map((o: any) => {
+                const tableName = o.table?.name ?? (o.table ? `Table ${o.table.tableNumber}` : 'Takeaway')
+                const reason = o.statusHistory?.[0]?.note?.replace('REFUND REQUESTED: ', '') ?? ''
+                return (
+                  <div key={o.id} className="rounded-xl border p-3 flex items-center gap-3"
+                    style={{ backgroundColor: 'var(--card-bg)', borderColor: 'rgba(245,158,11,0.3)' }}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{tableName}</span>
+                        <span className="text-xs text-gray-400">AED {Number(o.total).toFixed(2)}</span>
+                      </div>
+                      {reason && <p className="text-[11px] text-gray-400 mt-0.5 truncate">"{reason}"</p>}
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {o.items.map((i: any) => `${i.quantity}× ${i.menuItem.name}`).join(', ')}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => approveRefund(o.id)}
+                      disabled={approvingRefund[o.id]}
+                      className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg font-semibold disabled:opacity-50 transition-colors text-white flex-shrink-0"
+                      style={{ backgroundColor: '#f59e0b' }}>
+                      {approvingRefund[o.id] ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />}
+                      Approve
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
+
         {/* ── Section 1: Active tables (guests seated, payment pending) ── */}
         {!loading && (
           <section>
@@ -775,7 +1003,7 @@ export default function BillsPage() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {closed.map(s => <ClosedSessionCard key={s.sessionId} s={s} />)}
+              {closed.map(s => <ClosedSessionCard key={s.sessionId} s={s} onRefund={load} />)}
               {takeaway.map(e => <TakeawayCard key={e.tokenNumber} entry={e} />)}
             </div>
           </section>

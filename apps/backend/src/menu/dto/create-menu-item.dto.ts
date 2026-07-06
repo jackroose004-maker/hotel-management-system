@@ -26,6 +26,10 @@ export class CreateMenuItemDto {
   @IsOptional()
   imageUrl?: string
 
+  @IsString()
+  @IsOptional()
+  videoUrl?: string
+
   @IsNumber()
   @IsOptional()
   prepTimeMins?: number
@@ -63,6 +67,10 @@ export class UpdateMenuItemDto {
   @IsString()
   @IsOptional()
   imageUrl?: string
+
+  @IsString()
+  @IsOptional()
+  videoUrl?: string
 
   @IsBoolean()
   @IsOptional()

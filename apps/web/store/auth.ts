@@ -17,14 +17,13 @@ async function claimGuestOrders(token: string) {
     if (!raw) return
     const orderIds: string[] = JSON.parse(raw)
     if (!orderIds.length) return
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/v1/orders/claim`, {
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api/v1'}/orders/claim`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ orderIds }),
     })
-    // Clear the local order ID list — they're now linked to the account
-    localStorage.removeItem('almanzil_order_ids')
-    localStorage.removeItem('almanzil_guest_order_count')
+    // Keep localStorage IDs in place — menu/orders deduplicates against /orders/mine.
+    // Removing them here races with the page's fetchOrders and causes blank order lists.
   } catch {}
 }
 

@@ -42,7 +42,7 @@ function RevenueChart({ byDay }: { byDay: { date: string; revenue: number; order
               {/* Tooltip */}
               <div className="absolute -top-12 left-1/2 -translate-x-1/2 hidden group-hover:flex flex-col items-center z-10">
                 <div className="bg-gray-900 dark:bg-gray-800 border border-white/10 text-white text-[10px] px-3 py-2 rounded-xl shadow-xl whitespace-nowrap">
-                  <div className="font-bold text-orange-400">AED {d.revenue.toFixed(0)}</div>
+                  <div className="font-bold" style={{ color: 'var(--brand)' }}>AED {d.revenue.toFixed(0)}</div>
                   <div className="text-gray-400">{d.orders} orders</div>
                 </div>
                 <div className="w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-gray-900 dark:border-t-gray-800" />
@@ -51,7 +51,10 @@ function RevenueChart({ byDay }: { byDay: { date: string; revenue: number; order
               <div className="w-full rounded-t-lg overflow-hidden"
                 style={{ height: `${Math.max(pct, d.revenue > 0 ? 3 : 0)}%` }}>
                 <div className={`w-full h-full transition-opacity group-hover:opacity-100
-                  ${isMax ? 'bg-gradient-to-t from-orange-600 to-orange-400' : 'bg-orange-500/60 dark:bg-orange-500/40 group-hover:bg-orange-500/80'}`} />
+                  `}
+                  style={isMax
+                    ? { background: 'linear-gradient(to top, rgba(var(--brand-rgb),1), rgba(var(--brand-rgb),0.7))' }
+                    : { backgroundColor: 'rgba(var(--brand-rgb),0.55)' }} />
               </div>
               <div className="text-[9px] text-gray-400 mt-1.5 text-center">{label}</div>
             </div>
@@ -76,7 +79,8 @@ function HourlyChart({ hourly }: { hourly: { hour: number; count: number }[] }) 
           <p className="text-xs text-gray-400 mt-0.5">Orders placed per hour of day</p>
         </div>
         {peak.count > 0 && (
-          <span className="text-xs font-bold text-orange-500 bg-orange-50 dark:bg-orange-500/10 border border-orange-100 dark:border-orange-500/20 px-3 py-1 rounded-full">
+          <span className="text-xs font-bold px-3 py-1 rounded-full"
+            style={{ color: 'var(--brand)', backgroundColor: 'rgba(var(--brand-rgb),0.1)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
             Peak {fmt(peak.hour)}
           </span>
         )}
@@ -96,7 +100,8 @@ function HourlyChart({ hourly }: { hourly: { hour: number; count: number }[] }) 
               )}
               <div className={`w-full rounded-sm transition-all ${h.count === 0
                 ? 'bg-gray-100 dark:bg-white/[0.03]'
-                : isPeak ? 'bg-orange-500' : 'bg-blue-400 dark:bg-blue-500/70'}`}
+                : isPeak ? '' : 'bg-blue-400 dark:bg-blue-500/70'}`}
+                style={isPeak && h.count > 0 ? { backgroundColor: 'var(--brand)' } : undefined}
                 style={{ height: `${Math.max(pct, h.count > 0 ? 8 : 0)}%` }} />
               {h.hour % 6 === 0 && <div className="text-[8px] text-gray-400 mt-1">{fmt(h.hour)}</div>}
             </div>
@@ -130,7 +135,7 @@ function TopItems({ items }: { items: { name: string; qty: number; revenue: numb
           <div className="space-y-4">
             {items.map((item, i) => {
               const pct = (item.qty / (items[0]?.qty ?? 1)) * 100
-              const colors = ['#f97316', '#fb923c', '#fbbf24', '#a3a3a3', '#737373']
+              const colors = ['#f59e0b', '#fb923c', '#fbbf24', '#a3a3a3', '#737373']
               return (
                 <div key={item.name}>
                   <div className="flex items-center gap-2 mb-1.5">
@@ -155,7 +160,7 @@ function TopItems({ items }: { items: { name: string; qty: number; revenue: numb
 // ─── Order mix ──────────────────────────────────────────────────────────────
 function OrderMix({ data }: { data: AnalyticsData }) {
   const rows = [
-    { label: 'Dine-In',   value: data.dineIn,      color: '#f97316', bg: 'bg-orange-500' },
+    { label: 'Dine-In',   value: data.dineIn,      color: '#f59e0b', bg: '' },
     { label: 'Takeaway',  value: data.takeaway,     color: '#60a5fa', bg: 'bg-blue-400' },
     { label: 'Card',      value: data.paidOrders,   color: '#4ade80', bg: 'bg-green-400' },
     { label: 'Cash',      value: data.cashOrders,   color: '#c084fc', bg: 'bg-purple-400' },
@@ -183,7 +188,7 @@ function OrderMix({ data }: { data: AnalyticsData }) {
             <div className="flex h-2.5 rounded-full overflow-hidden gap-0.5 mb-6">
               {rows.map(r => r.value > 0 && (
                 <div key={r.label} className={`${r.bg} transition-all`}
-                  style={{ width: `${(r.value / total) * 100}%` }} title={`${r.label}: ${r.value}`} />
+                  style={{ width: `${(r.value / total) * 100}%`, ...(r.bg === '' ? { backgroundColor: 'var(--brand)' } : {}) }} title={`${r.label}: ${r.value}`} />
               ))}
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -247,7 +252,8 @@ export default function AnalyticsPage() {
       label: 'Total Revenue',
       value: `AED ${data.totalRevenue.toFixed(0)}`,
       sub: `Avg AED ${data.avgOrderValue.toFixed(0)} per order`,
-      accent: 'bg-orange-50 dark:bg-orange-500/10 text-orange-500',
+      accent: '',
+      accentStyle: { backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)' } as React.CSSProperties,
     },
     {
       icon: ShoppingBag,
@@ -281,7 +287,7 @@ export default function AnalyticsPage() {
           <h1 className="text-lg font-bold text-gray-900 dark:text-white">Analytics</h1>
           <p className="text-xs text-gray-400 mt-0.5">Revenue, orders, and performance</p>
         </div>
-        <div className="flex bg-amber-50 dark:bg-amber-900/10 rounded-xl p-1 self-start sm:self-auto border border-gray-200 dark:border-gray-700">
+        <div className="flex rounded-xl p-1 self-start sm:self-auto border border-gray-200 dark:border-gray-700" style={{ backgroundColor: 'var(--muted-bg)' }}>
           {PERIODS.map(p => (
             <button key={p.key} onClick={() => setPeriod(p.key)}
               className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
@@ -305,7 +311,8 @@ export default function AnalyticsPage() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             {stats.map(s => (
               <div key={s.label} className="bg-white dark:bg-[var(--card-bg)] rounded-2xl border border-gray-200 dark:border-white/[0.06] p-5 group hover:shadow-md dark:hover:border-white/10 transition-all shadow-sm">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-4 ${s.accent}`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-4 ${s.accent}`}
+                  style={(s as any).accentStyle}>
                   <s.icon size={16} />
                 </div>
                 <div className="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">{s.value}</div>
@@ -322,7 +329,7 @@ export default function AnalyticsPage() {
               : (
                 <div className="bg-white dark:bg-[var(--card-bg)] rounded-2xl border border-gray-100 dark:border-white/[0.06] p-6 flex flex-col justify-center">
                   <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">Revenue Today</div>
-                  <div className="text-5xl font-extrabold text-orange-500 tracking-tight">AED {data.totalRevenue.toFixed(0)}</div>
+                  <div className="text-5xl font-extrabold tracking-tight" style={{ color: 'var(--brand)' }}>AED {data.totalRevenue.toFixed(0)}</div>
                   <div className="text-sm text-gray-400 mt-2">{data.totalOrders} order{data.totalOrders !== 1 ? 's' : ''} placed</div>
                   <div className="flex items-center gap-1.5 mt-4 text-xs text-green-500 font-semibold">
                     <ArrowUpRight size={13} /> Live — refreshes with each order

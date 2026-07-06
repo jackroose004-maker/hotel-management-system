@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Welcome to {{restaurantName}}</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:48px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+
+          <!-- Brand header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,{{brandColor}} 0%,{{brandColorDark}} 100%);border-radius:16px 16px 0 0;padding:40px 40px 32px;text-align:center;">
+              {{#if logoUrl}}
+                <img src="{{logoUrl}}" alt="{{restaurantName}}" width="60" height="60"
+                  style="border-radius:16px;object-fit:cover;display:block;margin:0 auto 14px;box-shadow:0 4px 16px rgba(0,0,0,0.25);" />
+              {{/if}}
+              <h1 style="margin:0 0 4px;color:#fff;font-size:20px;font-weight:700;">
+                {{restaurantName}}
+              </h1>
+              <p style="margin:0;color:rgba(255,255,255,0.75);font-size:13px;">
+                Your account is ready
+              </p>
+            </td>
+          </tr>
+
+          <!-- White card body -->
+          <tr>
+            <td style="background:#ffffff;padding:40px 40px 32px;">
+
+              <h2 style="margin:0 0 8px;color:#111;font-size:26px;font-weight:800;">
+                Welcome, {{name}}! 🎉
+              </h2>
+              <p style="margin:0 0 28px;color:#555;font-size:15px;line-height:1.6;">
+                You're all set at <strong style="color:#111;">{{restaurantName}}</strong>.
+                Track your orders, save favourites, and check out faster every visit.
+              </p>
+
+              <!-- Account card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9f9f9;border:1.5px solid #e5e5e5;border-radius:12px;margin-bottom:28px;">
+                <tr>
+                  <td style="padding:14px 20px;border-bottom:1px solid #efefef;">
+                    <span style="color:#999;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Email</span><br />
+                    <span style="color:#111;font-size:14px;font-weight:500;">{{email}}</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:14px 20px;">
+                    <span style="color:#999;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Member since</span><br />
+                    <span style="color:#111;font-size:14px;font-weight:500;">{{joinedAt}}</span>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CTA -->
+              <div style="text-align:center;margin-bottom:28px;">
+                <a href="{{menuUrl}}"
+                  style="display:inline-block;background:{{brandColor}};color:#fff;font-size:14px;font-weight:700;
+                         text-decoration:none;padding:14px 36px;border-radius:50px;letter-spacing:0.2px;">
+                  Browse the Menu →
+                </a>
+              </div>
+
+              <p style="margin:0;color:#999;font-size:12px;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+                Questions? Just reply to this email — we're always happy to help.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f4f4f5;border-radius:0 0 16px 16px;padding:20px 40px;text-align:center;">
+              <p style="margin:0;color:#aaa;font-size:11px;">
+                © {{year}} {{restaurantName}}. You're receiving this because you created an account.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

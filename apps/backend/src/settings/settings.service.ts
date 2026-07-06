@@ -43,6 +43,8 @@ export class SettingsService {
     brandPreset: string
     brandColor: string
     showLanguageToggle: boolean
+    vatNumber: string
+    billConfig: Record<string, any>
   }>) {
     const current = await this.get()
     return this.prisma.restaurantSettings.update({

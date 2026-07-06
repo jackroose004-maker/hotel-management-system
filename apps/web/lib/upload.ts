@@ -36,3 +36,25 @@ export async function uploadImage(
   return json.secure_url as string
 }
 
+export async function uploadVideo(
+  file: File | Blob,
+  folder: string,
+): Promise<string> {
+  if (!CLOUD || !PRESET) throw new Error('Cloudinary env vars not set')
+
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('upload_preset', PRESET)
+  fd.append('folder', folder)
+
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD}/video/upload`, {
+    method: 'POST',
+    body: fd,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err?.error?.message ?? 'Cloudinary video upload failed')
+  }
+  const json = await res.json()
+  return json.secure_url as string
+}

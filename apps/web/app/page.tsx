@@ -18,7 +18,7 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 const FALLBACK_VIDEO  = 'https://assets.mixkit.co/videos/preview/mixkit-chef-seasoning-food-in-a-restaurant-kitchen-43235-large.mp4'
 const FALLBACK_POSTER = 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1920&q=90'
 
-interface MenuItem { id: string; name: string; nameAr?: string; description?: string; descriptionAr?: string; price: string; prepTimeMins: number; imageUrl?: string }
+interface MenuItem { id: string; name: string; nameAr?: string; description?: string; descriptionAr?: string; price: string; prepTimeMins: number; imageUrl?: string; videoUrl?: string }
 interface HeroConfig {
   line1?: string; line2?: string; subtext?: string; videoUrl?: string; posterUrl?: string
   line1Ar?: string; line2Ar?: string; subtextAr?: string; badgeTextAr?: string
@@ -133,7 +133,7 @@ function FoodShowcase({ items, ar, lang }: { items: { name: string; img: string 
             {items[idx].name}
           </h3>
         </div>
-        <Link href="/menu"
+        <Link href="/menu?new=1"
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 24px', borderRadius: 12, fontWeight: 700, fontSize: 13, color: '#000', backgroundColor: 'var(--brand)', textDecoration: 'none', flexShrink: 0 }}>
           {ar ? 'عرض القائمة' : 'View Menu'} {ar ? <ArrowLeft size={14} /> : <ArrowRight size={14} />}
         </Link>
@@ -149,7 +149,7 @@ function FoodShowcase({ items, ar, lang }: { items: { name: string; img: string 
 
 // ── Mobile signature gallery — editorial swipe, hero-style ───────────────────
 function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
-  dishes: typeof DISHES_FALLBACK
+  dishes: (typeof DISHES_FALLBACK[0] & { videoUrl?: string })[]
   mutedColor: string
   dotInactive: string
 }) {
@@ -210,12 +210,20 @@ function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
             }}
           >
             <div className="relative overflow-hidden rounded-[28px] border border-white/[0.08] shadow-[0_24px_60px_rgba(0,0,0,0.55)]" style={{ aspectRatio: '3/4.2' }}>
-              <img
-                src={d.img}
-                alt={d.name}
-                className="absolute inset-0 w-full h-full object-cover"
-                style={{ filter: 'brightness(0.72) saturate(0.9)' }}
-              />
+              {d.videoUrl
+                ? <video
+                    src={d.videoUrl}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    autoPlay loop muted playsInline
+                    style={{ filter: 'brightness(0.72) saturate(0.9)' }}
+                  />
+                : <img
+                    src={d.img}
+                    alt={d.name}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    style={{ filter: 'brightness(0.72) saturate(0.9)' }}
+                  />
+              }
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/25 to-black/10" />
               <div className="absolute inset-0 bg-gradient-to-br from-[var(--brand)]/10 via-transparent to-transparent" />
 
@@ -267,8 +275,8 @@ function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
 }
 
 // ── Dish Card — 3D float + rich hover (desktop) ─────────────────────────────
-function DishCard({ name, nameAr, desc, descAr, price, time, img, index, menuItemId, basePrice }: {
-  name: string; nameAr?: string; desc: string; descAr?: string; price: string; time: number; img: string; index?: number
+function DishCard({ name, nameAr, desc, descAr, price, time, img, videoUrl, index, menuItemId, basePrice }: {
+  name: string; nameAr?: string; desc: string; descAr?: string; price: string; time: number; img: string; videoUrl?: string; index?: number
   menuItemId?: string; basePrice?: number
 }) {
   const cardRef  = useRef<HTMLDivElement>(null)
@@ -344,14 +352,18 @@ function DishCard({ name, nameAr, desc, descAr, price, time, img, index, menuIte
 
       <div onClick={handleClick} style={{ display: 'block' }}>
         <div style={{ aspectRatio: '16/10', overflow: 'hidden', position: 'relative' }}>
-          {!imgFailed
-            ? <img ref={imgRef} src={img} alt={name}
-                className="w-full h-full object-cover"
-                style={{ transition: 'transform 0.55s ease', willChange: 'transform' }}
-                onError={() => setImgFailed(true)} />
-            : <div className="w-full h-full flex items-center justify-center" style={{ background: '#1a1000' }}>
-                <UtensilsCrossed size={32} className="text-[var(--brand)]/40" />
-              </div>
+          {videoUrl
+            ? <video src={videoUrl} className="w-full h-full object-cover"
+                autoPlay loop muted playsInline
+                style={{ transition: 'transform 0.55s ease', willChange: 'transform' }} />
+            : !imgFailed
+              ? <img ref={imgRef} src={img} alt={name}
+                  className="w-full h-full object-cover"
+                  style={{ transition: 'transform 0.55s ease', willChange: 'transform' }}
+                  onError={() => setImgFailed(true)} />
+              : <div className="w-full h-full flex items-center justify-center" style={{ background: '#1a1000' }}>
+                  <UtensilsCrossed size={32} className="text-[var(--brand)]/40" />
+                </div>
           }
 
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.1) 50%, transparent 100%)' }} />
@@ -580,7 +592,7 @@ export default function LandingPage() {
     phone: null, address: 'Dubai, UAE', logoUrl: null, openTime: '07:00', closeTime: '23:00',
     heroConfig: null,
   })
-  const [dishes,     setDishes]     = useState<typeof DISHES_FALLBACK>(DISHES_FALLBACK)
+  const [dishes,     setDishes]     = useState<(typeof DISHES_FALLBACK[0] & { videoUrl?: string })[]>(DISHES_FALLBACK)
   const [showcase,   setShowcase]   = useState<typeof SHOWCASE_FALLBACK>(SHOWCASE_FALLBACK)
   const [reviewIdx,  setReviewIdx]  = useState(0)
   const [dishPage,    setDishPage]    = useState(0)
@@ -769,22 +781,22 @@ export default function LandingPage() {
       if (s?.restaurantName) setCfg(s)
 
       const items: MenuItem[] = menuJson?.data ?? menuJson ?? []
-      const withImg = items.filter(i => i.imageUrl)
-      if (withImg.length >= 3) setShowcase(withImg.slice(0, 6).map(i => ({ name: i.name, img: i.imageUrl! })))
+      const withMedia = items.filter(i => i.imageUrl || i.videoUrl)
+      if (withMedia.length >= 3) setShowcase(withMedia.slice(0, 6).map(i => ({ name: i.name, img: i.imageUrl ?? '' })))
 
       const pinnedIds: string[] | undefined = s?.heroConfig?.signatureDishIds
       if (pinnedIds?.length) {
         // Use admin-selected dishes in the order they were chosen, skip any whose ID is gone from menu
-        const byId = Object.fromEntries(withImg.map(i => [i.id, i]))
+        const byId = Object.fromEntries(withMedia.map(i => [i.id, i]))
         const pinned = pinnedIds.map(id => byId[id]).filter(Boolean)
         if (pinned.length) {
-          setDishes(pinned.map(i => ({ name: i.name, nameAr: i.nameAr, desc: i.description ?? '', descAr: i.descriptionAr, price: i.price, time: i.prepTimeMins, img: i.imageUrl!, menuItemId: i.id, basePrice: Number(i.price) })))
+          setDishes(pinned.map(i => ({ name: i.name, nameAr: i.nameAr, desc: i.description ?? '', descAr: i.descriptionAr, price: i.price, time: i.prepTimeMins, img: i.imageUrl ?? '', videoUrl: i.videoUrl, menuItemId: i.id, basePrice: Number(i.price) })))
           return
         }
       }
-      // Auto: top items that have images (no hard cap — rotation handles paging)
-      const top = withImg.slice(0, 12)
-      if (top.length >= 4) setDishes(top.map(i => ({ name: i.name, nameAr: i.nameAr, desc: i.description ?? '', descAr: i.descriptionAr, price: i.price, time: i.prepTimeMins, img: i.imageUrl!, menuItemId: i.id, basePrice: Number(i.price) })))
+      // Auto: top items that have media (no hard cap — rotation handles paging)
+      const top = withMedia.slice(0, 12)
+      if (top.length >= 4) setDishes(top.map(i => ({ name: i.name, nameAr: i.nameAr, desc: i.description ?? '', descAr: i.descriptionAr, price: i.price, time: i.prepTimeMins, img: i.imageUrl ?? '', videoUrl: i.videoUrl, menuItemId: i.id, basePrice: Number(i.price) })))
     })
   }, [])
 
@@ -827,7 +839,7 @@ export default function LandingPage() {
                 {tr(lang, 'nav.book')}
               </Link>
               {hasActiveOrder && (
-                <Link href="/menu"
+                <Link href="/menu/orders"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold animate-pulse"
                   style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.35)' }}>
                   🔴 {tr(lang, 'nav.trackOrder')}
@@ -867,7 +879,7 @@ export default function LandingPage() {
                   {tr(lang, 'nav.signIn')}
                 </Link>
               )}
-              <Link href="/menu"
+              <Link href="/menu?new=1"
                 className="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all duration-200"
                 style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 2px 12px rgba(var(--brand-rgb),0.3)' }}
                 onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(var(--brand-rgb),0.5)' }}
@@ -1057,7 +1069,7 @@ export default function LandingPage() {
           </div>
 
           <div ref={heroCtaRef} className="flex flex-row gap-2.5 items-center justify-center mt-10 opacity-0 flex-wrap">
-            <Link href="/menu"
+            <Link href="/menu?new=1"
               className="flex items-center gap-2 rounded-2xl font-bold"
               style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 40px rgba(var(--brand-rgb),0.38)', padding: 'clamp(10px,2.5vw,16px) clamp(20px,5vw,32px)', fontSize: 'clamp(13px,3.5vw,16px)' }}>
               {(ar && cfg.heroConfig?.ctaLabelAr) ? cfg.heroConfig.ctaLabelAr : (cfg.heroConfig?.ctaLabel || 'Order Now')} {ar ? <ArrowLeft size={14} /> : <ArrowRight size={14} />}

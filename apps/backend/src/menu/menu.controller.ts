@@ -1,5 +1,7 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Query } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Query, UploadedFile, UseInterceptors, BadRequestException } from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
 import { MenuService } from './menu.service'
+import { MenuImportService } from './menu-import.service'
 import { CreateCategoryDto } from './dto/create-category.dto'
 import { CreateMenuItemDto, UpdateMenuItemDto } from './dto/create-menu-item.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
@@ -8,7 +10,7 @@ import { Roles } from '../common/decorators/roles.decorator'
 
 @Controller('menu')
 export class MenuController {
-  constructor(private menu: MenuService) {}
+  constructor(private menu: MenuService, private menuImport: MenuImportService) {}
 
   // Public
   @Get('categories')
@@ -93,6 +95,33 @@ export class MenuController {
   @Delete('modifier-groups/:id')
   deleteModifierGroup(@Param('id') id: string) {
     return this.menu.deleteModifierGroup(id)
+  }
+
+  // ─── Import / Export ─────────────────────────────────────────────────────
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER')
+  @Post('import/preview')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  importPreview(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file uploaded.')
+    return this.menuImport.parseFile(file.buffer, file.mimetype)
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER')
+  @Post('import/bulk')
+  importBulk(@Body() body: { rows: any[]; mode?: 'merge' | 'replace' }) {
+    if (!body?.rows?.length) throw new BadRequestException('No rows provided.')
+    return this.menuImport.bulkImport(body.rows, body.mode ?? 'merge')
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER')
+  @Get('export')
+  async exportMenu() {
+    const buffer = await this.menuImport.exportToXlsx()
+    return { base64: buffer.toString('base64') }
   }
 
   // ─── Modifier Options ─────────────────────────────────────────────────────

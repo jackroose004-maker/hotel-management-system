@@ -25,7 +25,8 @@ function CallbackHandler() {
       const user = JSON.parse(Buffer.from(userB64, 'base64').toString())
       setAuth(user, token)
       toast.success(`Welcome, ${user.name.split(' ')[0]}!`)
-      router.replace(decodeURIComponent(redirect))
+      const isStaff = user?.role && ['STAFF', 'MANAGER', 'OWNER'].includes(user.role)
+      router.replace(isStaff ? '/staff' : decodeURIComponent(redirect))
     } catch {
       toast.error('Sign-in failed. Please try again.')
       router.replace('/login')
@@ -33,11 +34,11 @@ function CallbackHandler() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex flex-col items-center justify-center gap-4">
-      <div className="w-12 h-12 bg-orange-500 rounded-2xl flex items-center justify-center animate-pulse">
-        <UtensilsCrossed size={22} className="text-white" />
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ backgroundColor: 'var(--background)' }}>
+      <div className="w-12 h-12 rounded-2xl flex items-center justify-center animate-pulse" style={{ backgroundColor: 'var(--brand, #f59e0b)' }}>
+        <UtensilsCrossed size={22} className="text-black" />
       </div>
-      <p className="text-sm text-gray-500 dark:text-gray-400">Signing you in…</p>
+      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Signing you in…</p>
     </div>
   )
 }
