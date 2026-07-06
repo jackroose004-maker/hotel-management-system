@@ -158,9 +158,13 @@ function AccountContent() {
 
   useEffect(() => {
     if (!token) { router.replace('/login?redirect=/account'); return }
+    if (user && ['STAFF', 'MANAGER', 'OWNER'].includes(user.role)) {
+      router.replace('/staff')
+      return
+    }
     if (searchParams.get('tab') === 'bookings') setTab('bookings')
     loadHome()
-  }, [token])
+  }, [token, user])
 
   useEffect(() => {
     if (user) {
@@ -202,7 +206,7 @@ function AccountContent() {
       const mJson = await mRes.json()
       const mData = mJson?.data ?? mJson
       const allItems: any[] = Array.isArray(mData) ? mData : []
-      const withImg = allItems.filter(i => i.imageUrl)
+      const withImg = allItems.filter(i => i.imageUrl || i.videoUrl)
 
       const sJson = sRes.ok ? await sRes.json() : null
       const pinnedIds: string[] | undefined = (sJson?.data ?? sJson)?.heroConfig?.signatureDishIds
@@ -215,14 +219,13 @@ function AccountContent() {
       }
 
       // Quick stats — load orders count & total spent without full data
+      // Do NOT set ordersLoaded here so the Orders tab runs the full merge (with localStorage guest orders)
       const oRes = await authFetch(`${API}/orders/mine`)
       if (oRes.ok) {
         const oJson = await oRes.json()
         const oData: any[] = Array.isArray(oJson?.data ?? oJson) ? (oJson?.data ?? oJson) : []
         setTotalOrders(oData.length)
         setTotalSpent(oData.reduce((s: number, o: any) => s + Number(o.total), 0))
-        setOrders(oData)
-        setOrdersLoaded(true)
         // Visits = unique paid sessions (dine-in groups by tableSessionId, takeaway counts individually)
         const paid = oData.filter((o: any) => o.paymentStatus === 'PAID')
         const sessions = new Set<string>()
@@ -571,14 +574,16 @@ function AccountContent() {
                     <div key={item.id} className="flex-shrink-0 w-28 rounded-2xl overflow-hidden cursor-pointer transition-all active:scale-[0.97]"
                       style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}
                       onClick={() => router.push(`/menu?open=${item.id}`)}>
-                      {item.imageUrl
-                        ? <img src={item.imageUrl} alt={item.name} className="w-full h-20 object-cover"
-                            onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
-                        : <div className="w-full h-20 flex items-center justify-center text-2xl" style={{ backgroundColor: '#1a1a1a' }}>🍽️</div>
+                      {item.videoUrl
+                        ? <video src={item.videoUrl} className="w-full h-20 object-cover" autoPlay loop muted playsInline />
+                        : item.imageUrl
+                          ? <img src={item.imageUrl} alt={item.name} className="w-full h-20 object-cover"
+                              onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
+                          : <div className="w-full h-20 flex items-center justify-center text-2xl" style={{ backgroundColor: '#1a1a1a' }}>🍽️</div>
                       }
                       <div className="p-2">
                         <div className="text-white text-[10px] font-semibold truncate">{item.name}</div>
-                        <div className="text-[10px] font-black mt-0.5" style={{ color: 'var(--brand)' }}>AED {Number(item.price).toFixed(0)}</div>
+                        <div className="text-[10px] font-black mt-0.5" style={{ color: 'var(--brand)' }}>AED {Number(item.price).toFixed(2)}</div>
                       </div>
                     </div>
                   ))}
@@ -610,9 +615,12 @@ function AccountContent() {
                         style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}
                         onClick={() => router.push(`/menu?open=${item.id}`)}>
                         <div className="h-28 overflow-hidden relative">
-                          <img src={item.imageUrl} alt={item.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                            onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
+                          {item.videoUrl
+                            ? <video src={item.videoUrl} className="w-full h-full object-cover" autoPlay loop muted playsInline />
+                            : <img src={item.imageUrl} alt={item.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
+                          }
                           <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
                             <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}>
                               <Plus size={16} className="text-black" />
@@ -622,7 +630,7 @@ function AccountContent() {
                         <div className="p-3">
                           <div className="font-semibold text-white text-xs truncate">{item.name}</div>
                           <div className="flex items-center justify-between mt-1">
-                            <span className="font-black text-sm" style={{ color: 'var(--brand)' }}>AED {Number(item.price).toFixed(0)}</span>
+                            <span className="font-black text-sm" style={{ color: 'var(--brand)' }}>AED {Number(item.price).toFixed(2)}</span>
                             <span className="text-gray-700 text-[10px] flex items-center gap-0.5"><Clock size={9} /> {item.prepTimeMins}m</span>
                           </div>
                         </div>
@@ -898,11 +906,13 @@ function AccountContent() {
                       <div className="group rounded-2xl overflow-hidden transition-all"
                         style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
                         <div className="relative h-32 overflow-hidden">
-                          {item.imageUrl
-                            ? <img src={item.imageUrl} alt={item.name}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
-                            : <div className="w-full h-full flex items-center justify-center text-4xl" style={{ backgroundColor: '#1a1a1a' }}>🍽️</div>
+                          {item.videoUrl
+                            ? <video src={item.videoUrl} className="w-full h-full object-cover" autoPlay loop muted playsInline />
+                            : item.imageUrl
+                              ? <img src={item.imageUrl} alt={item.name}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                  onError={e => { (e.target as HTMLImageElement).style.display='none' }} />
+                              : <div className="w-full h-full flex items-center justify-center text-4xl" style={{ backgroundColor: '#1a1a1a' }}>🍽️</div>
                           }
                           <button onClick={() => removeFav(item.id)}
                             className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center transition-colors"
@@ -916,7 +926,7 @@ function AccountContent() {
                             <div className="text-gray-700 text-[10px] line-clamp-2 mb-2">{item.description}</div>
                           )}
                           <div className="flex items-center justify-between">
-                            <span className="font-black text-sm" style={{ color: 'var(--brand)' }}>AED {Number(item.price).toFixed(0)}</span>
+                            <span className="font-black text-sm" style={{ color: 'var(--brand)' }}>AED {Number(item.price).toFixed(2)}</span>
                             <button
                               onClick={() => router.push(`/menu?open=${item.id}`)}
                               className="flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-lg"

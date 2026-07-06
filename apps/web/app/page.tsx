@@ -11,40 +11,52 @@ import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { useCartStore } from '@/store/cart'
 import { useBrandStore } from '@/store/brand'
-import { useLangStore, applyLangDir, t } from '@/store/lang'
+import { useLangStore, applyLangDir, t as tr } from '@/store/lang'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
 const FALLBACK_VIDEO  = 'https://assets.mixkit.co/videos/preview/mixkit-chef-seasoning-food-in-a-restaurant-kitchen-43235-large.mp4'
 const FALLBACK_POSTER = 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1920&q=90'
 
-interface MenuItem { id: string; name: string; description?: string; price: string; prepTimeMins: number; imageUrl?: string }
+interface MenuItem { id: string; name: string; nameAr?: string; description?: string; descriptionAr?: string; price: string; prepTimeMins: number; imageUrl?: string }
 interface HeroConfig {
   line1?: string; line2?: string; subtext?: string; videoUrl?: string; posterUrl?: string
   line1Ar?: string; line2Ar?: string; subtextAr?: string; badgeTextAr?: string
   heroMediaType?: 'video' | 'image'; heroImageUrl?: string
-  ctaLabel?: string; ctaSecondaryLabel?: string; badgeText?: string
-  dishesHeadline?: string; dishesSubtext?: string; signatureDishIds?: string[]
+  ctaLabel?: string; ctaLabelAr?: string
+  ctaSecondaryLabel?: string; ctaSecondaryLabelAr?: string
+  badgeText?: string
+  dishesHeadline?: string; dishesHeadlineAr?: string
+  dishesSubtext?: string; dishesSubtextAr?: string
+  signatureDishIds?: string[]
   customDishes?: Array<{ name: string; desc: string; price: string; time: string; img: string }>
-  relayTagline?: string; relayHeadline?: string; relayHeadlinePart2?: string
-  ambienceTagline?: string; ambienceHeadline?: string; ambienceHeadlinePart2?: string; ambienceDesc?: string
-  reviewsHeadline?: string
+  relayTagline?: string; relayTaglineAr?: string
+  relayHeadline?: string; relayHeadlineAr?: string
+  relayHeadlinePart2?: string; relayHeadlinePart2Ar?: string
+  ambienceTagline?: string; ambienceTaglineAr?: string
+  ambienceHeadline?: string; ambienceHeadlineAr?: string
+  ambienceHeadlinePart2?: string; ambienceHeadlinePart2Ar?: string
+  ambienceDesc?: string
+  reviewsHeadline?: string; reviewsHeadlineAr?: string
+  ambienceImages?: string[]
+  // legacy keys kept for backwards compat
   ambienceImg1?: string; ambienceImg2?: string; ambienceImg3?: string; ambienceImg4?: string
   ambienceImg5?: string; ambienceImg6?: string; ambienceImg7?: string; ambienceImg8?: string
 }
 interface RestaurantSettings {
-  restaurantName: string; tagline: string | null; phone: string | null
-  address: string | null; logoUrl: string | null; openTime: string; closeTime: string
-  heroConfig?: HeroConfig | null
+  restaurantName: string; restaurantNameAr?: string
+  tagline: string | null; taglineAr?: string | null
+  phone: string | null; address: string | null; logoUrl: string | null
+  openTime: string; closeTime: string; heroConfig?: HeroConfig | null
 }
 
 const DISHES_FALLBACK = [
-  { name: 'Malabar Biriyani',  desc: 'Fragrant basmati with tender chicken & caramelised onions', price: '55', time: 25, img: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=700&q=80',  menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
-  { name: 'Masala Dosa',       desc: 'Crispy golden crepe, spiced potato filling, fresh chutneys',  price: '22', time: 12, img: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=700&q=80', menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
-  { name: 'Appam & Stew',      desc: 'Lacy rice pancakes with velvety coconut milk stew',           price: '28', time: 15, img: 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=700&q=80', menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
-  { name: 'Kerala Fish Curry', desc: 'Spiced red curry with wild-caught fish & kudampuli',           price: '48', time: 20, img: 'https://images.unsplash.com/photo-1626508035297-0e8a5f53700b?w=700&q=80', menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
-  { name: 'Prawn Fry',         desc: 'Crispy prawns in Kerala masala with fresh curry leaves',      price: '65', time: 18, img: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=700&q=80',  menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
-  { name: 'Puttu & Kadala',    desc: 'Steamed rice cylinders with black chickpea curry',            price: '22', time: 10, img: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=700&q=80',  menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Malabar Biriyani',  nameAr: 'برياني مالابار' as string | undefined,    desc: 'Fragrant basmati with tender chicken & caramelised onions', descAr: 'أرز بسمتي عطري مع دجاج طري وبصل مكرمل' as string | undefined, price: '55', time: 25, img: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=700&q=80',  menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Masala Dosa',       nameAr: 'دوسا ماسالا' as string | undefined,       desc: 'Crispy golden crepe, spiced potato filling, fresh chutneys',  descAr: 'كريب ذهبي مقرمش بحشوة البطاطا المتبلة والصلصات الطازجة' as string | undefined, price: '22', time: 12, img: 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=700&q=80', menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Appam & Stew',      nameAr: 'أبام واليخنة' as string | undefined,      desc: 'Lacy rice pancakes with velvety coconut milk stew',           descAr: 'فطائر أرز رقيقة مع يخنة جوز الهند الكريمية' as string | undefined, price: '28', time: 15, img: 'https://images.unsplash.com/photo-1630383249896-424e482df921?w=700&q=80', menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Kerala Fish Curry', nameAr: 'كاري السمك الكيرالي' as string | undefined, desc: 'Spiced red curry with wild-caught fish & kudampuli',          descAr: 'كاري أحمر متبل مع سمك طازج وكودامبولي' as string | undefined, price: '48', time: 20, img: 'https://images.unsplash.com/photo-1626508035297-0e8a5f53700b?w=700&q=80', menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Prawn Fry',         nameAr: 'روبيان مقلي' as string | undefined,       desc: 'Crispy prawns in Kerala masala with fresh curry leaves',      descAr: 'روبيان مقرمش بالماسالا الكيرالية وأوراق الكاري الطازجة' as string | undefined, price: '65', time: 18, img: 'https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=700&q=80',  menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
+  { name: 'Puttu & Kadala',    nameAr: 'بوتو وكادالا' as string | undefined,      desc: 'Steamed rice cylinders with black chickpea curry',            descAr: 'أسطوانات أرز مطهوة على البخار مع كاري حمص أسود' as string | undefined, price: '22', time: 10, img: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?w=700&q=80',  menuItemId: undefined as string | undefined, basePrice: undefined as number | undefined },
 ]
 
 const SHOWCASE_FALLBACK = [
@@ -78,7 +90,7 @@ function fmtTime(t: string) {
 }
 
 // ── Full-bleed food showcase — premium auto-fade ──────────────────────────────
-function FoodShowcase({ items }: { items: { name: string; img: string }[] }) {
+function FoodShowcase({ items, ar, lang }: { items: { name: string; img: string }[]; ar: boolean; lang: import('@/store/lang').Lang }) {
   const [idx, setIdx] = useState(0)
   const [prev, setPrev] = useState<number | null>(null)
   const [fading, setFading] = useState(false)
@@ -115,7 +127,7 @@ function FoodShowcase({ items }: { items: { name: string; img: string }[] }) {
         className="flex items-end justify-between">
         <div>
           <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', marginBottom: 10 }}>
-            Featured Dish · {idx + 1} / {count}
+            {tr(lang, 'home.featuredDish')} · {idx + 1} / {count}
           </p>
           <h3 style={{ color: '#fff', fontSize: 'clamp(1.8rem,4vw,3rem)', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.02em' }}>
             {items[idx].name}
@@ -123,7 +135,7 @@ function FoodShowcase({ items }: { items: { name: string; img: string }[] }) {
         </div>
         <Link href="/menu"
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 24px', borderRadius: 12, fontWeight: 700, fontSize: 13, color: '#000', backgroundColor: 'var(--brand)', textDecoration: 'none', flexShrink: 0 }}>
-          View Menu <ArrowRight size={14} />
+          {ar ? 'عرض القائمة' : 'View Menu'} {ar ? <ArrowLeft size={14} /> : <ArrowRight size={14} />}
         </Link>
       </div>
 
@@ -144,6 +156,8 @@ function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [active, setActive] = useState(0)
   const router = useRouter()
+  const { lang } = useLangStore()
+  const ar = lang === 'ar'
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current
@@ -168,6 +182,7 @@ function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
         ref={scrollRef}
         onScroll={onScroll}
         className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-4 -mx-1 px-1"
+        dir="ltr"
         style={{ scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}
       >
         {dishes.map((d, i) => {
@@ -206,23 +221,23 @@ function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
 
               <div className="absolute top-5 left-5 right-5 flex items-start justify-between gap-3">
                 <span className="text-[10px] font-bold tracking-[0.22em] uppercase text-[var(--brand)]/90">
-                  Signature · {String(i + 1).padStart(2, '0')}
+                  {tr(lang, 'home.signature')} · {String(i + 1).padStart(2, '0')}
                 </span>
               </div>
 
               <div className="absolute bottom-0 left-0 right-0 p-5 pt-16">
                 <h3 className="text-white font-black text-[1.65rem] leading-[1.08] tracking-tight mb-2">
-                  {d.name}
+                  {(ar && d.nameAr) ? d.nameAr : d.name}
                 </h3>
                 <p className="text-white/55 text-sm leading-relaxed line-clamp-2 mb-5">
-                  {d.desc}
+                  {(ar && d.descAr) ? d.descAr : d.desc}
                 </p>
                 <div className="flex items-center justify-between gap-3">
                   <span className="inline-flex items-center gap-1.5 text-white/35 text-xs">
                     <Clock size={11} /> {d.time} min
                   </span>
                   <span className="inline-flex items-center gap-1.5 text-[var(--brand)] text-xs font-bold">
-                    Taste this <ArrowRight size={12} />
+                    {tr(lang, 'home.tasteThis')} {ar ? <ArrowLeft size={12} /> : <ArrowRight size={12} />}
                   </span>
                 </div>
               </div>
@@ -246,14 +261,14 @@ function SignatureDishesMobile({ dishes, mutedColor, dotInactive }: {
           />
         ))}
       </div>
-      <p className="text-center text-[11px] mt-3 tracking-wide" style={{ color: mutedColor }}>Swipe to explore</p>
+      <p className="text-center text-[11px] mt-3 tracking-wide" style={{ color: mutedColor }}>{tr(lang, 'home.swipeToExplore')}</p>
     </div>
   )
 }
 
 // ── Dish Card — 3D float + rich hover (desktop) ─────────────────────────────
-function DishCard({ name, desc, price, time, img, index, menuItemId, basePrice }: {
-  name: string; desc: string; price: string; time: number; img: string; index?: number
+function DishCard({ name, nameAr, desc, descAr, price, time, img, index, menuItemId, basePrice }: {
+  name: string; nameAr?: string; desc: string; descAr?: string; price: string; time: number; img: string; index?: number
   menuItemId?: string; basePrice?: number
 }) {
   const cardRef  = useRef<HTMLDivElement>(null)
@@ -261,6 +276,8 @@ function DishCard({ name, desc, price, time, img, index, menuItemId, basePrice }
   const [imgFailed, setImgFailed] = useState(false)
   const [hovered,   setHovered]   = useState(false)
   const router = useRouter()
+  const { lang } = useLangStore()
+  const ar = lang === 'ar'
 
   const handleClick = useCallback(() => {
     router.push(menuItemId ? `/menu?open=${menuItemId}` : '/menu')
@@ -354,7 +371,7 @@ function DishCard({ name, desc, price, time, img, index, menuItemId, basePrice }
               boxShadow: '0 4px 20px rgba(var(--brand-rgb),0.5)',
               width: '100%', justifyContent: 'center',
             }}>
-              Order Now <ArrowRight size={12} />
+              {tr(lang, 'nav.orderNow')} {ar ? <ArrowLeft size={12} /> : <ArrowRight size={12} />}
             </div>
           </div>
 
@@ -365,8 +382,8 @@ function DishCard({ name, desc, price, time, img, index, menuItemId, basePrice }
             color: '#f5f3ef', fontWeight: 700, fontSize: 15, lineHeight: 1.3, marginBottom: 6,
             transform: hovered ? 'translateX(4px)' : 'translateX(0)',
             transition: 'transform 0.3s ease',
-          }}>{name}</h3>
-          <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, lineHeight: 1.65 }}>{desc}</p>
+          }}>{(ar && nameAr) ? nameAr : name}</h3>
+          <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12, lineHeight: 1.65 }}>{(ar && descAr) ? descAr : desc}</p>
           <div className="flex items-center gap-1.5 mt-4" style={{ color: 'rgba(255,255,255,0.22)', fontSize: 11 }}>
             <Clock size={10} /> {time} min
           </div>
@@ -452,6 +469,8 @@ function ReviewCard({ t, i, dark }: {
   t: typeof TESTIMONIALS[0]; i: number; dark: boolean
 }) {
   const [flipped, setFlipped] = useState(false)
+  const { lang } = useLangStore()
+  const ar = lang === 'ar'
 
   const cardBg = dark
     ? 'linear-gradient(145deg, rgba(30,24,16,0.95) 0%, rgba(20,16,8,0.98) 100%)'
@@ -498,7 +517,7 @@ function ReviewCard({ t, i, dark }: {
           </p>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
             <span style={{ color: textMuted, fontSize: 11, fontWeight: 600 }}>{t.name}</span>
-            <span style={{ color: 'rgba(var(--brand-rgb),0.5)', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em' }}>TAP TO FLIP →</span>
+            <span style={{ color: 'rgba(var(--brand-rgb),0.5)', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em' }}>{tr(lang, 'home.tapToFlip')}</span>
           </div>
         </div>
 
@@ -707,9 +726,10 @@ export default function LandingPage() {
 
   // Auto-rotate ambience photos — only when more than 4 are set
   useEffect(() => {
-    const allAmb = [1,2,3,4,5,6,7,8]
-      .map(i => cfg.heroConfig?.[`ambienceImg${i}` as keyof typeof cfg.heroConfig] as string | undefined)
-      .filter(Boolean) as string[]
+    const allAmb = (cfg.heroConfig?.ambienceImages?.length
+      ? cfg.heroConfig.ambienceImages
+      : [1,2,3,4,5,6,7,8].map(i => cfg.heroConfig?.[`ambienceImg${i}` as keyof typeof cfg.heroConfig] as string | undefined)
+    ).filter(Boolean) as string[]
     if (allAmb.length <= 4) return
     const pages = Math.ceil(allAmb.length / 4)
     const t = setInterval(() => {
@@ -758,13 +778,13 @@ export default function LandingPage() {
         const byId = Object.fromEntries(withImg.map(i => [i.id, i]))
         const pinned = pinnedIds.map(id => byId[id]).filter(Boolean)
         if (pinned.length) {
-          setDishes(pinned.map(i => ({ name: i.name, desc: i.description ?? '', price: i.price, time: i.prepTimeMins, img: i.imageUrl!, menuItemId: i.id, basePrice: Number(i.price) })))
+          setDishes(pinned.map(i => ({ name: i.name, nameAr: i.nameAr, desc: i.description ?? '', descAr: i.descriptionAr, price: i.price, time: i.prepTimeMins, img: i.imageUrl!, menuItemId: i.id, basePrice: Number(i.price) })))
           return
         }
       }
       // Auto: top items that have images (no hard cap — rotation handles paging)
       const top = withImg.slice(0, 12)
-      if (top.length >= 4) setDishes(top.map(i => ({ name: i.name, desc: i.description ?? '', price: i.price, time: i.prepTimeMins, img: i.imageUrl!, menuItemId: i.id, basePrice: Number(i.price) })))
+      if (top.length >= 4) setDishes(top.map(i => ({ name: i.name, nameAr: i.nameAr, desc: i.description ?? '', descAr: i.descriptionAr, price: i.price, time: i.prepTimeMins, img: i.imageUrl!, menuItemId: i.id, basePrice: Number(i.price) })))
     })
   }, [])
 
@@ -778,105 +798,107 @@ export default function LandingPage() {
           backdropFilter: scrolled ? 'blur(20px)' : 'none',
           borderBottom: scrolled ? `1px solid ${pal.border}` : '1px solid transparent',
         }}>
-        <div style={{ padding: '0 clamp(1.25rem,5vw,6rem)' }} className="h-[60px] flex items-center gap-4">
-
-          {/* ── Logo ── */}
-          <Link href="/" className="flex items-center gap-2 flex-shrink-0">
-            {cfg.logoUrl
-              ? <img src={cfg.logoUrl} alt={cfg.restaurantName} className="w-8 h-8 rounded-lg object-cover" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.35)' }} />
-              : <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}><UtensilsCrossed size={14} className="text-black" /></div>
-            }
-            <span className="hidden sm:block font-black text-sm tracking-tight" style={{ color: scrolled ? pal.text : '#fff' }}>{(ar && cfg.restaurantNameAr) ? cfg.restaurantNameAr : cfg.restaurantName}</span>
-          </Link>
-
-          {/* ── Center nav ── */}
-          <div className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
-            <Link href="/menu"
-              className="px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200"
-              style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}
-              onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
-              onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
-              Menu
+        {/* shared sub-components rendered in different DOM order for EN vs AR */}
+        {(() => {
+          const navLogo = (
+            <Link href="/" className="flex items-center gap-2 flex-shrink-0">
+              {cfg.logoUrl
+                ? <img src={cfg.logoUrl} alt={cfg.restaurantName} className="w-8 h-8 rounded-lg object-cover" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.35)' }} />
+                : <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }}><UtensilsCrossed size={14} className="text-black" /></div>
+              }
+              <span className="hidden sm:block font-black text-sm tracking-tight" style={{ color: scrolled ? pal.text : '#fff' }}>{(ar && cfg.restaurantNameAr) ? cfg.restaurantNameAr : cfg.restaurantName}</span>
             </Link>
-            <Link href="/book"
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200"
-              style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}
-              onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
-              onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
-              <CalendarDays size={13} style={{ opacity: 0.7 }} />
-              Book a Table
-            </Link>
-            {hasActiveOrder && (
+          )
+          const navCenter = (
+            <div className="hidden md:flex items-center gap-0.5 absolute left-1/2 -translate-x-1/2">
               <Link href="/menu"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold animate-pulse"
-                style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.35)' }}>
-                🔴 Track Order
-              </Link>
-            )}
-          </div>
-
-          {/* ── Right cluster ── */}
-          <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
-            {showLanguageToggle && (
-              <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
-                className="hidden md:flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200"
-                style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)', border: `1px solid ${scrolled ? pal.border : 'rgba(255,255,255,0.18)'}` }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = scrolled ? pal.text : '#fff' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}>
-                {lang === 'en' ? 'ع' : 'EN'}
-              </button>
-            )}
-
-            {token && user ? (
-              <Link href="/account"
-                className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200"
+                className="px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200"
                 style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}
                 onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
                 onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
-                <div style={{ width: 20, height: 20, borderRadius: '50%', backgroundColor: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 900, color: '#000' }}>
-                  {user.name?.[0]?.toUpperCase() ?? '?'}
+                {tr(lang, 'nav.menu')}
+              </Link>
+              <Link href="/book"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200"
+                style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}
+                onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
+                <CalendarDays size={13} style={{ opacity: 0.7 }} />
+                {tr(lang, 'nav.book')}
+              </Link>
+              {hasActiveOrder && (
+                <Link href="/menu"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold animate-pulse"
+                  style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.35)' }}>
+                  🔴 {tr(lang, 'nav.trackOrder')}
+                </Link>
+              )}
+            </div>
+          )
+          const navCluster = (
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {showLanguageToggle && (
+                <button onClick={() => setLang(lang === 'en' ? 'ar' : 'en')}
+                  className="hidden md:flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200"
+                  style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)', border: `1px solid ${scrolled ? pal.border : 'rgba(255,255,255,0.18)'}` }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = scrolled ? pal.text : '#fff' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}>
+                  {lang === 'en' ? 'ع' : 'EN'}
+                </button>
+              )}
+              {token && user ? (
+                <Link href="/account"
+                  className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200"
+                  style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
+                  <div style={{ width: 20, height: 20, borderRadius: '50%', backgroundColor: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 900, color: '#000' }}>
+                    {user.name?.[0]?.toUpperCase() ?? '?'}
+                  </div>
+                  {user.name?.split(' ')[0]}
+                </Link>
+              ) : (
+                <Link href="/login"
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200"
+                  style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
+                  <User size={13} />
+                  {tr(lang, 'nav.signIn')}
+                </Link>
+              )}
+              <Link href="/menu"
+                className="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all duration-200"
+                style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 2px 12px rgba(var(--brand-rgb),0.3)' }}
+                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(var(--brand-rgb),0.5)' }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 12px rgba(var(--brand-rgb),0.3)' }}>
+                {tr(lang, 'nav.orderNow')}
+              </Link>
+              {token && user && (
+                <button onClick={() => logout()} title="Sign out"
+                  className="hidden md:flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200"
+                  style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.45)' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.45)'; (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent' }}>
+                  <LogOut size={14} />
+                </button>
+              )}
+              <button onClick={() => setNavOpen(v => !v)} className="md:hidden p-2 rounded-lg transition-colors"
+                style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.7)', backgroundColor: navOpen ? (scrolled ? pal.bg3 : 'rgba(255,255,255,0.1)') : 'transparent' }}>
+                <div className="w-5 flex flex-col gap-[5px]">
+                  <span className={`h-[1.5px] bg-current rounded transition-all duration-300 ${navOpen ? 'rotate-45 translate-y-[6.5px]' : ''}`} />
+                  <span className={`h-[1.5px] bg-current rounded transition-all duration-300 ${navOpen ? 'opacity-0 scale-x-0' : ''}`} />
+                  <span className={`h-[1.5px] bg-current rounded transition-all duration-300 ${navOpen ? '-rotate-45 -translate-y-[6.5px]' : ''}`} />
                 </div>
-                {user.name?.split(' ')[0]}
-              </Link>
-            ) : (
-              <Link href="/login"
-                className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200"
-                style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}
-                onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
-                onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
-                <User size={13} />
-                Sign In
-              </Link>
-            )}
-
-            <Link href="/menu"
-              className="hidden md:flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold transition-all duration-200"
-              style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 2px 12px rgba(var(--brand-rgb),0.3)' }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(var(--brand-rgb),0.5)' }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 12px rgba(var(--brand-rgb),0.3)' }}>
-              Order Now
-            </Link>
-
-            {token && user && (
-              <button onClick={() => logout()} title="Sign out"
-                className="hidden md:flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200"
-                style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.45)' }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ef4444'; (e.currentTarget as HTMLElement).style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.45)'; (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent' }}>
-                <LogOut size={14} />
               </button>
-            )}
-
-            <button onClick={() => setNavOpen(v => !v)} className="md:hidden p-2 rounded-lg transition-colors"
-              style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.7)', backgroundColor: navOpen ? (scrolled ? pal.bg3 : 'rgba(255,255,255,0.1)') : 'transparent' }}>
-              <div className="w-5 flex flex-col gap-[5px]">
-                <span className={`h-[1.5px] bg-current rounded transition-all duration-300 ${navOpen ? 'rotate-45 translate-y-[6.5px]' : ''}`} />
-                <span className={`h-[1.5px] bg-current rounded transition-all duration-300 ${navOpen ? 'opacity-0 scale-x-0' : ''}`} />
-                <span className={`h-[1.5px] bg-current rounded transition-all duration-300 ${navOpen ? '-rotate-45 -translate-y-[6.5px]' : ''}`} />
-              </div>
-            </button>
-          </div>
-        </div>
+            </div>
+          )
+          return (
+            <div dir="ltr" style={{ padding: '0 clamp(1.25rem,5vw,6rem)' }} className="relative h-[60px] flex items-center justify-between">
+              {ar ? <>{navCluster}{navCenter}{navLogo}</> : <>{navLogo}{navCenter}{navCluster}</>}
+            </div>
+          )
+        })()}
 
         {/* Mobile sidebar — fixed right drawer */}
         {navOpen && (
@@ -924,10 +946,10 @@ export default function LandingPage() {
               {/* Nav links */}
               <nav className="flex-1 p-5 space-y-1">
                 {[
-                  { href: '/menu',    label: t(lang, 'nav.menu'),  icon: '🍽️' },
+                  { href: '/menu',    label: tr(lang, 'nav.menu'),  icon: '🍽️' },
                   ...(hasActiveOrder ? [{ href: '/menu?track=1', label: ar ? 'تتبع الطلب' : 'Track Order', icon: '🔴' }] : []),
-                  { href: '/book',    label: t(lang, 'nav.book'),  icon: '📅' },
-                  { href: token ? '/account' : '/login', label: token && user ? user.name?.split(' ')[0] ?? t(lang, 'nav.myAccount') : t(lang, 'nav.signIn'), icon: '👤' },
+                  { href: '/book',    label: tr(lang, 'nav.book'),  icon: '📅' },
+                  { href: token ? '/account' : '/login', label: token && user ? user.name?.split(' ')[0] ?? tr(lang, 'nav.myAccount') : tr(lang, 'nav.signIn'), icon: '👤' },
                 ].map(n => (
                   <Link key={n.href} href={n.href} onClick={() => setNavOpen(false)}
                     className="flex items-center gap-3 px-4 py-3.5 rounded-xl text-sm font-semibold transition-all"
@@ -955,7 +977,7 @@ export default function LandingPage() {
                   <button onClick={() => { setNavOpen(false); logout() }}
                     className="flex items-center justify-center gap-2 py-3 rounded-2xl font-semibold text-sm w-full"
                     style={{ border: '1px solid rgba(239,68,68,0.25)', color: '#ef4444' }}>
-                    <LogOut size={13} /> {t(lang, 'nav.signOut')}
+                    <LogOut size={13} /> {tr(lang, 'nav.signOut')}
                   </button>
                 )}
               </div>
@@ -967,7 +989,7 @@ export default function LandingPage() {
       {/* ══════════════════════════════════════
           HERO
       ══════════════════════════════════════ */}
-      <section ref={heroRef} className="relative flex flex-col items-center justify-center overflow-hidden" style={{ height: '100svh', minHeight: 680 }}>
+      <section ref={heroRef} dir="ltr" className="relative flex flex-col items-center justify-center overflow-hidden" style={{ height: '100svh', minHeight: 680 }}>
         <div className="absolute inset-0 overflow-hidden">
           {cfg.heroConfig?.heroMediaType === 'image' ? (
             <img
@@ -984,7 +1006,7 @@ export default function LandingPage() {
               autoPlay muted loop playsInline
               poster={cfg.heroConfig?.posterUrl || FALLBACK_POSTER}
               className="w-full h-full object-cover"
-              style={{ opacity: 0.5, filter: 'saturate(0.7) brightness(0.85)', transformOrigin: 'center center', willChange: 'transform' }}
+              style={{ opacity: 0.5, filter: 'saturate(0.7) brightness(0.85)', transform: 'scale(1.12)', transformOrigin: 'center center', willChange: 'transform' }}
             />
           )}
         </div>
@@ -1038,7 +1060,7 @@ export default function LandingPage() {
             <Link href="/menu"
               className="flex items-center gap-2 rounded-2xl font-bold"
               style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 40px rgba(var(--brand-rgb),0.38)', padding: 'clamp(10px,2.5vw,16px) clamp(20px,5vw,32px)', fontSize: 'clamp(13px,3.5vw,16px)' }}>
-              {(ar && cfg.heroConfig?.ctaLabelAr) ? cfg.heroConfig.ctaLabelAr : (cfg.heroConfig?.ctaLabel || 'Order Now')} <ArrowRight size={14} />
+              {(ar && cfg.heroConfig?.ctaLabelAr) ? cfg.heroConfig.ctaLabelAr : (cfg.heroConfig?.ctaLabel || 'Order Now')} {ar ? <ArrowLeft size={14} /> : <ArrowRight size={14} />}
             </Link>
             <Link href="/book"
               className="flex items-center gap-2 rounded-2xl font-medium"
@@ -1050,12 +1072,12 @@ export default function LandingPage() {
           </div>
 
           {/* Stats */}
-          <div className="flex items-center gap-8 mt-14"
+          <div dir="ltr" className="flex items-center gap-8 mt-14"
             style={{ opacity: 0, animation: 'fadeUp 0.7s ease forwards 1.5s' }}>
             {[
-              { value: '4.8', label: '500+ reviews', sub: true },
-              { value: '18m', label: 'Avg prep time', sub: false },
-              { value: fmtTime(cfg.openTime), label: 'Opens daily', sub: false },
+              { value: '4.8', label: tr(lang, 'home.reviews'), sub: true },
+              { value: '18m', label: tr(lang, 'home.avgPrepTime'), sub: false },
+              { value: fmtTime(cfg.openTime), label: tr(lang, 'home.opensDaily'), sub: false },
             ].map((s, i) => (
               <div key={i} className="flex items-center gap-8">
                 {i > 0 && <div style={{ width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' }} />}
@@ -1071,7 +1093,7 @@ export default function LandingPage() {
 
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5"
           style={{ opacity: 0, animation: 'fadeUp 0.6s ease forwards 2s' }}>
-          <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 600, letterSpacing: '0.2em', textTransform: 'uppercase' }}>Scroll</span>
+          <span style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 600, letterSpacing: '0.2em', textTransform: 'uppercase' }}>{tr(lang, 'home.scroll')}</span>
           <ChevronDown size={14} style={{ color: 'rgba(255,255,255,0.25)', animation: 'bobY 2.5s ease-in-out infinite' }} />
         </div>
       </section>
@@ -1090,14 +1112,14 @@ export default function LandingPage() {
           { top:  '86%', height: 'clamp(110px,14vh,180px)', speed: 125, reverse: true,   blur: 0    },
         ]
         return (
-          <section ref={relayRef} style={{ position: 'relative', height: '90vh', minHeight: 560, backgroundColor: '#060504', overflow: 'hidden' }}>
+          <section ref={relayRef} dir="ltr" style={{ position: 'relative', height: '90vh', minHeight: 560, backgroundColor: '#060504', overflow: 'hidden' }}>
 
             {/* subtle grain texture overlay */}
             <div style={{ position: 'absolute', inset: 0, backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=\'0 0 200 200\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'0.85\' numOctaves=\'4\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'100%25\' height=\'100%25\' filter=\'url(%23n)\' opacity=\'0.04\'/%3E%3C/svg%3E")', opacity: 0.4, pointerEvents: 'none', zIndex: 1 }} />
 
             {strips.map((s, si) => (
               <div key={si} style={{ position: 'absolute', top: s.top, left: '-22%', width: '144%', transform: 'rotate(-9deg)', zIndex: 0 }}>
-                <div style={{ display: 'flex', gap: 12, animation: `marqueeX ${s.speed}s linear infinite ${s.reverse ? 'reverse' : ''}`, width: 'max-content' }}>
+                <div dir="ltr" style={{ display: 'flex', gap: 12, animation: `marqueeX ${s.speed}s linear infinite ${s.reverse ? 'reverse' : ''}`, width: 'max-content' }}>
                   {row.map((item, i) => (
                     <div key={`${si}-${i}`} className="flex-shrink-0 relative overflow-hidden group"
                       style={{
@@ -1155,7 +1177,7 @@ export default function LandingPage() {
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', borderRadius: 100, fontWeight: 700, fontSize: 14, backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 0 0 1px rgba(var(--brand-rgb),0.3), 0 8px 48px rgba(var(--brand-rgb),0.42)', letterSpacing: '0.01em', textDecoration: 'none', transition: 'transform 0.2s, box-shadow 0.2s' }}
                   onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(-2px)'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 0 0 1px rgba(var(--brand-rgb),0.4), 0 12px 56px rgba(var(--brand-rgb),0.55)' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 0 0 1px rgba(var(--brand-rgb),0.3), 0 8px 48px rgba(var(--brand-rgb),0.42)' }}>
-                  Explore Menu <ArrowRight size={15} />
+                  {tr(lang, 'home.exploreMenu')} {ar ? <ArrowLeft size={15} /> : <ArrowRight size={15} />}
                 </Link>
               </div>
             </div>
@@ -1176,7 +1198,7 @@ export default function LandingPage() {
           </div>
           <Link href="/menu" className="flex items-center gap-2 text-sm font-semibold flex-shrink-0 self-start sm:self-auto"
             style={{ color: 'var(--brand)' }}>
-            Full Menu <ArrowRight size={14} />
+            {ar ? 'القائمة الكاملة' : 'Full Menu'} {ar ? <ArrowLeft size={14} /> : <ArrowRight size={14} />}
           </Link>
         </div>
         {(() => {
@@ -1201,6 +1223,7 @@ export default function LandingPage() {
               <div className="hidden md:block">
                 <div
                   key={dishPageKey}
+                  dir="ltr"
                   className="md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-4"
                   style={{ animation: 'dishFadeIn 0.45s ease both' }}
                 >
@@ -1239,9 +1262,10 @@ export default function LandingPage() {
           AMBIENCE + LOCATION — editorial mosaic
       ══════════════════════════════════════ */}
       {(() => {
-        const allAmb = [1,2,3,4,5,6,7,8]
-          .map(i => cfg.heroConfig?.[`ambienceImg${i}` as keyof typeof cfg.heroConfig] as string | undefined)
-          .filter(Boolean) as string[]
+        const allAmb = (cfg.heroConfig?.ambienceImages?.length
+          ? cfg.heroConfig.ambienceImages
+          : [1,2,3,4,5,6,7,8].map(i => cfg.heroConfig?.[`ambienceImg${i}` as keyof typeof cfg.heroConfig] as string | undefined)
+        ).filter(Boolean) as string[]
         const fallback = AMBIENCE
         const rawPool = allAmb.length >= 4 ? allAmb : fallback
         // always show at least 8 images (2 pages) by cycling the source
@@ -1308,64 +1332,6 @@ export default function LandingPage() {
           )}
         </div>
 
-        {/* Info strip — stacked cards on mobile, horizontal on desktop */}
-        <div className="rounded-[20px] border border-white/[0.07] bg-white/[0.03] overflow-hidden">
-
-          {/* Open badge — full-width row on mobile */}
-          <div className="md:hidden flex items-center justify-center gap-2 py-3 border-b border-white/[0.07]">
-            <span className="animate-pulse inline-block w-[7px] h-[7px] rounded-full bg-green-500" />
-            <span className="text-green-300 text-xs font-semibold">Open now</span>
-          </div>
-
-          <div className="flex flex-col divide-y divide-white/[0.07] md:flex-row md:divide-y-0 md:flex-wrap md:items-center">
-            {/* Location */}
-            <div className="flex items-center gap-3.5 px-4 py-4 md:flex-1 md:min-w-[200px] md:px-6 md:py-5 md:border-r md:border-white/[0.07]">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', border: '1px solid rgba(var(--brand-rgb),0.18)' }}>
-                <MapPin size={15} style={{ color: 'var(--brand)' }} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-white font-semibold text-sm leading-snug">{cfg.address ?? 'Dubai, UAE'}</p>
-                <a href={`https://maps.google.com/?q=${encodeURIComponent(cfg.address ?? 'Dubai UAE')}`}
-                  target="_blank" rel="noopener noreferrer"
-                  className="inline-block mt-1 text-[11px] font-semibold no-underline"
-                  style={{ color: 'var(--brand)' }}>
-                  Get directions →
-                </a>
-              </div>
-            </div>
-
-            {/* Hours */}
-            <div className="flex items-center gap-3.5 px-4 py-4 md:flex-1 md:min-w-[180px] md:px-6 md:py-5 md:border-r md:border-white/[0.07]">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', border: '1px solid rgba(var(--brand-rgb),0.18)' }}>
-                <Clock size={15} style={{ color: 'var(--brand)' }} />
-              </div>
-              <div>
-                <p className="text-white font-semibold text-sm">{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
-                <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Every day</p>
-              </div>
-            </div>
-
-            {/* Phone */}
-            {cfg.phone && (
-              <div className="flex items-center gap-3.5 px-4 py-4 md:flex-1 md:min-w-[160px] md:px-6 md:py-5 md:border-r md:border-white/[0.07]">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', border: '1px solid rgba(var(--brand-rgb),0.18)' }}>
-                  <Phone size={15} style={{ color: 'var(--brand)' }} />
-                </div>
-                <div>
-                  <p className="text-white font-semibold text-sm">{cfg.phone}</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>Reservations</p>
-                </div>
-              </div>
-            )}
-
-            {/* Open badge — inline on desktop only */}
-            <div className="hidden md:flex items-center gap-2 px-5 py-2.5 rounded-full ml-auto mr-5 my-3 flex-shrink-0"
-              style={{ backgroundColor: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)' }}>
-              <span className="animate-pulse inline-block w-[7px] h-[7px] rounded-full bg-green-500" />
-              <span className="text-green-300 text-xs font-semibold whitespace-nowrap">Open now</span>
-            </div>
-          </div>
-        </div>
       </section>
         )
       })()}
@@ -1373,7 +1339,7 @@ export default function LandingPage() {
       {/* ══════════════════════════════════════
           TESTIMONIALS — flip-card relay
       ══════════════════════════════════════ */}
-      <section ref={reviewsRef} className="py-12 md:py-[clamp(4rem,9vh,6rem)] overflow-hidden relative" style={{ backgroundColor: dark ? '#050508' : '#f5f1eb' }}>
+      <section ref={reviewsRef} dir="ltr" className="py-12 md:py-[clamp(4rem,9vh,6rem)] overflow-hidden relative" style={{ backgroundColor: dark ? '#050508' : '#f5f1eb' }}>
 
         {/* Ambient blobs — desktop only */}
         <div className="hidden md:block absolute inset-0 pointer-events-none overflow-hidden">
@@ -1398,11 +1364,11 @@ export default function LandingPage() {
 
         {/* Header */}
         <div className="reviews-head text-center mb-6 md:mb-12 px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)] relative z-[1]">
-          <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 10 }}>Guest Reviews</p>
+          <p style={{ color: 'var(--brand)', fontSize: 10, fontWeight: 700, letterSpacing: '0.26em', textTransform: 'uppercase', marginBottom: 10 }}>{tr(lang, 'home.guestReviews')}</p>
           <h2 style={{ color: pal.text, fontSize: 'clamp(1.55rem,6.5vw,3rem)', fontWeight: 900, letterSpacing: '-0.03em', lineHeight: 1.08 }}>
             {(ar && cfg.heroConfig?.reviewsHeadlineAr) ? cfg.heroConfig.reviewsHeadlineAr : (cfg.heroConfig?.reviewsHeadline || 'Loved by every table')}
           </h2>
-          <p className="hidden md:block" style={{ color: pal.muted, fontSize: 13, marginTop: 10 }}>Tap any card to read the full review</p>
+          <p className="hidden md:block" style={{ color: pal.muted, fontSize: 13, marginTop: 10 }}>{tr(lang, 'menu.tapToRead')}</p>
         </div>
 
         {/* Mobile — single compact carousel */}
@@ -1415,7 +1381,7 @@ export default function LandingPage() {
           <div style={{ position: 'relative', marginBottom: 16, zIndex: 1 }}>
             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to right, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
             <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to left, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
-            <div className="review-relay-strip" style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 38s linear infinite', padding: '8px 16px' }}
+            <div dir="ltr" className="review-relay-strip" style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 38s linear infinite', padding: '8px 16px' }}
               onMouseEnter={e => (e.currentTarget.style.animationPlayState = 'paused')}
               onMouseLeave={e => (e.currentTarget.style.animationPlayState = 'running')}>
               {[...TESTIMONIALS, ...TESTIMONIALS].map((t, i) => (
@@ -1427,7 +1393,7 @@ export default function LandingPage() {
           <div style={{ position: 'relative', zIndex: 1 }}>
             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to right, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
             <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 120, zIndex: 2, pointerEvents: 'none', background: `linear-gradient(to left, ${dark ? '#050508' : '#f5f1eb'}, transparent)` }} />
-            <div style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 44s linear infinite reverse', padding: '8px 16px 4px' }}
+            <div dir="ltr" style={{ display: 'flex', gap: 16, width: 'max-content', animation: 'marqueeX 44s linear infinite reverse', padding: '8px 16px 4px' }}
               onMouseEnter={e => (e.currentTarget.style.animationPlayState = 'paused')}
               onMouseLeave={e => (e.currentTarget.style.animationPlayState = 'running')}>
               {[...TESTIMONIALS.slice().reverse(), ...TESTIMONIALS.slice().reverse()].map((t, i) => (
@@ -1445,7 +1411,7 @@ export default function LandingPage() {
             </div>
             <span style={{ color: pal.text, fontWeight: 800, fontSize: 14 }}>4.9</span>
           </div>
-          <span style={{ color: pal.muted, fontSize: 12 }}>Based on 200+ reviews</span>
+          <span style={{ color: pal.muted, fontSize: 12 }}>{tr(lang, 'home.basedOnReviews')}</span>
         </div>
       </section>
 
@@ -1457,18 +1423,18 @@ export default function LandingPage() {
             <Link href="/menu"
               className="col-span-2 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-bold no-underline"
               style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 28px rgba(var(--brand-rgb),0.28)' }}>
-              Order Now <ArrowRight size={14} />
+              {tr(lang, 'nav.orderNow')} {ar ? <ArrowLeft size={14} /> : <ArrowRight size={14} />}
             </Link>
             <Link href="/book"
               className="flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold no-underline border border-white/10"
               style={{ color: 'rgba(255,255,255,0.75)', backgroundColor: 'rgba(255,255,255,0.03)' }}>
-              <CalendarDays size={13} style={{ color: 'var(--brand)' }} /> Book Table
+              <CalendarDays size={13} style={{ color: 'var(--brand)' }} /> {tr(lang, 'home.bookTable')}
             </Link>
             <a href={`https://maps.google.com/?q=${encodeURIComponent(cfg.address ?? 'Dubai UAE')}`}
               target="_blank" rel="noopener noreferrer"
               className="flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold no-underline border border-white/10"
               style={{ color: 'rgba(255,255,255,0.75)', backgroundColor: 'rgba(255,255,255,0.03)' }}>
-              <MapPin size={13} style={{ color: 'var(--brand)' }} /> Directions
+              <MapPin size={13} style={{ color: 'var(--brand)' }} /> {tr(lang, 'home.directions')}
             </a>
           </div>
         </div>
@@ -1500,7 +1466,7 @@ export default function LandingPage() {
             </div>
 
             {/* Mobile: visit cards */}
-            <div className="md:hidden w-full grid grid-cols-1 gap-2.5">
+            <div dir="ltr" className="md:hidden w-full grid grid-cols-1 gap-2.5">
               <a href={`https://maps.google.com/?q=${encodeURIComponent(cfg.address ?? 'Dubai UAE')}`}
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-3 p-3.5 rounded-2xl border border-white/[0.07] no-underline"
@@ -1510,10 +1476,10 @@ export default function LandingPage() {
                   <MapPin size={14} style={{ color: 'var(--brand)' }} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 2 }}>Location</p>
+                  <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 2 }}>{tr(lang, 'home.location')}</p>
                   <p className="text-sm truncate" style={{ color: 'rgba(255,255,255,0.7)' }}>{cfg.address ?? 'Dubai, UAE'}</p>
                 </div>
-                <ArrowRight size={14} style={{ color: 'var(--brand)', flexShrink: 0 }} />
+                {ar ? <ArrowLeft size={14} style={{ color: 'var(--brand)', flexShrink: 0 }} /> : <ArrowRight size={14} style={{ color: 'var(--brand)', flexShrink: 0 }} />}
               </a>
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="flex items-center gap-2.5 p-3.5 rounded-2xl border border-white/[0.07]"
@@ -1523,7 +1489,7 @@ export default function LandingPage() {
                     <Clock size={14} style={{ color: 'var(--brand)' }} />
                   </div>
                   <div>
-                    <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>Hours</p>
+                    <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>{tr(lang, 'home.hours')}</p>
                     <p className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.7)' }}>{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
                   </div>
                 </div>
@@ -1536,7 +1502,7 @@ export default function LandingPage() {
                       <Phone size={14} style={{ color: 'var(--brand)' }} />
                     </div>
                     <div className="min-w-0">
-                      <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>Call</p>
+                      <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>{tr(lang, 'home.call')}</p>
                       <p className="text-xs font-semibold truncate" style={{ color: 'rgba(255,255,255,0.7)' }}>{cfg.phone}</p>
                     </div>
                   </a>
@@ -1548,8 +1514,8 @@ export default function LandingPage() {
                       <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                     </div>
                     <div>
-                      <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>Status</p>
-                      <p className="text-xs font-semibold text-green-400">Open now</p>
+                      <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>{tr(lang, 'home.status')}</p>
+                      <p className="text-xs font-semibold text-green-400">{tr(lang, 'home.openNow')}</p>
                     </div>
                   </div>
                 )}
@@ -1557,10 +1523,10 @@ export default function LandingPage() {
             </div>
 
             {/* Nav columns — 2-col grid on mobile, row on desktop */}
-            <div className="w-full lg:w-auto grid grid-cols-2 md:flex md:flex-wrap gap-6 md:gap-12">
+            <div dir="ltr" className="w-full lg:w-auto grid grid-cols-2 md:flex md:flex-wrap gap-6 md:gap-12">
               <div>
-                <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 12 }}>Explore</p>
-                {[{ href: '/menu', l: 'Menu' }, { href: '/book', l: 'Reserve a Table' }].map(n => (
+                <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 12 }}>{tr(lang, 'home.explore')}</p>
+                {[{ href: '/menu', l: tr(lang, 'nav.menu') }, { href: '/book', l: tr(lang, 'nav.book') }].map(n => (
                   <Link key={n.href} href={n.href} className="block mb-2.5 text-sm transition-colors py-0.5"
                     style={{ color: 'rgba(255,255,255,0.45)' }}
                     onMouseEnter={e => { e.currentTarget.style.color = 'var(--brand)' }}
@@ -1570,10 +1536,10 @@ export default function LandingPage() {
                 ))}
               </div>
               <div>
-                <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 12 }}>Account</p>
+                <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 12 }}>{tr(lang, 'home.account')}</p>
                 {[
-                  { href: token && user ? '/account' : '/login', l: token && user ? user.name?.split(' ')[0] ?? 'My Account' : 'Sign In' },
-                  { href: '/staff/login', l: 'Staff Portal' },
+                  { href: token && user ? '/account' : '/login', l: token && user ? user.name?.split(' ')[0] ?? tr(lang, 'nav.myAccount') : tr(lang, 'nav.signIn') },
+                  { href: '/staff/login', l: tr(lang, 'home.staffPortal') },
                 ].map(n => (
                   <Link key={n.href} href={n.href} className="block mb-2.5 text-sm transition-colors py-0.5"
                     style={{ color: 'rgba(255,255,255,0.45)' }}
@@ -1584,7 +1550,7 @@ export default function LandingPage() {
                 ))}
               </div>
               <div className="hidden md:block">
-                <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>Visit</p>
+                <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>{tr(lang, 'home.visit')}</p>
                 <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{cfg.address ?? 'Dubai, UAE'}</p>
                 <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
                 {cfg.phone && <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>{cfg.phone}</p>}
@@ -1595,11 +1561,11 @@ export default function LandingPage() {
 
         {/* Bottom bar */}
         <div className="px-4 sm:px-6 lg:px-[clamp(1.5rem,6vw,8rem)] py-4 md:py-3.5 flex flex-col items-center justify-center md:flex-row md:justify-between gap-3 text-center md:text-left">
-          <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: 11 }}>© 2026 {(ar && cfg.restaurantNameAr) ? cfg.restaurantNameAr : cfg.restaurantName}. All rights reserved.</p>
+          <p style={{ color: 'rgba(255,255,255,0.18)', fontSize: 11 }}>© 2026 {(ar && cfg.restaurantNameAr) ? cfg.restaurantNameAr : cfg.restaurantName}. {tr(lang, 'home.allRightsReserved')}</p>
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-green-500/20"
             style={{ backgroundColor: 'rgba(34,197,94,0.06)' }}>
             <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-green-500" />
-            <span className="text-green-400/80 text-[11px] font-medium">Open now · Kitchen accepting orders</span>
+            <span className="text-green-400/80 text-[11px] font-medium">{tr(lang, 'home.kitchenOpen')}</span>
           </div>
         </div>
       </footer>

@@ -14,7 +14,7 @@ interface StaffMember {
 }
 
 const ROLE_META = {
-  OWNER:   { label: 'Owner',   icon: Shield,    color: '#f59e0b', bg: 'rgba(245,158,11,0.14)', gFrom: '#f59e0b', gTo: '#fbbf24' },
+  OWNER:   { label: 'Owner',   icon: Shield,    color: 'var(--brand)', bg: 'rgba(var(--brand-rgb),0.14)', gFrom: 'var(--brand)', gTo: '#fbbf24' },
   MANAGER: { label: 'Manager', icon: UserCheck, color: '#818cf8', bg: 'rgba(129,140,248,0.14)', gFrom: '#818cf8', gTo: '#a5b4fc' },
   STAFF:   { label: 'Staff',   icon: ChefHat,   color: '#34d399', bg: 'rgba(52,211,153,0.14)', gFrom: '#34d399', gTo: '#6ee7b7' },
 }
@@ -76,7 +76,7 @@ function MemberCard({ m, isSelf, isOwner, onEdit, onToggle }: {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 3 }}>
             <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>{m.name}</span>
             {isSelf && (
-              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b', letterSpacing: '0.03em' }}>YOU</span>
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)', letterSpacing: '0.03em' }}>YOU</span>
             )}
             {!m.isActive && (
               <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, backgroundColor: 'rgba(239,68,68,0.12)', color: '#f87171' }}>Inactive</span>
@@ -110,7 +110,7 @@ function MemberCard({ m, isSelf, isOwner, onEdit, onToggle }: {
         <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--card-border)', paddingTop: 12 }}>
           <button onClick={onEdit}
             style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 0', borderRadius: 10, fontSize: 12, fontWeight: 600, border: '1px solid var(--card-border)', backgroundColor: 'var(--input-bg)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.15s ease' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = '#f59e0b'; e.currentTarget.style.color = '#f59e0b' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--brand)'; e.currentTarget.style.color = 'var(--brand)' }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.color = 'var(--text-muted)' }}>
             <Edit2 size={12} /> Edit
           </button>
@@ -219,7 +219,7 @@ function StaffModal({ member, onClose, onSaved }: {
       <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden" style={{ backgroundColor: 'var(--card-bg)' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--card-border)' }}>
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(245,158,11,0.15)' }}>
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)' }}>
               {isNew ? <Plus size={14} style={{ color: 'var(--brand)' }} /> : <Edit2 size={14} style={{ color: 'var(--brand)' }} />}
             </div>
             <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
@@ -438,7 +438,7 @@ export default function TeamPage() {
         <div className="flex flex-col lg:flex-row lg:items-center gap-3 px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(245,158,11,0.15)' }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)' }}>
                 <Users size={16} style={{ color: 'var(--brand)' }} />
               </div>
               <h1 className="text-lg font-bold text-gray-900 dark:text-white">Team</h1>

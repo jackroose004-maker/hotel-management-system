@@ -65,7 +65,7 @@ function OrderTicket({ order, onUpdate }: { order: Order; onUpdate: (id: string,
             </span>
             {order.tokenNumber && (
               <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full"
-                style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#d97706' }}>
+                style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: '#d97706' }}>
                 #{order.tokenNumber}
               </span>
             )}

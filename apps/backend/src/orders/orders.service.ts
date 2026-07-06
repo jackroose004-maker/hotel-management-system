@@ -16,7 +16,7 @@ export class OrdersService {
     private payments: PaymentsService,
   ) {}
 
-  async create(dto: CreateOrderDto, userId?: string) {
+  async create(dto: CreateOrderDto, userId?: string, clientIp?: string) {
     // Fetch all menu items to calculate prices server-side
     const itemIds = dto.items.map(i => i.menuItemId)
     const menuItems = await this.prisma.menuItem.findMany({ where: { id: { in: itemIds } } })
@@ -92,6 +92,7 @@ export class OrdersService {
         vatAmount,
         total,
         notes: dto.notes,
+        clientIp,
         contactPhone: dto.contactPhone,
         items: {
           create: dto.items.map(item => ({
@@ -333,6 +334,22 @@ export class OrdersService {
     })
   }
 
+  async getSessionReceipt(sessionId: string) {
+    const [bill, settings] = await Promise.all([
+      this.getSessionBill(sessionId),
+      this.prisma.restaurantSettings.findFirst({
+        select: {
+          restaurantName: true, restaurantNameAr: true,
+          tagline: true, address: true, phone: true,
+          logoUrl: true, vatNumber: true, vatRate: true,
+          serviceChargeRate: true, currency: true, currencySymbol: true,
+          billConfig: true,
+        },
+      }),
+    ])
+    return { ...bill, restaurant: settings }
+  }
+
   private buildSessionSummary(orders: any[]) {
     const subtotal  = orders.reduce((s, o) => s + Number(o.subtotal), 0)
     const vatAmount = orders.reduce((s, o) => s + Number(o.vatAmount), 0)
@@ -539,5 +556,90 @@ export class OrdersService {
       data: { userId },
     })
     return { claimed: result.count }
+  }
+
+  async refundOrder(orderId: string, reason: string, staffId: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } })
+    if (!order) throw new NotFoundException('Order not found')
+    if (order.paymentStatus !== 'PAID') throw new BadRequestException('Only paid orders can be refunded')
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        paymentStatus: 'REFUND_REQUESTED',
+        statusHistory: {
+          create: {
+            fromStatus: order.status as any,
+            toStatus: order.status as any,
+            changedById: staffId,
+            note: `REFUND REQUESTED: ${reason}`,
+          },
+        },
+      },
+      include: { items: { include: { menuItem: true } }, table: true },
+    })
+
+    await this.prisma.activityLog.create({
+      data: {
+        actorId: staffId,
+        action: 'order.refund_requested',
+        entityType: 'Order',
+        entityId: orderId,
+        before: { paymentStatus: 'PAID' },
+        after: { paymentStatus: 'REFUND_REQUESTED', reason },
+      },
+    })
+
+    this.gateway.emitOrderUpdated(updated)
+    return updated
+  }
+
+  async approveRefund(orderId: string, managerId: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } })
+    if (!order) throw new NotFoundException('Order not found')
+    if (order.paymentStatus !== 'REFUND_REQUESTED') throw new BadRequestException('No pending refund request')
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        paymentStatus: 'REFUNDED',
+        statusHistory: {
+          create: {
+            fromStatus: order.status as any,
+            toStatus: 'CANCELLED',
+            changedById: managerId,
+            note: 'Refund approved',
+          },
+        },
+      },
+      include: { items: { include: { menuItem: true } }, table: true },
+    })
+
+    await this.prisma.activityLog.create({
+      data: {
+        actorId: managerId,
+        action: 'order.refund_approved',
+        entityType: 'Order',
+        entityId: orderId,
+        before: { paymentStatus: 'REFUND_REQUESTED' },
+        after: { paymentStatus: 'REFUNDED' },
+      },
+    })
+
+    this.gateway.emitOrderUpdated(updated)
+    return updated
+  }
+
+  async getPendingRefunds() {
+    return this.prisma.order.findMany({
+      where: { paymentStatus: 'REFUND_REQUESTED' },
+      include: {
+        table: { select: { name: true, tableNumber: true } },
+        user: { select: { name: true } },
+        items: { include: { menuItem: { select: { name: true } } } },
+        statusHistory: { orderBy: { changedAt: 'desc' }, take: 1 },
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
   }
 }

@@ -120,7 +120,7 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
           <>
             <div className="flex items-center justify-between">
               <h2 className="text-base font-black" style={{ color: 'var(--text-primary)' }}>Review Bill</h2>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }}>
                 Verify before settling
               </span>
             </div>
@@ -129,7 +129,7 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
                 {items.map((item, i) => (
                   <div key={i} className="flex items-center justify-between px-3 py-2">
                     <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                      <span className="font-black text-xs mr-1.5" style={{ color: '#f59e0b' }}>{item.qty}×</span>
+                      <span className="font-black text-xs mr-1.5" style={{ color: 'var(--brand)' }}>{item.qty}×</span>
                       {item.name}
                     </span>
                     <span className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>

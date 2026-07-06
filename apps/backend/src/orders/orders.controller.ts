@@ -18,7 +18,21 @@ export class OrdersController {
   create(@Body() dto: CreateOrderDto, @Request() req) {
     const user = req.user
     const isStaff = user?.role && ['STAFF', 'MANAGER', 'OWNER'].includes(user.role)
-    return this.orders.create(dto, isStaff ? undefined : user?.id)
+    const clientIp: string | undefined =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
+      req.socket?.remoteAddress ??
+      undefined
+    return this.orders.create(dto, isStaff ? undefined : user?.id, clientIp)
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('my-ip')
+  getMyIp(@Request() req) {
+    const ip: string =
+      (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
+      req.socket?.remoteAddress ??
+      ''
+    return { ip }
   }
 
   @UseGuards(JwtAuthGuard)
@@ -99,6 +113,12 @@ export class OrdersController {
     return this.orders.getSessionBill(sessionId)
   }
 
+  // Public — no auth — for shareable receipt link
+  @Get('session/:sessionId/receipt')
+  getSessionReceipt(@Param('sessionId') sessionId: string) {
+    return this.orders.getSessionReceipt(sessionId)
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'MANAGER', 'STAFF')
   @Get('table/:tableId/bill')
@@ -137,6 +157,14 @@ export class OrdersController {
     return this.orders.submitFeedback(orderId, { rating, comment, tags }, req?.user?.id)
   }
 
+  // Manager/owner: list all pending refund requests (must be before :id wildcard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER')
+  @Get('pending-refunds')
+  getPendingRefunds() {
+    return this.orders.getPendingRefunds()
+  }
+
   @Get(':id')
   getById(@Param('id') id: string) {
     return this.orders.getById(id)
@@ -154,6 +182,25 @@ export class OrdersController {
   @Post(':id/cancel')
   guestCancel(@Param('id') id: string, @Body('cancelReason') cancelReason?: string) {
     return this.orders.guestCancel(id, cancelReason)
+  }
+
+  // Any staff can request a refund — goes to manager for approval
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/refund')
+  refundOrder(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @Request() req,
+  ) {
+    return this.orders.refundOrder(id, reason, req.user.id)
+  }
+
+  // Manager/owner: approve a pending refund request
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'MANAGER')
+  @Post(':id/approve-refund')
+  approveRefund(@Param('id') id: string, @Request() req) {
+    return this.orders.approveRefund(id, req.user.id)
   }
 
 }

@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import {
   Clock, Package, Utensils, RefreshCw, Banknote, CreditCard,
   ChefHat, CheckCircle, Loader2, AlertCircle, ChevronDown, ChevronRight,
-  Users, Receipt, ArrowRight, BadgeCheck,
+  Users, Receipt, ArrowRight, BadgeCheck, WifiOff, Trash2,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { notify } from '@/lib/notify'
@@ -11,8 +11,8 @@ import { getSocket } from '@/lib/socket'
 
 interface Order {
   id: string; type: string; status: string; total: number; vatAmount: number; subtotal: number
-  paymentMethod?: string; paymentStatus?: string
-  tokenNumber?: number; notes?: string; createdAt: string
+  paymentMethod?: string | null; paymentStatus?: string; stripeIntentId?: string | null
+  tokenNumber?: number; notes?: string; createdAt: string; clientIp?: string | null
   table?: { id: string; tableNumber: number; name?: string }
   user?: { name: string } | null
   items: { quantity: number; unitPrice: number; notes?: string | null; menuItem: { id: string; name: string; prepTimeMins?: number } }[]
@@ -31,7 +31,7 @@ interface TableGroup {
 const NEXT_STATUS: Record<string, string>  = { PENDING: 'ACCEPTED', ACCEPTED: 'PREPARING', PREPARING: 'READY', READY: 'DELIVERED' }
 const NEXT_LABEL: Record<string, string>   = { PENDING: 'Accept & Send to Kitchen', ACCEPTED: 'Start Preparing', PREPARING: 'Mark Ready', READY: 'Mark Served' }
 const NEXT_COLOR: Record<string, string>   = {
-  PENDING:   'bg-yellow-500 hover:bg-yellow-600 text-white',
+  PENDING:   '',   // handled inline with var(--brand)
   ACCEPTED:  'bg-blue-500 hover:bg-blue-600 text-white',
   PREPARING: 'bg-orange-500 hover:bg-orange-600 text-white',
   READY:     'bg-green-500 hover:bg-green-600 text-white',
@@ -59,132 +59,161 @@ function useOrderTimer(createdAt: string, estMins: number) {
   return { label, overdue, isUrgent: overdue }
 }
 
-// ── Compact order card (kitchen lanes) ───────────────────────────────────────
-function OrderCard({ order, onAdvance, onCancel, busy }: {
+// ── Compact order card (Kanban columns) ──────────────────────────────────────
+function OrderCard({ order, onAdvance, onCancel, busy, isNew }: {
   order: Order
   onAdvance: (id: string, status: string) => void
   onCancel?: (id: string) => void
   busy: boolean
+  isNew?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const estMins = Math.max(...order.items.map(i => i.menuItem.prepTimeMins ?? 15), 15)
   const { label: timeLabel, overdue, isUrgent } = useOrderTimer(order.createdAt, estMins)
   const next = NEXT_STATUS[order.status]
-  const label = order.type === 'DINE_IN'
+  const tableLabel = order.type === 'DINE_IN'
     ? (order.table?.name ?? (order.table?.tableNumber ? `Table ${order.table.tableNumber}` : 'Dine-in'))
     : `#${order.tokenNumber}`
   const hasNotes = order.items.some(i => i.notes) || !!order.notes
   const totalQty = order.items.reduce((s, i) => s + i.quantity, 0)
+  const summaryText = order.items.map(i => `${i.quantity}× ${i.menuItem.name}`).join(', ')
+
+  const accentColor =
+    order.status === 'PENDING'   ? '#eab308' :
+    order.status === 'ACCEPTED'  ? '#3b82f6' :
+    order.status === 'PREPARING' ? '#3b82f6' :
+    order.status === 'READY'     ? '#22c55e' : '#6b7280'
+
+  const actionBtnClass = 'flex-1 py-2.5 rounded-lg text-[11px] font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-[0.98]'
 
   return (
-    <div className={`rounded-xl overflow-hidden flex flex-col bg-[var(--card-bg)] border ${
-      isUrgent ? 'border-red-500 dark:border-red-600' : 'border-gray-200 dark:border-[var(--card-border)]'
-    }`}>
+    <div
+      className="rounded-xl overflow-hidden flex flex-col"
+      style={{
+        background: 'var(--card-bg)',
+        border: `1px solid ${isUrgent ? '#ef4444' : 'var(--card-border)'}`,
+        ...(isNew ? { boxShadow: '0 0 0 2px var(--brand), 0 0 16px rgba(var(--brand-rgb),0.2)' } : {}),
+      }}
+    >
+      <div className="flex">
+        {/* Accent bar */}
+        <div style={{ width: 3, background: accentColor, flexShrink: 0, borderRadius: '12px 0 0 0' }} />
 
-      {/* Urgent stripe */}
-      {isUrgent && <div className="h-0.5 bg-red-500" />}
+        <div className="flex flex-col flex-1 min-w-0">
+          {isUrgent && <div style={{ height: 2, background: '#ef4444' }} />}
 
-      {/* Header */}
-      <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
-          order.type === 'DINE_IN' ? 'bg-orange-100 dark:bg-orange-900/30' : 'bg-blue-100 dark:bg-blue-900/30'
-        }`}>
-          {order.type === 'DINE_IN'
-            ? <Utensils size={12} className="text-orange-500" />
-            : <Package size={12} className="text-blue-500" />}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="font-bold text-[13px] text-gray-900 dark:text-white truncate leading-tight">{label}</span>
-            {order.tokenNumber && (
-              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full flex-shrink-0"
-                style={{ backgroundColor: 'rgba(245,158,11,0.12)', color: '#d97706' }}>
-                #{order.tokenNumber}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-            <span className={`text-[9px] flex items-center gap-0.5 font-medium ${overdue ? 'text-red-500 font-bold' : 'text-green-600 dark:text-green-400'}`}>
-              <Clock size={8} />{overdue ? timeLabel : `${timeLabel} left`}
-            </span>
-            {order.paymentMethod === 'CARD' && (
-              <span className="text-[9px] font-bold text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-400 px-1 py-0.5 rounded-full flex items-center gap-0.5">
-                <CreditCard size={7} /> Paid
-              </span>
-            )}
-            {hasNotes && (
-              <span className="text-[9px] font-bold text-amber-600 bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400 px-1 py-0.5 rounded-full">✏</span>
-            )}
-          </div>
-        </div>
-        <button onClick={() => setExpanded(p => !p)} className="w-6 h-6 rounded-md flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors flex-shrink-0">
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </button>
-      </div>
+          {/* ── Fixed header (always visible, always same height) ── */}
+          <button
+            onClick={() => setExpanded(p => !p)}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left"
+          >
+            {/* type icon */}
+            <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${
+              order.type === 'DINE_IN' ? 'bg-orange-500/10' : 'bg-blue-500/10'
+            }`}>
+              {order.type === 'DINE_IN'
+                ? <Utensils size={12} className="text-orange-400" />
+                : <Package size={12} className="text-blue-400" />}
+            </div>
 
-      {/* Items summary (always visible) */}
-      <div className="px-3 pb-2 border-t border-gray-100 dark:border-[var(--card-border)] pt-2">
-        {expanded ? (
-          <div className="space-y-1.5">
-            {order.items.map((item, i) => (
-              <div key={i}>
-                <div className="flex items-start justify-between gap-1.5">
-                  <div className="flex items-baseline gap-1 min-w-0">
-                    <span className="text-[10px] font-black text-orange-500 flex-shrink-0">{item.quantity}×</span>
-                    <span className="text-[11px] font-semibold text-gray-800 dark:text-gray-100 leading-tight">{item.menuItem.name}</span>
-                  </div>
-                  <span className="text-[10px] text-gray-400 flex-shrink-0 tabular-nums">
-                    {(item.quantity * Number(item.unitPrice)).toFixed(0)}
+            {/* label + summary */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-[13px] leading-tight" style={{ color: 'var(--text-primary)' }}>{tableLabel}</span>
+                <span className={`text-[9px] font-bold flex items-center gap-0.5 flex-shrink-0 ${overdue ? 'text-red-500' : 'text-green-400'}`}>
+                  <Clock size={7} />{overdue ? timeLabel : `${timeLabel} left`}
+                </span>
+                {hasNotes && <span className="text-[9px] text-amber-400 flex-shrink-0">✏</span>}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{summaryText}</p>
+                {order.clientIp && (
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded flex-shrink-0"
+                    style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
+                    {order.clientIp}
                   </span>
-                </div>
-                {item.notes && (
-                  <div className="mt-1 flex items-start gap-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 rounded px-2 py-1">
-                    <span className="text-[10px] text-amber-700 dark:text-amber-300 leading-tight">{item.notes}</span>
-                  </div>
                 )}
               </div>
-            ))}
-            {order.notes && (
-              <div className="flex items-start gap-1.5 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/50 rounded-lg px-2 py-1.5 mt-1">
-                <AlertCircle size={10} className="text-red-500 flex-shrink-0 mt-0.5" />
-                <span className="text-[10px] text-red-700 dark:text-red-300 font-semibold leading-tight">{order.notes}</span>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-snug truncate">
-            {order.items.map(i => `${i.quantity}× ${i.menuItem.name}`).join(', ')}
-          </p>
-        )}
+            </div>
 
-        {/* Total row */}
-        <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-100 dark:border-[var(--card-border)]">
-          <span className="text-[10px] text-gray-400">{totalQty} item{totalQty !== 1 ? 's' : ''}</span>
-          <span className="text-[13px] font-black text-gray-900 dark:text-white">AED {Number(order.total).toFixed(2)}</span>
+            {/* total + chevron */}
+            <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+              <span className="text-[13px] font-black tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                AED {Number(order.total).toFixed(2)}
+              </span>
+              <span className="text-[9px] font-medium" style={{ color: 'var(--text-muted)' }}>
+                {totalQty} item{totalQty !== 1 ? 's' : ''} {expanded ? '▲' : '▼'}
+              </span>
+            </div>
+          </button>
+
+          {/* ── Accordion: item details ── */}
+          {expanded && (
+            <div className="px-3 pb-2.5 space-y-1.5" style={{ borderTop: '1px solid var(--card-border)', paddingTop: 10 }}>
+              {order.items.map((item, i) => (
+                <div key={i}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-baseline gap-1 min-w-0">
+                      <span className="text-[10px] font-black text-orange-400 flex-shrink-0">{item.quantity}×</span>
+                      <span className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>{item.menuItem.name}</span>
+                    </div>
+                    <span className="text-[10px] flex-shrink-0 tabular-nums" style={{ color: 'var(--text-muted)' }}>
+                      AED {(item.quantity * Number(item.unitPrice)).toFixed(2)}
+                    </span>
+                  </div>
+                  {item.notes && (
+                    <div className="mt-1 rounded px-2 py-1"
+                      style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.25)' }}>
+                      <span className="text-[10px] text-amber-400">{item.notes}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {order.notes && (
+                <div className="flex items-start gap-1.5 rounded-lg px-2 py-1.5 mt-0.5"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                  <AlertCircle size={10} className="text-red-400 flex-shrink-0 mt-0.5" />
+                  <span className="text-[10px] text-red-400 font-semibold leading-tight">{order.notes}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Action row (always same height) ── */}
+          {next && (
+            <div className="px-3 pb-3 pt-2 flex gap-2" style={{ borderTop: '1px solid var(--card-border)' }}>
+              {order.status === 'PENDING' ? (
+                <>
+                  <button onClick={() => onAdvance(order.id, next)} disabled={busy}
+                    className={actionBtnClass}
+                    style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                    {busy ? <Loader2 size={11} className="animate-spin" /> : null}
+                    Accept
+                  </button>
+                  {onCancel && (
+                    <button onClick={() => onCancel(order.id)} disabled={busy}
+                      className={`${actionBtnClass} flex-none px-4`}
+                      style={{ border: '1px solid rgba(239,68,68,0.4)', color: '#f87171' }}>
+                      Cancel
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button onClick={() => onAdvance(order.id, next)} disabled={busy}
+                  className={`${actionBtnClass} ${NEXT_COLOR[order.status]}`}>
+                  {busy ? <Loader2 size={11} className="animate-spin" /> : null}
+                  {NEXT_LABEL[order.status]}
+                </button>
+              )}
+            </div>
+          )}
         </div>
-      </div>
-
-      {/* Action button — always pinned at bottom */}
-      <div className="px-3 pb-3 pt-1 flex flex-col gap-1.5 mt-auto">
-        {next && (
-          <button onClick={() => onAdvance(order.id, next)} disabled={busy}
-            className={`w-full py-2 rounded-lg text-[11px] font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-[0.98] ${NEXT_COLOR[order.status]}`}>
-            {busy ? <Loader2 size={12} className="animate-spin" /> : null}
-            {NEXT_LABEL[order.status]}
-          </button>
-        )}
-        {order.status === 'PENDING' && onCancel && (
-          <button onClick={() => onCancel(order.id)} disabled={busy}
-            className="w-full border border-gray-200 dark:border-gray-700 text-red-500 py-1.5 rounded-lg text-[10px] font-semibold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-            Cancel
-          </button>
-        )}
       </div>
     </div>
   )
 }
 
-// ── Payment method modal (same design as bills page) ─────────────────────────
+// ── Payment method modal ──────────────────────────────────────────────────────
 const CASH_NOTES = [5, 10, 20, 50, 100, 200, 500]
 
 function SettleModal({ amount, items, onConfirm, onClose, busy }: {
@@ -218,7 +247,7 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
           <>
             <div className="flex items-center justify-between">
               <h2 className="text-base font-black" style={{ color: 'var(--text-primary)' }}>Review Bill</h2>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }}>
                 Verify before settling
               </span>
             </div>
@@ -227,7 +256,7 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
                 {items.map((item, i) => (
                   <div key={i} className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--card-border)' }}>
                     <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                      <span className="font-black text-xs mr-1.5" style={{ color: '#f59e0b' }}>{item.qty}×</span>
+                      <span className="font-black text-xs mr-1.5" style={{ color: 'var(--brand)' }}>{item.qty}×</span>
                       {item.name}
                     </span>
                     <span className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
@@ -243,7 +272,7 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
             </div>
             <button onClick={() => setStep('method')}
               className="w-full py-3.5 rounded-2xl font-black text-sm"
-              style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+              style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
               ✓ Looks Good — Choose Payment
             </button>
             <button onClick={onClose}
@@ -346,17 +375,28 @@ function SettleModal({ amount, items, onConfirm, onClose, busy }: {
   )
 }
 
-// ── Payment collection row — one row per table, no item list ─────────────────
-function PaymentRow({ group, onSettle, onViewBill, busy }: {
+// ── Payment collection row ────────────────────────────────────────────────────
+function PaymentRow({ group, onSettle, onViewBill, busy, myIp }: {
   group: TableGroup
   onSettle: (tableId: string, method: 'CASH' | 'CARD') => void
   onViewBill: (tableId: string) => void
   busy: boolean
+  myIp: string
 }) {
   const [expanded, setExpanded] = useState(false)
   const [showSettle, setShowSettle] = useState(false)
+  const [showIpWarning, setShowIpWarning] = useState(false)
 
-  // Flat item list for review step
+  // True if any order in this group was placed from the same IP as the current device
+  const hasSameIpOrder = myIp
+    ? group.orders.some(o => o.clientIp && o.clientIp === myIp)
+    : false
+
+  const handleSettleClick = () => {
+    if (hasSameIpOrder) { setShowIpWarning(true); return }
+    setShowSettle(true)
+  }
+
   const itemMap = new Map<string, { name: string; qty: number; price: number }>()
   for (const o of group.orders) {
     for (const i of o.items) {
@@ -368,7 +408,6 @@ function PaymentRow({ group, onSettle, onViewBill, busy }: {
   }
   const reviewItems = [...itemMap.values()]
 
-  // Per-person breakdown (group orders by user/guest)
   const personMap = new Map<string, { label: string; orders: Order[]; total: number; isPaid: boolean }>()
   for (const o of group.orders) {
     const key = o.user?.name ?? `guest-${o.id.slice(-4)}`
@@ -382,79 +421,77 @@ function PaymentRow({ group, onSettle, onViewBill, busy }: {
   const people = [...personMap.values()]
 
   return (
-    <div className="bg-[var(--card-bg)] rounded-2xl border-2 border-purple-200 dark:border-purple-800 overflow-hidden shadow-sm">
-
-      {/* Summary row — always visible */}
-      <div className="px-4 py-3 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center flex-shrink-0">
-          <Utensils size={15} className="text-purple-600 dark:text-purple-400" />
+    <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--card-bg)', border: '1px solid rgba(168,85,247,0.4)' }}>
+      <button onClick={() => setExpanded(p => !p)} className="w-full px-3 py-2.5 flex items-center gap-3 text-left">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ background: 'rgba(168,85,247,0.15)' }}>
+          <Utensils size={15} className="text-purple-400" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-gray-900 dark:text-white text-sm">{group.tableName}</span>
-            <span className="text-[10px] text-purple-500 bg-purple-50 dark:bg-purple-900/20 px-1.5 py-0.5 rounded-full font-semibold">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-sm leading-tight" style={{ color: 'var(--text-primary)' }}>{group.tableName}</span>
+            <span className="text-[10px] text-purple-400 px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0"
+              style={{ background: 'rgba(168,85,247,0.15)' }}>
               {group.orders.length} order{group.orders.length !== 1 ? 's' : ''}
             </span>
           </div>
-          <div className="flex items-center gap-3 mt-0.5">
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             {group.hasCash && (
-              <span className="text-[11px] text-orange-600 dark:text-orange-400 font-semibold flex items-center gap-1">
-                <Banknote size={10} /> AED {group.cashTotal.toFixed(2)} cash
+              <span className="text-[10px] font-semibold flex items-center gap-0.5" style={{ color: 'var(--text-muted)' }}>
+                <Banknote size={9} className="text-orange-400" /> {group.cashTotal.toFixed(2)} cash
               </span>
             )}
             {group.cardTotal > 0 && (
-              <span className="text-[11px] text-green-600 dark:text-green-400 font-semibold flex items-center gap-1">
-                <CreditCard size={10} /> AED {group.cardTotal.toFixed(2)} card
+              <span className="text-[10px] font-semibold flex items-center gap-0.5" style={{ color: 'var(--text-muted)' }}>
+                <CreditCard size={9} className="text-green-400" /> {group.cardTotal.toFixed(2)} card
               </span>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-sm font-black text-gray-900 dark:text-white">AED {(group.cashTotal + group.cardTotal).toFixed(2)}</span>
-          <button onClick={() => setExpanded(p => !p)}
-            className="w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-500">
-            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          </button>
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          <span className="text-sm font-black tabular-nums" style={{ color: 'var(--text-primary)' }}>
+            AED {(group.cashTotal + group.cardTotal).toFixed(2)}
+          </span>
+          <span style={{ color: 'var(--text-muted)' }}>
+            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          </span>
         </div>
-      </div>
+      </button>
 
-      {/* Expanded: per-person breakdown */}
       {expanded && (
-        <div className="border-t border-gray-100 dark:border-[var(--card-border)] divide-y divide-gray-100 dark:divide-[var(--card-border)]">
+        <div style={{ borderTop: '1px solid var(--card-border)' }}>
           {people.map((person, i) => (
-            <div key={i} className="px-4 py-2.5 flex items-center justify-between gap-3">
+            <div key={i} className="px-4 py-2.5 flex items-center justify-between gap-3"
+              style={{ borderBottom: '1px solid var(--card-border)' }}>
               <div className="flex items-center gap-2 min-w-0">
-                <div className="w-6 h-6 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-[10px] font-bold text-gray-600 dark:text-gray-300 flex-shrink-0">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                  style={{ background: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
                   {person.label[0]}
                 </div>
-                <span className="text-sm text-gray-700 dark:text-gray-300 truncate">{person.label}</span>
+                <span className="text-sm truncate" style={{ color: 'var(--text-muted)' }}>{person.label}</span>
                 {person.orders[0]?.user && <span className="text-[9px] text-blue-400 font-semibold">member</span>}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-xs font-bold text-gray-900 dark:text-white">AED {person.total.toFixed(2)}</span>
+                <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>AED {person.total.toFixed(2)}</span>
                 {person.isPaid ? (
-                  <span className="text-[10px] text-green-600 font-semibold flex items-center gap-0.5">
+                  <span className="text-[10px] text-green-400 font-semibold flex items-center gap-0.5">
                     <CheckCircle size={11} /> Paid
                   </span>
                 ) : (
-                  <span className="text-[10px] text-yellow-600 font-semibold">Pending</span>
+                  <span className="text-[10px] text-yellow-500 font-semibold">Pending</span>
                 )}
               </div>
             </div>
           ))}
-
-          {/* Items summary (collapsed count, not full list) */}
-          <div className="px-4 py-2 bg-gray-50 dark:bg-gray-900/30">
-            <div className="flex items-center gap-1 text-[10px] text-gray-400">
+          <div className="px-4 py-2" style={{ background: 'var(--muted-bg)' }}>
+            <div className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
               <Package size={9} />
               {(() => {
                 const allItems = group.orders.flatMap(o => o.items)
-                const itemMap = new Map<string, number>()
-                for (const i of allItems) {
-                  itemMap.set(i.menuItem.name, (itemMap.get(i.menuItem.name) ?? 0) + i.quantity)
-                }
-                const top3 = [...itemMap.entries()].slice(0, 3).map(([name, qty]) => `${qty}× ${name}`).join(', ')
-                const rest = itemMap.size - 3
+                const iMap = new Map<string, number>()
+                for (const i of allItems) iMap.set(i.menuItem.name, (iMap.get(i.menuItem.name) ?? 0) + i.quantity)
+                const top3 = [...iMap.entries()].slice(0, 3).map(([name, qty]) => `${qty}× ${name}`).join(', ')
+                const rest = iMap.size - 3
                 return top3 + (rest > 0 ? ` +${rest} more` : '')
               })()}
             </div>
@@ -462,25 +499,64 @@ function PaymentRow({ group, onSettle, onViewBill, busy }: {
         </div>
       )}
 
-      {/* Actions */}
-      <div className="px-4 py-3 border-t border-gray-100 dark:border-[var(--card-border)] flex gap-2">
+      <div className="px-3 pb-3 pt-2 flex gap-2" style={{ borderTop: '1px solid var(--card-border)' }}>
         {group.hasCash && (
-          <button onClick={() => setShowSettle(true)} disabled={busy}
-            className="flex-1 bg-purple-500 hover:bg-purple-600 text-white py-2.5 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />}
-            Settle Bill · AED {(group.cashTotal + group.cardTotal).toFixed(2)}
+          <button onClick={handleSettleClick} disabled={busy}
+            className="flex-1 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+            style={{ background: '#7c3aed', color: '#fff' }}>
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Banknote size={13} />}
+            <span>Collect</span>
+            <span className="font-black">AED {(group.cashTotal + group.cardTotal).toFixed(2)}</span>
           </button>
         )}
         {!group.hasCash && group.cardTotal > 0 && (
-          <div className="flex-1 flex items-center justify-center gap-2 text-green-600 dark:text-green-400 text-xs font-semibold py-2.5 rounded-xl bg-green-50 dark:bg-green-900/10">
-            <CreditCard size={14} /> Fully Paid by Card
+          <div className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-xl"
+            style={{ background: 'rgba(34,197,94,0.1)', color: '#4ade80' }}>
+            <CreditCard size={13} /> Fully Paid by Card
           </div>
         )}
         <button onClick={() => onViewBill(group.tableId)}
-          className="w-10 h-10 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-500 hover:text-orange-500 hover:border-orange-300 transition-colors flex-shrink-0">
-          <Receipt size={15} />
+          className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
+          style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+          <Receipt size={13} />
         </button>
       </div>
+
+      {showIpWarning && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-4"
+            style={{ backgroundColor: 'var(--card-bg)', border: '1px solid rgba(239,68,68,0.4)' }}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ backgroundColor: 'rgba(239,68,68,0.15)' }}>
+                <span className="text-xl">⚠️</span>
+              </div>
+              <div>
+                <p className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
+                  Order from your device
+                </p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                  One or more orders in this group were placed from this device ({myIp}).
+                  Are you sure you want to close the bill?
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}
+                onClick={() => setShowIpWarning(false)}>
+                Cancel
+              </button>
+              <button className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                style={{ backgroundColor: '#ef4444', color: '#fff' }}
+                onClick={() => { setShowIpWarning(false); setShowSettle(true) }}>
+                Yes, close bill
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSettle && (
         <SettleModal
@@ -496,66 +572,93 @@ function PaymentRow({ group, onSettle, onViewBill, busy }: {
 }
 
 // ── Completed order card ──────────────────────────────────────────────────────
+const TIMELINE_STEPS = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'DELIVERED']
+const STEP_LABEL: Record<string, string> = { PENDING: 'Placed', ACCEPTED: 'Accepted', PREPARING: 'Cooking', READY: 'Ready', DELIVERED: 'Served' }
+
 function CompletedCard({ order }: { order: Order }) {
   const [expanded, setExpanded] = useState(false)
   const tableLabel = order.table?.name ?? (order.table?.tableNumber ? `Table ${order.table.tableNumber}` : null) ?? 'Dine-in'
   const label = order.type === 'DINE_IN' ? tableLabel : `Takeaway #${order.tokenNumber}`
   const time = new Date(order.createdAt).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })
-  const method = order.paymentMethod === 'CARD' ? 'Card' : order.paymentMethod === 'CASH' ? 'Cash' : 'Paid'
   const totalItems = order.items.reduce((s, i) => s + i.quantity, 0)
+  const doneIdx = TIMELINE_STEPS.indexOf('DELIVERED')
 
   return (
-    <div className="rounded-2xl border overflow-hidden" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)', opacity: 0.85 }}>
-      {/* Header row */}
-      <button onClick={() => setExpanded(p => !p)} className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:opacity-80 transition-opacity">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ backgroundColor: 'var(--muted-bg)' }}>
-          {order.type === 'DINE_IN'
-            ? <Utensils size={14} className="text-gray-400" />
-            : <Package size={14} className="text-gray-400" />}
+    <div className="rounded-2xl border overflow-hidden flex-shrink-0" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)', minWidth: 240 }}>
+      <button onClick={() => setExpanded(p => !p)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:opacity-80 transition-opacity">
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{ backgroundColor: 'rgba(34,197,94,0.1)' }}>
+          <CheckCircle size={14} className="text-emerald-400" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-bold text-[var(--text-primary)] truncate">{label}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{label}</p>
             {order.user && <span className="text-[9px] font-bold text-blue-400 bg-blue-400/10 px-1.5 py-0.5 rounded-full flex-shrink-0">member</span>}
           </div>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            <span className="text-[11px] text-[var(--text-muted)]"><Clock size={9} className="inline mr-0.5" />{time}</span>
-            <span className="text-[11px] text-[var(--text-muted)]">{totalItems} item{totalItems !== 1 ? 's' : ''}</span>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{time} · {totalItems} item{totalItems !== 1 ? 's' : ''}</span>
             {order.paymentMethod === 'CARD'
-              ? <span className="text-[10px] font-semibold text-blue-500 flex items-center gap-0.5"><CreditCard size={9} />Card</span>
-              : <span className="text-[10px] font-semibold text-emerald-500 flex items-center gap-0.5"><Banknote size={9} />Cash</span>}
+              ? <span className="text-[10px] font-semibold text-blue-400 flex items-center gap-0.5"><CreditCard size={8} />Card</span>
+              : <span className="text-[10px] font-semibold text-emerald-400 flex items-center gap-0.5"><Banknote size={8} />Cash</span>}
           </div>
         </div>
         <div className="flex flex-col items-end gap-1 flex-shrink-0">
-          <span className="text-sm font-black text-[var(--text-primary)]">AED {Number(order.total).toFixed(2)}</span>
-          <span className="flex items-center gap-0.5 text-[10px] font-semibold text-emerald-500"><CheckCircle size={10} />Paid</span>
-        </div>
-        <div className="ml-1 flex-shrink-0">
-          {expanded ? <ChevronDown size={13} className="text-gray-400" /> : <ChevronRight size={13} className="text-gray-400" />}
+          <span className="text-sm font-black" style={{ color: 'var(--text-primary)' }}>AED {Number(order.total).toFixed(2)}</span>
+          {expanded ? <ChevronDown size={12} className="text-gray-400" /> : <ChevronRight size={12} className="text-gray-400" />}
         </div>
       </button>
 
-      {/* Expanded items */}
+      {/* Mini timeline strip */}
+      <div className="px-4 pb-2.5" style={{ borderTop: '1px solid var(--card-border)', paddingTop: 8 }}>
+        {/* connector row */}
+        <div className="flex items-center mb-1">
+          {TIMELINE_STEPS.map((step, i) => {
+            const done = i <= doneIdx
+            return (
+              <div key={step} className="flex items-center flex-1 min-w-0">
+                <div className="w-3 h-3 rounded-full flex-shrink-0 relative z-10"
+                  style={{ backgroundColor: done ? '#22c55e' : 'var(--card-border)' }} />
+                {i < TIMELINE_STEPS.length - 1 && (
+                  <div className="h-0.5 flex-1" style={{ backgroundColor: i < doneIdx ? '#22c55e' : 'var(--card-border)' }} />
+                )}
+              </div>
+            )
+          })}
+        </div>
+        {/* label row */}
+        <div className="flex">
+          {TIMELINE_STEPS.map((step, i) => {
+            const done = i <= doneIdx
+            return (
+              <div key={step} className="flex-1 min-w-0 flex justify-center">
+                <span className="text-[8px] font-semibold text-center" style={{ color: done ? '#22c55e' : 'var(--text-muted)', opacity: done ? 1 : 0.5 }}>
+                  {STEP_LABEL[step]}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
       {expanded && (
-        <div className="px-4 pb-4 space-y-1 border-t border-[var(--card-border)] pt-3">
+        <div className="px-4 pb-4 space-y-1 pt-3" style={{ borderTop: '1px solid var(--card-border)' }}>
           {order.items.map((item, i) => (
             <div key={i} className="flex justify-between text-xs">
-              <span className="text-[var(--text-muted)]"><span className="font-semibold text-[var(--text-primary)]">{item.quantity}×</span> {item.menuItem.name}</span>
-              <span className="text-[var(--text-muted)]">AED {(item.quantity * Number(item.unitPrice)).toFixed(2)}</span>
+              <span style={{ color: 'var(--text-muted)' }}><span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.quantity}×</span> {item.menuItem.name}</span>
+              <span style={{ color: 'var(--text-muted)' }}>{(item.quantity * Number(item.unitPrice)).toFixed(2)}</span>
             </div>
           ))}
-          <div className="flex justify-between text-xs pt-2 border-t border-[var(--card-border)] mt-1">
-            <span className="text-[var(--text-muted)]">Subtotal</span>
-            <span className="text-[var(--text-muted)]">AED {Number(order.subtotal).toFixed(2)}</span>
+          <div className="flex justify-between text-xs pt-2 mt-1" style={{ borderTop: '1px solid var(--card-border)' }}>
+            <span style={{ color: 'var(--text-muted)' }}>Subtotal</span>
+            <span style={{ color: 'var(--text-muted)' }}>AED {Number(order.subtotal).toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-xs">
-            <span className="text-[var(--text-muted)]">VAT</span>
-            <span className="text-[var(--text-muted)]">AED {Number(order.vatAmount).toFixed(2)}</span>
+            <span style={{ color: 'var(--text-muted)' }}>VAT</span>
+            <span style={{ color: 'var(--text-muted)' }}>AED {Number(order.vatAmount).toFixed(2)}</span>
           </div>
           <div className="flex justify-between text-sm font-black pt-1">
-            <span className="text-[var(--text-primary)]">Total</span>
-            <span className="text-[var(--text-primary)]">AED {Number(order.total).toFixed(2)}</span>
+            <span style={{ color: 'var(--text-primary)' }}>Total</span>
+            <span style={{ color: 'var(--text-primary)' }}>AED {Number(order.total).toFixed(2)}</span>
           </div>
         </div>
       )}
@@ -592,24 +695,22 @@ function CancelReasonModal({ order, onConfirm, onClose, busy }: {
         style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
         onClick={e => e.stopPropagation()}>
         <div>
-          <h3 className="font-bold text-[var(--text-primary)] text-base mb-0.5">Cancel Order?</h3>
-          <p className="text-xs text-[var(--text-muted)]">
+          <h3 className="font-bold text-base mb-0.5" style={{ color: 'var(--text-primary)' }}>Cancel Order?</h3>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {order.type === 'DINE_IN'
               ? `Table ${order.table?.tableNumber ?? ''} · AED ${Number(order.total).toFixed(2)}`
               : `Takeaway #${order.tokenNumber} · AED ${Number(order.total).toFixed(2)}`}
           </p>
         </div>
 
-        {/* Items quick summary */}
         <div className="rounded-xl p-3 space-y-1" style={{ backgroundColor: 'var(--muted-bg)' }}>
           {order.items.map((item, i) => (
-            <p key={i} className="text-xs text-[var(--text-muted)]">{item.quantity}× {item.menuItem.name}</p>
+            <p key={i} className="text-xs" style={{ color: 'var(--text-muted)' }}>{item.quantity}× {item.menuItem.name}</p>
           ))}
         </div>
 
-        {/* Reason picker */}
         <div className="space-y-1.5">
-          <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">Reason for cancelling</p>
+          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Reason for cancelling</p>
           {CANCEL_REASONS.map(r => (
             <button key={r} onClick={() => setReason(r)}
               className="w-full text-left px-3 py-2 rounded-xl text-sm transition-all"
@@ -637,15 +738,54 @@ function CancelReasonModal({ order, onConfirm, onClose, busy }: {
             <button onClick={() => finalReason && onConfirm(order.id, finalReason + ' [reorder-requested]')}
               disabled={busy || !finalReason}
               className="w-full py-2.5 rounded-xl text-sm font-semibold transition-colors disabled:opacity-40"
-              style={{ border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', backgroundColor: 'transparent' }}>
+              style={{ border: '1px solid rgba(var(--brand-rgb),0.4)', color: 'var(--brand)', backgroundColor: 'transparent' }}>
               Cancel & Place Same Order Again
             </button>
           )}
           <button onClick={onClose} disabled={busy}
-            className="w-full py-2 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+            className="w-full py-2 text-sm transition-colors" style={{ color: 'var(--text-muted)' }}>
             Go Back
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Kanban Column ─────────────────────────────────────────────────────────────
+function KanbanColumn({
+  title, dotColor, count, children, emptyIcon, emptyText,
+}: {
+  title: string
+  dotColor: string
+  count: number
+  children: React.ReactNode
+  emptyIcon: React.ReactNode
+  emptyText: string
+}) {
+  return (
+    <div className="flex flex-col min-w-0" style={{ flex: '1 1 0' }}>
+      {/* Column header */}
+      <div className="flex items-center gap-2 px-3 py-2.5 mb-2 rounded-xl flex-shrink-0"
+        style={{ background: 'var(--muted-bg)', border: '0.5px solid var(--card-border)' }}>
+        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: dotColor }} />
+        <span className="text-xs font-bold flex-1" style={{ color: 'var(--text-primary)' }}>{title}</span>
+        <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
+          style={{ background: `${dotColor}22`, color: dotColor }}>
+          {count}
+        </span>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex flex-col gap-2.5 overflow-y-auto flex-1 px-0.5 pb-4"
+        style={{ scrollbarWidth: 'thin' }}>
+        {count === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-2 rounded-xl"
+            style={{ border: '1px dashed var(--card-border)' }}>
+            <span style={{ color: 'var(--text-muted)', opacity: 0.5 }}>{emptyIcon}</span>
+            <span className="text-xs font-medium" style={{ color: 'var(--text-muted)', opacity: 0.5 }}>{emptyText}</span>
+          </div>
+        ) : children}
       </div>
     </div>
   )
@@ -657,8 +797,11 @@ export default function OrdersPage() {
   const [filter, setFilter] = useState<'active' | 'all'>('active')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
+  const [mobileTab, setMobileTab] = useState(0)
   const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
-  // Track orders we just acted on — skip socket echo notifications for those
+  const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set())
+  const [socketConnected, setSocketConnected] = useState(true)
+  const [myIp, setMyIp] = useState<string>('')
   const recentlyActioned = useRef<Set<string>>(new Set())
 
   const load = useCallback(async () => {
@@ -670,13 +813,20 @@ export default function OrdersPage() {
   }, [filter])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { api.get('/orders/my-ip').then(r => setMyIp(r.data.ip)).catch(() => {}) }, [])
 
   useEffect(() => {
     const socket = getSocket()
 
+    const onConnect    = () => setSocketConnected(true)
+    const onDisconnect = () => setSocketConnected(false)
+
     const onNew = (o: Order) => {
-      setOrders(prev => [o, ...prev])
-      notify.order.new(o.type === 'DINE_IN' ? `Table ${o.table?.tableNumber}` : `Takeaway #${o.tokenNumber}`)
+      // Re-fetch all orders so concurrent orders placed at the same time aren't missed
+      load()
+      setNewOrderIds(prev => new Set([...prev, o.id]))
+      setTimeout(() => setNewOrderIds(prev => { const n = new Set(prev); n.delete(o.id); return n }), 4000)
+      notify.order.new(o.type === 'DINE_IN' ? (o.table?.name ?? `Table ${o.table?.tableNumber}`) : `Takeaway #${o.tokenNumber}`)
     }
     const onUpdated = (o: Order) => {
       setOrders(prev => prev.map(x => x.id === o.id ? o : x))
@@ -688,13 +838,17 @@ export default function OrdersPage() {
       }
     }
 
-    socket.on('order:new', onNew)
+    socket.on('connect',       onConnect)
+    socket.on('disconnect',    onDisconnect)
+    socket.on('order:new',     onNew)
     socket.on('order:updated', onUpdated)
-    socket.on('order:ready', onReady)
+    socket.on('order:ready',   onReady)
     return () => {
-      socket.off('order:new', onNew)
+      socket.off('connect',       onConnect)
+      socket.off('disconnect',    onDisconnect)
+      socket.off('order:new',     onNew)
       socket.off('order:updated', onUpdated)
-      socket.off('order:ready', onReady)
+      socket.off('order:ready',   onReady)
     }
   }, [])
 
@@ -722,7 +876,6 @@ export default function OrdersPage() {
       setCancelTarget(null)
       notify.info(`Order cancelled — ${cleanReason}`)
 
-      // Reorder: create a new order with same items at same table
       if (wantReorder && order) {
         try {
           await api.post('/orders', {
@@ -731,8 +884,8 @@ export default function OrdersPage() {
             items: order.items.map(i => ({ menuItemId: i.menuItem.id, quantity: i.quantity })),
           })
           notify.success('New order placed with same items')
-        } catch {
-          notify.error('Could not reorder — please place manually')
+        } catch (e: any) {
+          notify.error(e?.message ?? 'Could not reorder — please place manually')
         }
       }
     } finally { setBusy(p => ({ ...p, [id]: false })) }
@@ -752,13 +905,21 @@ export default function OrdersPage() {
     } finally { setBusy(p => ({ ...p, [tableId]: false })) }
   }
 
-  const viewBill = (tableId: string) => {
+  const viewBill = (_tableId: string) => {
     window.location.href = '/staff/bills'
   }
 
+  const dismissZombie = async (id: string) => {
+    setBusy(p => ({ ...p, [id]: true }))
+    try {
+      await api.patch(`/orders/${id}/status`, { status: 'CANCELLED', cancelReason: 'Abandoned card payment' })
+      setOrders(prev => prev.filter(o => o.id !== id))
+    } finally { setBusy(p => ({ ...p, [id]: false })) }
+  }
+
   // ── Buckets ────────────────────────────────────────────────────────────────
-  // Only cash orders need manual approval — card orders skip PENDING (go to ACCEPTED after Stripe succeeds)
   const pending   = orders.filter(o => o.status === 'PENDING' && o.paymentMethod === 'CASH')
+  const zombies   = orders.filter(o => o.status === 'PENDING' && o.stripeIntentId && !o.paymentMethod)
   const kitchen   = orders.filter(o => ['ACCEPTED', 'PREPARING'].includes(o.status))
   const ready     = orders.filter(o => o.status === 'READY')
   const takeawayHandover = orders.filter(o => o.type === 'TAKEAWAY' && o.status === 'DELIVERED' && o.paymentStatus === 'UNPAID')
@@ -781,155 +942,291 @@ export default function OrdersPage() {
     ? orders.filter(o => o.status === 'DELIVERED' && o.paymentStatus !== 'UNPAID')
     : []
 
-  const totalActive = pending.length + kitchen.length + ready.length
+  // Group pending orders by table for the Approval column
+  const pendingByTable = pending.reduce<Record<string, { name: string; orders: Order[] }>>((acc, o) => {
+    const key = o.table?.id ?? `takeaway-${o.tokenNumber}`
+    const name = o.table?.name ?? (o.table ? `Table ${o.table.tableNumber}` : `Takeaway #${o.tokenNumber}`)
+    if (!acc[key]) acc[key] = { name, orders: [] }
+    acc[key].orders.push(o)
+    return acc
+  }, {})
+  const pendingGroups = Object.values(pendingByTable)
+
+  const col4Count = tableGroups.size + takeawayHandover.length
+  const col1Count = pending.length + zombies.length
+  const allEmpty  = col1Count === 0 && kitchen.length === 0 && ready.length === 0 && col4Count === 0
 
   return (
     <>
-    <div className="flex flex-col flex-1">
+    {/* Full-height page, no page-level scroll */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
 
-      {/* Header */}
-      <div className="px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
-        <h1 className="text-lg font-bold text-gray-900 dark:text-white">Live Orders</h1>
-        <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
-          {(totalActive > 0 || pending.length > 0 || ready.length > 0 || tableGroups.size > 0) ? (
-            <div className="flex items-center gap-2 flex-wrap">
-              {totalActive > 0 && <span className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-full">{totalActive} active</span>}
-              {pending.length > 0 && <span className="text-[11px] font-semibold text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 px-2 py-0.5 rounded-full">{pending.length} needs approval</span>}
-              {ready.length > 0 && <span className="text-[11px] font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">{ready.length} ready to serve</span>}
-              {tableGroups.size > 0 && <span className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded-full">{tableGroups.size} table{tableGroups.size !== 1 ? 's' : ''} awaiting payment</span>}
-            </div>
-          ) : <span />}
-          <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
-            <div className="flex rounded-xl p-1 border border-[var(--card-border)]" style={{ backgroundColor: 'var(--muted-bg)' }}>
+      {/* ── Sticky Header ─────────────────────────────────────────────────── */}
+      <div className="flex-shrink-0 px-4 sm:px-6 py-3"
+        style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--card-bg)' }}>
+        <div className="flex items-center gap-2 mb-1">
+          <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Live Orders</h1>
+          {socketConnected ? (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-green-400 px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(34,197,94,0.1)' }}>
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block" />
+              LIVE
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(239,68,68,0.1)' }}>
+              <WifiOff size={10} />
+              OFFLINE
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            <div className="flex rounded-xl p-1" style={{ background: 'var(--muted-bg)', border: '1px solid var(--card-border)' }}>
               {(['active', 'all'] as const).map(f => (
                 <button key={f} onClick={() => setFilter(f)}
                   className="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
                   style={filter === f
-                    ? { backgroundColor: 'var(--card-bg)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
+                    ? { backgroundColor: 'var(--card-bg)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }
                     : { color: 'var(--text-muted)' }}>
                   {f === 'active' ? 'Active' : 'All'}
                 </button>
               ))}
             </div>
-            <button onClick={load} className="p-2.5 rounded-xl border transition-colors" style={{ backgroundColor: 'var(--muted-bg)', borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+            <button onClick={load}
+              className="p-2.5 rounded-xl border transition-colors"
+              style={{ backgroundColor: 'var(--muted-bg)', borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Lanes */}
-      <div className="p-4 sm:p-6 space-y-8 overflow-auto flex-1">
+      {/* ── Kanban Board ──────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+        {/* ── Mobile tab bar (md and below) ── */}
+        <div className="flex md:hidden flex-shrink-0 gap-1 px-3 pt-3 pb-2">
+          {[
+            { label: 'Approval', dot: '#eab308', count: pending.length + zombies.length },
+            { label: 'Kitchen',  dot: '#3b82f6', count: kitchen.length },
+            { label: 'Ready',    dot: '#22c55e', count: ready.length },
+            { label: 'Payment',  dot: '#a855f7', count: col4Count },
+          ].map((tab, i) => (
+            <button key={i} onClick={() => setMobileTab(i)}
+              className="flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl text-[10px] font-bold transition-all"
+              style={{
+                background: mobileTab === i ? `${tab.dot}22` : 'var(--muted-bg)',
+                border: `1px solid ${mobileTab === i ? tab.dot : 'var(--card-border)'}`,
+                color: mobileTab === i ? tab.dot : 'var(--text-muted)',
+              }}>
+              <span className="w-2 h-2 rounded-full" style={{ background: tab.dot }} />
+              {tab.label}
+              <span className="font-black">{tab.count}</span>
+            </button>
+          ))}
+        </div>
 
-        {!loading && orders.filter(o => !['CANCELLED'].includes(o.status)).length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 gap-4 bg-[var(--card-bg)] rounded-2xl border border-dashed border-amber-200 dark:border-[var(--card-border)]">
-            <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center">
-              <Package size={28} className="text-amber-400 dark:text-amber-600" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">{filter === 'active' ? 'No active orders right now' : 'No orders today yet'}</p>
-              <p className="text-xs text-gray-400 mt-1">New orders appear here in real time</p>
-            </div>
+        {/* 4 columns row — desktop only */}
+        {allEmpty ? (
+          <div className="hidden md:flex flex-1 items-center justify-center gap-3 flex-col"
+            style={{ color: 'var(--text-muted)', opacity: 0.4 }}>
+            <CheckCircle size={36} />
+            <p className="text-sm font-semibold">All caught up — no active orders</p>
           </div>
-        )}
+        ) : (
+        <div className="hidden md:flex" style={{
+          gap: 12,
+          padding: '12px 16px',
+          flex: 1,
+          overflow: 'hidden',
+          alignItems: 'stretch',
+        }}>
 
-        {/* ── 1. Needs Approval ─────────────────────────────────────── */}
-        {pending.length > 0 && (
-          <section>
-            <div className="flex items-center gap-2 mb-3">
-              <AlertCircle size={15} className="text-yellow-500" />
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white">Needs Approval</h2>
-              <span className="text-[10px] font-bold bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 px-2 py-0.5 rounded-full">{pending.length}</span>
-            </div>
-            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {pending.map(o => <OrderCard key={o.id} order={o} onAdvance={advance} onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)} busy={!!busy[o.id]} />)}
-            </div>
-          </section>
-        )}
-
-        {/* ── 2. In Kitchen ─────────────────────────────────────────── */}
-        {kitchen.length > 0 && (
-          <section>
-            <div className="flex items-center gap-2 mb-3">
-              <ChefHat size={15} className="text-orange-500" />
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white">In Kitchen</h2>
-              <span className="text-[10px] font-bold bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded-full">{kitchen.length}</span>
-            </div>
-            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {kitchen.map(o => <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} />)}
-            </div>
-          </section>
-        )}
-
-        {/* ── 3. Ready to Serve ─────────────────────────────────────── */}
-        {ready.length > 0 && (
-          <section>
-            <div className="flex items-center gap-2 mb-3">
-              <CheckCircle size={15} className="text-green-500" />
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white">Ready to Serve</h2>
-              <span className="text-[10px] font-bold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-0.5 rounded-full">{ready.length}</span>
-            </div>
-            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {ready.map(o => <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} />)}
-            </div>
-          </section>
-        )}
-
-        {/* ── 4. Collect Payment — compact list, not item dump ──────── */}
-        {tableGroups.size > 0 && (
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Banknote size={15} className="text-purple-500" />
-                <h2 className="text-sm font-bold text-gray-900 dark:text-white">Collect Payment</h2>
-                <span className="text-[10px] font-bold bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded-full">
-                  {tableGroups.size} table{tableGroups.size !== 1 ? 's' : ''}
-                </span>
+          {/* ── Col 1: Needs Approval (always visible) ── */}
+          <KanbanColumn
+            title="Needs Approval"
+            dotColor="#eab308"
+            count={col1Count}
+            emptyIcon={<AlertCircle size={28} />}
+            emptyText="Nothing here"
+          >
+            {pendingGroups.map(group => (
+              <div key={group.name}>
+                {pendingGroups.length > 1 || group.orders.length > 1 ? (
+                  <div className="flex items-center gap-2 mb-1.5 px-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                      {group.name}
+                    </span>
+                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full"
+                      style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}>
+                      {group.orders.length}
+                    </span>
+                  </div>
+                ) : null}
+                <div className="flex flex-col gap-2.5">
+                  {group.orders.map(o => (
+                    <OrderCard
+                      key={o.id}
+                      order={o}
+                      onAdvance={advance}
+                      onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
+                      busy={!!busy[o.id]}
+                      isNew={newOrderIds.has(o.id)}
+                    />
+                  ))}
+                </div>
               </div>
-              <a href="/staff/bills" className="text-[11px] text-orange-500 hover:text-orange-400 font-semibold flex items-center gap-1">
-                Full Bill View <ArrowRight size={11} />
-              </a>
-            </div>
-            <div className="flex flex-col gap-3">
-              {[...tableGroups.values()].map(g => (
-                <PaymentRow key={g.tableId} group={g} onSettle={settleTable} onViewBill={viewBill} busy={!!busy[g.tableId]} />
+            ))}
+
+            {/* Zombie chips */}
+            {zombies.length > 0 && (
+              <div className="mt-1">
+                <p className="text-[9px] font-semibold uppercase tracking-wide mb-1.5 px-1"
+                  style={{ color: 'var(--text-muted)' }}>
+                  Abandoned payments ({zombies.length})
+                </p>
+                {zombies.map(o => {
+                  const lbl = o.type === 'DINE_IN'
+                    ? (o.table?.name ?? `Table ${o.table?.tableNumber}`)
+                    : `Takeaway #${o.tokenNumber}`
+                  const t = new Date(o.createdAt).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })
+                  return (
+                    <div key={o.id} className="rounded-xl flex items-center gap-3 px-3 py-2.5 mb-1.5"
+                      style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', opacity: 0.7 }}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{lbl}</p>
+                        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                          <Clock size={8} className="inline mr-0.5" />{t} · AED {Number(o.total).toFixed(2)}
+                        </p>
+                      </div>
+                      <button onClick={() => dismissZombie(o.id)} disabled={!!busy[o.id]}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
+                        style={{ border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}
+                        title="Dismiss abandoned order">
+                        {busy[o.id] ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </KanbanColumn>
+
+          {/* ── Col 2: In Kitchen ── */}
+          {kitchen.length > 0 && (
+            <KanbanColumn title="In Kitchen" dotColor="#3b82f6" count={kitchen.length}
+              emptyIcon={<ChefHat size={28} />} emptyText="Nothing here">
+              {kitchen.map(o => (
+                <OrderCard key={o.id} order={o} onAdvance={advance}
+                  busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
               ))}
-            </div>
-          </section>
+            </KanbanColumn>
+          )}
+
+          {/* ── Col 3: Ready ── */}
+          {ready.length > 0 && (
+            <KanbanColumn title="Ready" dotColor="#22c55e" count={ready.length}
+              emptyIcon={<CheckCircle size={28} />} emptyText="Nothing here">
+              {ready.map(o => (
+                <OrderCard key={o.id} order={o} onAdvance={advance}
+                  busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
+              ))}
+            </KanbanColumn>
+          )}
+
+          {/* ── Col 4: Collect Payment ── */}
+          {col4Count > 0 && (
+            <KanbanColumn title="Collect Payment" dotColor="#a855f7" count={col4Count}
+              emptyIcon={<Banknote size={28} />} emptyText="Nothing here">
+              {[...tableGroups.values()].map(g => (
+                <PaymentRow key={g.tableId} group={g} onSettle={settleTable} onViewBill={viewBill} busy={!!busy[g.tableId]} myIp={myIp} />
+              ))}
+              {takeawayHandover.map(o => (
+                <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} />
+              ))}
+            </KanbanColumn>
+          )}
+
+        </div>
         )}
 
-        {/* ── 5. Takeaway handover ──────────────────────────────────── */}
-        {takeawayHandover.length > 0 && (
-          <section>
-            <div className="flex items-center gap-2 mb-3">
-              <Package size={15} className="text-blue-500" />
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white">Takeaway — Hand Over</h2>
-              <span className="text-[10px] font-bold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded-full">{takeawayHandover.length}</span>
-            </div>
-            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {takeawayHandover.map(o => <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} />)}
-            </div>
-          </section>
-        )}
+        {/* ── Mobile single-column view ───────────────────────────────── */}
+        <div className="flex md:hidden flex-col flex-1 overflow-y-auto gap-2.5 px-3 pb-4" style={{ scrollbarWidth: 'thin' }}>
+          {mobileTab === 0 && <>
+            {pendingGroups.map(group => (
+              <div key={group.name}>
+                {(pendingGroups.length > 1 || group.orders.length > 1) && (
+                  <div className="flex items-center gap-2 mb-1.5 px-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{group.name}</span>
+                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(234,179,8,0.15)', color: '#eab308' }}>{group.orders.length}</span>
+                  </div>
+                )}
+                {group.orders.map(o => (
+                  <OrderCard key={o.id} order={o} onAdvance={advance}
+                    onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
+                    busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
+                ))}
+              </div>
+            ))}
+            {zombies.length > 0 && zombies.map(o => {
+              const lbl = o.type === 'DINE_IN' ? (o.table?.name ?? `Table ${o.table?.tableNumber}`) : `Takeaway #${o.tokenNumber}`
+              const t = new Date(o.createdAt).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })
+              return (
+                <div key={o.id} className="rounded-xl flex items-center gap-3 px-3 py-2.5"
+                  style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', opacity: 0.7 }}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{lbl}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}><Clock size={8} className="inline mr-0.5" />{t} · AED {Number(o.total).toFixed(2)}</p>
+                  </div>
+                  <button onClick={() => dismissZombie(o.id)} disabled={!!busy[o.id]}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+                    {busy[o.id] ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                  </button>
+                </div>
+              )
+            })}
+            {pending.length === 0 && zombies.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}>
+                <AlertCircle size={28} /><span className="text-xs">Nothing here</span>
+              </div>
+            )}
+          </>}
+          {mobileTab === 1 && <>
+            {kitchen.map(o => <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
+            {kitchen.length === 0 && <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}><ChefHat size={28} /><span className="text-xs">Nothing here</span></div>}
+          </>}
+          {mobileTab === 2 && <>
+            {ready.map(o => <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
+            {ready.length === 0 && <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}><CheckCircle size={28} /><span className="text-xs">Nothing here</span></div>}
+          </>}
+          {mobileTab === 3 && <>
+            {[...tableGroups.values()].map(g => <PaymentRow key={g.tableId} group={g} onSettle={settleTable} onViewBill={viewBill} busy={!!busy[g.tableId]} myIp={myIp} />)}
+            {takeawayHandover.map(o => <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} />)}
+            {col4Count === 0 && <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}><Banknote size={28} /><span className="text-xs">Nothing here</span></div>}
+          </>}
+        </div>
 
-        {/* ── 6. Completed (visible in "All" view only) ─────────────── */}
+        {/* ── Completed row (All view only) ───────────────────────────────── */}
         {completed.length > 0 && (
-          <section>
-            <div className="flex items-center gap-2 mb-3">
-              <BadgeCheck size={15} className="text-gray-400" />
-              <h2 className="text-sm font-bold text-gray-900 dark:text-white">Completed</h2>
-              <span className="text-[10px] font-bold bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full">{completed.length}</span>
-              <span className="text-[10px] text-gray-400 ml-1">
+          <div className="flex-shrink-0 px-4 pb-4"
+            style={{ borderTop: '1px solid var(--card-border)', paddingTop: 12 }}>
+            <div className="flex items-center gap-2 mb-2">
+              <BadgeCheck size={14} className="text-gray-400" />
+              <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Completed</span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ background: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
+                {completed.length}
+              </span>
+              <span className="text-[10px] ml-1" style={{ color: 'var(--text-muted)' }}>
                 · AED {completed.reduce((s, o) => s + Number(o.total), 0).toFixed(2)} total
               </span>
             </div>
-            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4, scrollbarWidth: 'thin' }}>
               {completed.map(o => <CompletedCard key={o.id} order={o} />)}
             </div>
-          </section>
+          </div>
         )}
-
       </div>
+
     </div>
 
     {cancelTarget && (

@@ -34,7 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               fontWeight: 600,
               fontSize: '14px',
             },
-            success: { iconTheme: { primary: '#f97316', secondary: '#fff' } },
+            success: { iconTheme: { primary: 'var(--brand, #C9A84C)', secondary: '#fff' } },
           }}
         />
       </body>

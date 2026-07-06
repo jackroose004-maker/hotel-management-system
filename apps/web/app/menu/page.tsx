@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import type { Stripe } from '@stripe/stripe-js'
 import { Elements } from '@stripe/react-stripe-js'
 import {
-  Plus, Minus, ShoppingCart, X, ArrowLeft, Clock,
+  Plus, Minus, ShoppingCart, X, ArrowLeft, ArrowRight, Clock,
   CheckCircle, ChefHat, Bike, UtensilsCrossed,
   Loader2, Lock, Banknote, Moon, Sun, Heart, Table2, AlertCircle,
   BellRing, PackageCheck, ChevronDown, ChevronUp, ChevronLeft,
@@ -18,7 +18,7 @@ import { useCartStore } from '@/store/cart'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { useBrandStore } from '@/store/brand'
-import { useLangStore, applyLangDir, t } from '@/store/lang'
+import { useLangStore, applyLangDir, t, type Lang } from '@/store/lang'
 import StripePaymentForm from '@/components/StripePaymentForm'
 import ForceDark from '@/components/ForceDark'
 import { getStripe, isStripeConfigured } from '@/lib/stripe'
@@ -58,17 +58,17 @@ interface CategoryPageState {
 const STATUS_STEP: Record<string, number> = { PENDING: 0, ACCEPTED: 1, PREPARING: 2, READY: 3, DELIVERED: 4 }
 
 const STEPS_DINE_IN = [
-  { label: 'Received',  emoji: '📋', icon: Clock        },
-  { label: 'Confirmed', emoji: '✅', icon: CheckCircle  },
-  { label: 'Preparing', emoji: '👨‍🍳', icon: ChefHat     },
-  { label: 'Serve!',    emoji: '🔔', icon: BellRing     },  // bell = waiter brings to table
+  { labelKey: 'menu.received',  emoji: '📋', icon: Clock        },
+  { labelKey: 'menu.confirmed', emoji: '✅', icon: CheckCircle  },
+  { labelKey: 'menu.preparing', emoji: '👨‍🍳', icon: ChefHat     },
+  { labelKey: 'menu.ready',     emoji: '🔔', icon: BellRing     },
 ]
 
 const STEPS_TAKEAWAY = [
-  { label: 'Received',  emoji: '📋', icon: Clock        },
-  { label: 'Confirmed', emoji: '✅', icon: CheckCircle  },
-  { label: 'Preparing', emoji: '👨‍🍳', icon: ChefHat     },
-  { label: 'Pick Up!',  emoji: '📦', icon: PackageCheck },  // box = collect at counter
+  { labelKey: 'menu.received',  emoji: '📋', icon: Clock        },
+  { labelKey: 'menu.confirmed', emoji: '✅', icon: CheckCircle  },
+  { labelKey: 'menu.preparing', emoji: '👨‍🍳', icon: ChefHat     },
+  { labelKey: 'menu.ready',     emoji: '📦', icon: PackageCheck },
 ]
 
 const fadeUp = 'opacity-0 translate-y-4 animate-[fadeUp_0.4s_ease_forwards]'
@@ -244,7 +244,7 @@ interface Order {
   table?: { id: string; name: string | null; tableNumber: number } | null
   items: { quantity: number; notes?: string | null; unitPrice: number; menuItem: { name: string } }[]
 }
-function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel: (reason: string) => void }) {
+function OrderTrackCard({ o, idx, lang, onCancel }: { o: Order; idx: number; lang: Lang; onCancel: (reason: string) => void }) {
   const [expanded, setExpanded] = useState(false)
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [cancelBusy, setCancelBusy] = useState(false)
@@ -349,10 +349,10 @@ function OrderTrackCard({ o, idx, onCancel }: { o: Order; idx: number; onCancel:
               const done = i <= sIdx
               const active = i === sIdx
               const label = (!isTakeaway && i === steps.length - 1)
-                ? (o.status === 'DELIVERED' ? 'Served ✓' : 'Serve!')
-                : step.label
+                ? (o.status === 'DELIVERED' ? (lang === 'ar' ? 'تم التقديم ✓' : 'Served ✓') : (lang === 'ar' ? 'قدّم!' : 'Serve!'))
+                : t(lang, step.labelKey)
               return (
-                <div key={step.label} className="relative flex flex-col items-center gap-1.5 flex-1">
+                <div key={step.labelKey} className="relative flex flex-col items-center gap-1.5 flex-1">
                   <div className="w-9 h-9 rounded-full flex items-center justify-center transition-all duration-500 z-10"
                     style={{
                       backgroundColor: done ? 'var(--brand)' : '#1a1a1a',
@@ -559,7 +559,7 @@ function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, lang, onToggl
           <div className="flex items-end justify-between">
             <span className="font-black text-base" style={{ color: 'var(--brand)' }}>
               AED {vatInclusivePrice.toFixed(0)}
-              <span className="text-[9px] text-amber-300/70 font-normal ml-1">incl. VAT</span>
+              <span className="text-[9px] text-amber-300/70 font-normal ml-1">{t(lang, 'menu.inclVat')}</span>
             </span>
             <span className="text-white/60 text-[10px] flex items-center gap-0.5">
               <Clock size={9} /> {item.prepTimeMins}m
@@ -592,9 +592,9 @@ function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, lang, onToggl
               )}
             </div>
           ) : (
-            <div className="text-[9px] text-gray-600">Single size</div>
+            <div className="text-[9px] text-gray-600">{t(lang, 'menu.single')}</div>
           )}
-          <div className="text-[10px] text-[var(--brand)]/70 font-semibold">Tap →</div>
+          <div className="text-[10px] text-[var(--brand)]/70 font-semibold">{lang === 'ar' ? '← اضغط' : 'Tap →'}</div>
         </div>
       </div>
     </div>
@@ -656,11 +656,14 @@ function MenuPageInner() {
   const { user: authUser } = useAuthStore()
   const { dark, toggle } = useThemeStore()
   const { lang, setLang } = useLangStore()
-  const ar = lang === 'ar'
+  const ar = mounted && lang === 'ar'
   // Helper: pick Arabic field if available and Arabic is active
   const dn = (en: string, arText?: string | null) => (ar && arText) ? arText : en
-  const brandLogoUrl = useBrandStore(s => s.logoUrl)
-  const brandName = useBrandStore(s => s.restaurantName)
+  const brandLogoUrl    = useBrandStore(s => s.logoUrl)
+  const brandName       = useBrandStore(s => s.restaurantName)
+  const brandNameAr     = useBrandStore(s => s.restaurantNameAr)
+  const brandTagline    = useBrandStore(s => s.tagline)
+  const brandTaglineAr  = useBrandStore(s => s.taglineAr)
   const isStaff = !!(authUser && ['STAFF', 'MANAGER', 'OWNER'].includes(authUser.role))
 
   // When staff selects a table, load existing guest sessions so they can pick who they're ordering for
@@ -741,6 +744,7 @@ function MenuPageInner() {
 
   useEffect(() => {
     setMounted(true)
+    applyLangDir(lang)
     requestNotifyPermission()
     if (fromBooking || fromQr) {
       cart.setOrderType('DINE_IN')
@@ -758,9 +762,10 @@ function MenuPageInner() {
       }).catch(() => {})
     }
     api.get('/menu/categories').then(async r => {
-      const cats: Category[] = (r.data ?? []).map((c: { id: string; name: string; itemCount?: number }) => ({
+      const cats: Category[] = (r.data ?? []).map((c: { id: string; name: string; nameAr?: string; itemCount?: number }) => ({
         id: c.id,
         name: c.name,
+        nameAr: c.nameAr,
         itemCount: c.itemCount ?? 0,
         items: [],
       }))
@@ -1037,7 +1042,7 @@ function MenuPageInner() {
         cart.clear()
         setShowCashConfirm(false)
         setView('tracking')
-        toast.success('Order placed! Pay at the counter when you leave.', { duration: 4000, position: 'top-center' })
+        toast.success(t(lang, 'menu.orderPlaced'), { duration: 4000, position: 'top-center' })
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Could not place order. Try again.'
@@ -1247,7 +1252,7 @@ function MenuPageInner() {
         </div>
         <div className="flex-1 max-w-md mx-auto w-full px-4 py-6">
           <div className="rounded-2xl p-4 mb-5" style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
-            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Order Summary</div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{t(lang, 'menu.orderSummary')}</div>
             <div className="space-y-1 mb-3">
               {order.items.map((item, i) => (
                 <div key={i} className="flex justify-between text-sm text-gray-400">
@@ -1306,16 +1311,18 @@ function MenuPageInner() {
               className="flex items-center gap-1.5 text-[var(--brand)] hover:text-[var(--brand)] transition-colors mr-1"
             >
               <ChevronLeft size={18} />
-              <span className="text-xs font-semibold">Menu</span>
+              <span className="text-xs font-semibold">{t(lang, 'menu.back')}</span>
             </button>
             <div className="w-px h-4" style={{ backgroundColor: '#2a2a2a' }} />
             <UtensilsCrossed size={17} className="text-[var(--brand)]" />
-            <span className="font-bold text-sm text-white">My Orders</span>
+            <span className="font-bold text-sm text-white">{t(lang, 'menu.yourOrder')}</span>
           </div>
           {hasReady && (
             <span className="text-xs font-bold px-2.5 py-1 rounded-full animate-pulse"
               style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }}>
-              {allDineIn ? '🔔 Ready to serve!' : '📦 Ready for pickup!'}
+              {allDineIn
+                ? (ar ? '🔔 جاهز للتقديم!' : '🔔 Ready to serve!')
+                : (ar ? '📦 جاهز للاستلام!' : '📦 Ready for pickup!')}
             </span>
           )}
         </div>
@@ -1326,33 +1333,46 @@ function MenuPageInner() {
           <div className="rounded-2xl px-4 py-3 flex items-center justify-between"
             style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">{displayOrders.length} order{displayOrders.length > 1 ? 's' : ''} active</p>
-              <p className="text-base font-black text-white">Total <span style={{ color: 'var(--brand)' }}>AED {grandTotal.toFixed(2)}</span></p>
+              <p className="text-xs text-gray-500 mb-0.5">{displayOrders.length} {displayOrders.length > 1 ? t(lang, 'cart.ordersActivePlural') : t(lang, 'cart.ordersActive')}</p>
+              <p className="text-base font-black text-white">{t(lang, 'cart.totalLabel')} <span style={{ color: 'var(--brand)' }}>AED {grandTotal.toFixed(2)}</span></p>
             </div>
             <div className="text-right">
-              <p className="text-[10px] text-gray-600 mb-1">Payment</p>
+              <p className="text-[10px] text-gray-600 mb-1">{t(lang, 'menu.total')}</p>
               {displayOrders.every(o => o.paymentStatus === 'PAID')
-                ? <span className="text-xs font-bold text-green-400">✓ All Paid</span>
-                : <span className="text-xs font-bold text-[var(--brand)]">💵 Pay at Exit</span>}
+                ? <span className="text-xs font-bold text-green-400">✓ {t(lang, 'menu.confirmed')}</span>
+                : <span className="text-xs font-bold text-[var(--brand)]">💵 {t(lang, 'cart.payAtExit')}</span>}
             </div>
           </div>
 
           {/* Order cards — accordion */}
           {displayOrders.map((o, idx) => (
-            <OrderTrackCard key={o.id} o={o} idx={idx}
+            <OrderTrackCard key={o.id} o={o} idx={idx} lang={lang}
               onCancel={reason => cancelOrder(o.id, reason)} />
+          ))}
+
+          {/* Share tracking links */}
+          {displayOrders.map(o => (
+            <Link key={`track-${o.id}`} href={`/track/${o.id}`}
+              className="rounded-2xl px-4 py-3 flex items-center justify-between group"
+              style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
+              <div className="flex items-center gap-2 text-sm">
+                <span style={{ color: 'var(--brand)' }}>📍</span>
+                <span className="text-gray-400">{ar ? 'تتبع الطلب' : 'Track order'} <span className="text-gray-600 font-mono text-[10px]">#{o.tokenNumber ?? o.id.slice(0, 6).toUpperCase()}</span></span>
+              </div>
+              <ArrowRight size={14} className="text-gray-600 group-hover:text-[var(--brand)] transition-colors" />
+            </Link>
           ))}
 
           {/* Order More CTA */}
           <div className="rounded-2xl p-4" style={{ border: '1px solid rgba(var(--brand-rgb),0.25)', backgroundColor: 'rgba(var(--brand-rgb),0.04)' }}>
-            <p className="text-xs font-semibold text-[var(--brand)] mb-0.5">Want to add more?</p>
+            <p className="text-xs font-semibold text-[var(--brand)] mb-0.5">{t(lang, 'cart.wantToAddMore')}</p>
             <p className="text-xs text-[var(--brand)]/50 mb-3">
-              {allDineIn ? 'All new items will be added to your bill for this table.' : 'Add to your existing order.'}
+              {allDineIn ? t(lang, 'menu.allItemsToTable') : t(lang, 'menu.addToExisting')}
             </p>
             <button onClick={() => setView('menu')}
               className="w-full py-2.5 rounded-xl text-sm font-bold transition-colors"
               style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-              + Order More Items
+              {t(lang, 'cart.orderMoreItems')}
             </button>
           </div>
 
@@ -1390,21 +1410,21 @@ function MenuPageInner() {
         <ForceDark />
         <div className="border-b px-4 h-14 flex items-center gap-3 sticky top-0 z-10" style={{ backgroundColor: '#0d0d0d', borderColor: '#1a1a1a' }}>
           <button onClick={() => setView('menu')} className="text-gray-400 hover:text-white">
-            <ArrowLeft size={20} />
+            {ar ? <ArrowRight size={20} /> : <ArrowLeft size={20} />}
           </button>
-          <span className="font-semibold text-white">Review Order</span>
+          <span className="font-semibold text-white">{t(lang, 'cart.reviewOrder')}</span>
         </div>
 
         <div className="flex-1 max-w-md mx-auto w-full px-4 py-4">
 
           {/* Order type toggle */}
           <div className="rounded-2xl p-4 mb-4 animate-[fadeUp_0.35s_ease_forwards]" style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">How would you like it?</div>
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{t(lang, 'cart.howWouldYouLikeIt')}</div>
             {fromBooking ? (
               <div className="flex items-center gap-2 bg-[var(--brand)]/10 border border-[var(--brand)]/30 rounded-xl px-3 py-2.5">
                 <Table2 size={14} className="text-[var(--brand)] flex-shrink-0" />
                 <span className="text-sm text-white font-semibold">Dine In — {allTables.find(t => t.id === tableId)?.name ?? `Table ${tableNum}`}</span>
-                <span className="text-xs text-gray-500 ml-auto">from booking</span>
+                <span className="text-xs text-gray-500 ml-auto">{t(lang, 'cart.fromBooking')}</span>
               </div>
             ) : (
               <div className="flex rounded-xl overflow-hidden" style={{ border: '1px solid #2a2a2a' }}>
@@ -1412,7 +1432,7 @@ function MenuPageInner() {
                   <button key={type} onClick={() => { cart.setOrderType(type); if (type === 'TAKEAWAY') { setTableId(''); setTableNum(null); setTableInput('') } }}
                     style={cart.orderType === type ? { backgroundColor: 'var(--brand)', color: '#000' } : { backgroundColor: '#1a1a1a', color: '#888' }}
                     className="flex-1 py-3 text-sm font-semibold transition-colors">
-                    {type === 'DINE_IN' ? '🍽  Dine In' : '📦  Takeaway'}
+                    {type === 'DINE_IN' ? t(lang, 'cart.dineIn') : t(lang, 'cart.takeaway')}
                   </button>
                 ))}
               </div>
@@ -1425,26 +1445,28 @@ function MenuPageInner() {
                   <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-xl px-3 py-2.5">
                     <Table2 size={14} className="text-green-400 flex-shrink-0" />
                     <span className="text-sm font-semibold text-green-400">{qrTableName || `Table ${tableNum}`}</span>
-                    <span className="text-xs text-gray-400 ml-auto">from QR scan</span>
+                    <span className="text-xs text-gray-400 ml-auto">{t(lang, 'cart.fromQr')}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 rounded-xl px-3 py-2.5" style={{ backgroundColor: '#1a1a1a' }}>
                     <Loader2 size={14} className="text-gray-400 animate-spin flex-shrink-0" />
-                    <span className="text-sm text-gray-400">Resolving table…</span>
+                    <span className="text-sm text-gray-400">{t(lang, 'cart.resolvingTable')}</span>
                   </div>
                 )}
               </div>
             )}
 
-            {/* Table already known from localStorage — show locked tile so guest doesn't re-select */}
+            {/* Table selected — locked tile with change option */}
             {cart.orderType === 'DINE_IN' && !fromBooking && !fromQr && tableId && (
-              <div className="mt-3 flex items-center gap-2 bg-[var(--brand)]/10 border border-[var(--brand)]/30 rounded-xl px-3 py-2.5">
-                <Table2 size={14} className="text-[var(--brand)] flex-shrink-0" />
-                <span className="text-sm font-semibold text-[var(--brand)]">
-                  {allTables.find(t => t.id === tableId)?.name ?? `Table ${tableNum}`}
+              <div className="mt-3 flex items-center gap-2 rounded-xl px-3 py-2.5"
+                style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', border: '1.5px solid rgba(var(--brand-rgb),0.5)' }}>
+                <Table2 size={14} className="flex-shrink-0" style={{ color: 'var(--brand)' }} />
+                <span className="text-sm font-bold" style={{ color: 'var(--brand)' }}>
+                  {allTables.find(tb => tb.id === tableId)?.name ?? `Table ${tableNum}`}
                 </span>
+                <span className="text-[10px] text-green-400 ml-1">{t(lang, 'cart.selected')}</span>
                 <button onClick={() => { setTableId(''); setTableNum(null); setTableInput('') }}
-                  className="ml-auto text-[10px] text-gray-500 underline">change</button>
+                  className="ml-auto text-[10px] text-gray-500 underline">{t(lang, 'cart.change')}</button>
               </div>
             )}
 
@@ -1454,25 +1476,25 @@ function MenuPageInner() {
               return (
               <div className="mt-3">
                 <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
-                  <Table2 size={11} /> Select your table
+                  <Table2 size={11} /> {t(lang, 'cart.selectTable')}
                 </div>
                 {selectable.length === 0 ? (
                   <p className="text-xs text-[var(--brand)] bg-[var(--brand)]/10 border border-[var(--brand)]/20 rounded-xl px-3 py-2.5">
-                    No tables available right now. Please ask a staff member.
+                    {t(lang, 'cart.noTablesAvailable')}
                   </p>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
-                    {selectable.map(t => (
-                      <button key={t.id} onClick={() => { setTableId(t.id); setTableNum(t.tableNumber); cart.setTableId(t.id) }}
-                          style={tableId === t.id
+                    {selectable.map(tbl => (
+                      <button key={tbl.id} onClick={() => { setTableId(tbl.id); setTableNum(tbl.tableNumber); cart.setTableId(tbl.id) }}
+                          style={tableId === tbl.id
                           ? { backgroundColor: 'var(--brand)', border: '1px solid var(--brand)', boxShadow: '0 4px 12px rgba(var(--brand-rgb),0.2)' }
                           : { backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}
                         className="rounded-xl py-3 px-2 text-center transition-all">
-                        <div className={`font-bold text-sm ${tableId === t.id ? 'text-black' : 'text-white'}`}>
-                          {t.name ?? `T${t.tableNumber}`}
+                        <div className={`font-bold text-sm ${tableId === tbl.id ? 'text-black' : 'text-white'}`}>
+                          {tbl.name ?? `T${tbl.tableNumber}`}
                         </div>
-                        <div className={`text-[10px] mt-0.5 ${tableId === t.id ? 'text-amber-100' : 'text-gray-400'}`}>
-                          {t.status === 'EMPTY' ? `${t.capacity} seats` : t.status === 'OCCUPIED' ? 'seated' : 'billing'}
+                        <div className={`text-[10px] mt-0.5 ${tableId === tbl.id ? 'text-amber-100' : 'text-gray-400'}`}>
+                          {tbl.status === 'EMPTY' ? `${tbl.capacity} ${t(lang, 'cart.seats')}` : tbl.status === 'OCCUPIED' ? t(lang, 'cart.seated') : t(lang, 'cart.billing')}
                         </div>
                       </button>
                     ))}
@@ -1488,7 +1510,7 @@ function MenuPageInner() {
             })()}
 
             {!fromBooking && cart.orderType === 'TAKEAWAY' && (
-              <p className="text-xs text-gray-400 mt-2 text-center">Token number given · Collect at counter when ready</p>
+              <p className="text-xs text-gray-400 mt-2 text-center">{t(lang, 'cart.tokenGiven')}</p>
             )}
 
             {/* ── Staff session picker ── shown only when staff has selected a table with existing guests */}
@@ -1550,7 +1572,7 @@ function MenuPageInner() {
 
           {/* Cart items */}
           <div className="rounded-2xl mb-4" style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
-            {cart.items.length === 0 && <div className="text-center py-10 text-gray-500 text-sm">Your cart is empty</div>}
+            {cart.items.length === 0 && <div className="text-center py-10 text-gray-500 text-sm">{t(lang, 'menu.emptyCart')}</div>}
             {cart.items.map((item, idx) => (
               <div key={item.menuItemId} className="p-4" style={idx > 0 ? { borderTop: '1px solid #1e1e1e' } : {}}>
                 <div className="flex items-start justify-between gap-2 mb-2">
@@ -1566,7 +1588,7 @@ function MenuPageInner() {
                         ))}
                       </div>
                     )}
-                    <div className="text-xs text-gray-500 mt-0.5">AED {item.price.toFixed(2)} each · incl. VAT</div>
+                    <div className="text-xs text-gray-500 mt-0.5">AED {item.price.toFixed(2)} {t(lang, 'cart.eachInclVat')}</div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <button onClick={() => cart.updateQty(item.cartKey, -1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: '#222' }}>
@@ -1583,10 +1605,10 @@ function MenuPageInner() {
                 </div>
                 <button onClick={() => setNotesOpen(notesOpen === item.cartKey ? null : item.cartKey)}
                   className="text-xs text-[var(--brand)] hover:underline">
-                  {item.notes ? `📝 ${item.notes}` : '+ Add note (spice, allergies...)'}
+                  {item.notes ? `📝 ${item.notes}` : t(lang, 'cart.addNote')}
                 </button>
                 {notesOpen === item.cartKey && (
-                  <input autoFocus type="text" placeholder="e.g. No onion, less spicy, extra chutney..."
+                  <input autoFocus type="text" placeholder={t(lang, 'cart.notePlaceholder')}
                     value={item.notes || ''}
                     onChange={e => cart.updateNotes(item.cartKey, e.target.value)}
                     className="mt-2 w-full text-xs rounded-lg px-3 py-2 focus:outline-none text-white placeholder-gray-600"
@@ -1604,16 +1626,16 @@ function MenuPageInner() {
           {cart.items.length > 0 && (
             <div className="rounded-2xl p-4 mb-5" style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
               <div className="flex justify-between text-base font-bold text-white mb-2">
-                <span>Total (incl. VAT)</span><span style={{ color: 'var(--brand)' }}>AED {cart.total().toFixed(2)}</span>
+                <span>{t(lang, 'cart.totalInclVat')}</span><span style={{ color: 'var(--brand)' }}>AED {cart.total().toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-xs text-gray-500 mb-1">
-                <span>Dish prices (net)</span><span>AED {(cart.total() - cart.vatPortion()).toFixed(2)}</span>
+                <span>{t(lang, 'cart.dishPricesNet')}</span><span>AED {(cart.total() - cart.vatPortion()).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-xs text-gray-500 pb-2 mb-2" style={{ borderBottom: '1px solid #1e1e1e' }}>
-                <span>VAT included (5%)</span><span>AED {cart.vatPortion().toFixed(2)}</span>
+                <span>{t(lang, 'cart.vatIncluded')}</span><span>AED {cart.vatPortion().toFixed(2)}</span>
               </div>
               <div className="text-xs text-gray-600 flex items-center gap-1">
-                <Clock size={11} /> Est. prep: ~{cart.maxPrepTime()}–{cart.maxPrepTime() + 5} mins
+                <Clock size={11} /> {t(lang, 'cart.estPrep')}{cart.maxPrepTime()}–{cart.maxPrepTime() + 5} {t(lang, 'cart.mins')}
               </div>
             </div>
           )}
@@ -1621,7 +1643,7 @@ function MenuPageInner() {
           {/* Phone number — takeaway only */}
           {cart.orderType === 'TAKEAWAY' && cart.items.length > 0 && (
             <div className="rounded-2xl p-4 mb-4" style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
-              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Contact Number</div>
+              <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{t(lang, 'cart.contactNumber')}</div>
               <input
                 type="tel"
                 placeholder="+971 50 000 0000"
@@ -1640,7 +1662,7 @@ function MenuPageInner() {
               {cart.orderType === 'DINE_IN' && !tableId && (
                 <div className="flex items-center gap-2 bg-[var(--brand)]/10 border border-[var(--brand)]/30 rounded-2xl px-4 py-3">
                   <AlertCircle size={15} className="text-[var(--brand)] flex-shrink-0" />
-                  <span className="text-amber-300 text-sm">Select a table above to continue</span>
+                  <span className="text-amber-300 text-sm">{t(lang, 'cart.selectTableToContinue')}</span>
                 </div>
               )}
               {/* Cash / counter payment option.
@@ -1660,14 +1682,14 @@ function MenuPageInner() {
                       className="w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-40"
                       style={{ backgroundColor: '#16a34a', color: '#fff' }}>
                       {placing ? <Loader2 size={18} className="animate-spin" /> : <Banknote size={16} />}
-                      {isReturningDineIn ? `Add to My Order · AED ${cart.total().toFixed(2)}` : `Pay Cash When Leaving · AED ${cart.total().toFixed(2)}`}
+                      {isReturningDineIn ? `${t(lang,'cart.addToMyOrder')} ${cart.total().toFixed(2)}` : `${t(lang,'cart.payCashLeaving')} ${cart.total().toFixed(2)}`}
                     </button>
                   )
                 }
                 if (cart.orderType === 'TAKEAWAY') {
                   const cashLabel = hasDineInSession
                     ? `Add to My Table Bill · AED ${cart.total().toFixed(2)}`
-                    : `Pay at Counter · AED ${cart.total().toFixed(2)}`
+                    : `${t(lang,'cart.payAtCounter')} ${cart.total().toFixed(2)}`
                   return (
                     <button onClick={() => setShowCashConfirm(true)}
                       disabled={placing || !canOrder}
@@ -1685,20 +1707,20 @@ function MenuPageInner() {
                 className="w-full py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-40 text-gray-300 hover:text-white"
                 style={{ border: '2px solid #2a2a2a', backgroundColor: 'transparent' }}>
                 {placing ? <Loader2 size={18} className="animate-spin" /> : <Lock size={16} />}
-                Pay by Card · AED {cart.total().toFixed(2)}
+                {t(lang,'cart.payByCard')} {cart.total().toFixed(2)}
               </button>
               {!fromBooking && cart.orderType === 'DINE_IN' && (
-                <p className="text-center text-[11px] text-gray-600">Most guests pay cash at the counter when leaving</p>
+                <p className="text-center text-[11px] text-gray-600">{t(lang, 'cart.mostGuestsPay')}</p>
               )}
               {!fromBooking && cart.orderType === 'TAKEAWAY' && (
                 <p className="text-center text-[11px] text-gray-600">
                   {activeOrders.some(o => o.type === 'DINE_IN') && tableId
-                    ? 'Bag will be ready when you leave — added to your table bill'
-                    : 'Pay at the counter when you collect'}
+                    ? t(lang, 'cart.bagReadyLeaving')
+                    : t(lang, 'cart.payAtCounterCollect')}
                 </p>
               )}
               {fromBooking && (
-                <p className="text-center text-xs text-gray-600">Pre-order with your booking — card payment required</p>
+                <p className="text-center text-xs text-gray-600">{t(lang, 'cart.preOrderBooking')}</p>
               )}
             </div>
           )}
@@ -1719,17 +1741,17 @@ function MenuPageInner() {
               </div>
               <h2 className="text-xl font-black text-white mb-1">
                 {cart.orderType === 'TAKEAWAY' && activeOrders.some(o => o.type === 'DINE_IN') && tableId
-                  ? 'Add Takeaway to Your Bill'
+                  ? t(lang, 'menu.addToBill')
                   : cart.orderType === 'TAKEAWAY'
-                  ? 'Pay at Counter on Collection'
-                  : 'Pay Cash When Leaving'}
+                  ? t(lang, 'menu.payAtCounter')
+                  : t(lang, 'menu.payCashLeaving')}
               </h2>
               <p className="text-sm text-gray-500">
                 {cart.orderType === 'TAKEAWAY' && activeOrders.some(o => o.type === 'DINE_IN') && tableId
-                  ? "We'll pack it and add it to your table bill. Collect when you're ready to leave."
+                  ? t(lang, 'cart.cashConfirmSubAddBill')
                   : cart.orderType === 'TAKEAWAY'
-                  ? "Your order goes to the kitchen now. Pay at the counter when you collect."
-                  : 'Your order will be sent to the kitchen now. Please pay at the counter before you leave.'}
+                  ? t(lang, 'cart.cashConfirmSubTakeaway')
+                  : t(lang, 'cart.cashConfirmSubDineIn')}
               </p>
             </div>
             <div className="rounded-2xl divide-y" style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
@@ -1740,27 +1762,27 @@ function MenuPageInner() {
                 </div>
               ))}
               <div className="flex justify-between px-4 py-3">
-                <span className="font-black text-white">Total</span>
+                <span className="font-black text-white">{t(lang, 'cart.totalLabel')}</span>
                 <span className="font-black text-lg" style={{ color: 'var(--brand)' }}>AED {cart.total().toFixed(2)}</span>
               </div>
             </div>
-            <p className="text-[11px] text-gray-600 text-center">Prices include 5% VAT</p>
+            <p className="text-[11px] text-gray-600 text-center">{t(lang, 'cart.pricesIncludeVat')}</p>
             <button onClick={() => placeOrder(false)}
               disabled={placing}
               className="w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-60"
               style={{ backgroundColor: '#16a34a', color: '#fff' }}>
               {placing ? <Loader2 size={18} className="animate-spin" /> : <Banknote size={18} />}
-              {placing ? 'Placing order…'
+              {placing ? t(lang, 'cart.placingOrder')
                 : cart.orderType === 'TAKEAWAY' && activeOrders.some(o => o.type === 'DINE_IN') && tableId
-                ? 'Confirm — Add to My Bill'
+                ? t(lang, 'cart.confirmAddToMyBill')
                 : cart.orderType === 'TAKEAWAY'
-                ? 'Confirm — Pay at Counter'
-                : "Confirm — I'll Pay on Exit"}
+                ? t(lang, 'cart.confirmPayAtCounter')
+                : t(lang, 'cart.confirmPayOnExit')}
             </button>
             <button onClick={() => setShowCashConfirm(false)} disabled={placing}
               className="w-full py-3 rounded-2xl text-sm text-gray-500 hover:text-white transition-colors"
               style={{ border: '1px solid #1e1e1e' }}>
-              Go Back
+              {t(lang, 'cart.goBack')}
             </button>
           </div>
         </div>
@@ -1821,16 +1843,16 @@ function MenuPageInner() {
         <div className="px-4 pb-6">
           {/* Base price row */}
           <div className="flex justify-between items-center mb-4 pb-3" style={{ borderBottom: '1px solid #1e1e1e' }}>
-            <div className="text-xs text-gray-500">Base price</div>
-            <div className="text-sm font-bold" style={{ color: 'var(--brand)' }}>AED {(drawerBasePrice * 1.05).toFixed(2)} <span className="text-[10px] text-gray-600 font-normal">incl. VAT</span></div>
+            <div className="text-xs text-gray-500">{t(lang, 'menu.basePrice')}</div>
+            <div className="text-sm font-bold" style={{ color: 'var(--brand)' }}>AED {(drawerBasePrice * 1.05).toFixed(2)} <span className="text-[10px] text-gray-600 font-normal">{t(lang, 'menu.inclVat')}</span></div>
           </div>
 
           {/* Modifier groups */}
           {(drawerItem.modifierGroups ?? []).map(group => (
             <div key={group.id} className="mb-5">
               <div className="flex items-center gap-2 mb-2">
-                <div className="text-xs font-bold text-white uppercase tracking-wide">{group.name}</div>
-                {group.required && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--brand)22', color: 'var(--brand)' }}>Required</span>}
+                <div className="text-xs font-bold text-white uppercase tracking-wide">{ar && (group as any).nameAr ? (group as any).nameAr : group.name}</div>
+                {group.required && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--brand)22', color: 'var(--brand)' }}>{t(lang, 'menu.required')}</span>}
               </div>
               <div className="space-y-2">
                 {group.options.map(opt => {
@@ -1854,7 +1876,7 @@ function MenuPageInner() {
                           AED {finalP.toFixed(2)}
                         </div>
                         {Number(opt.priceAdd) > 0 && (
-                          <div className="text-[9px] text-gray-600">+{Number(opt.priceAdd).toFixed(2)} extra</div>
+                          <div className="text-[9px] text-gray-600">+{Number(opt.priceAdd).toFixed(2)} {t(lang, 'menu.extra')}</div>
                         )}
                       </div>
                     </button>
@@ -1866,10 +1888,10 @@ function MenuPageInner() {
 
           {/* Notes */}
           <div className="mb-4">
-            <div className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-2">Special Instructions</div>
+            <div className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-2">{t(lang, 'menu.specialInstructionsLabel')}</div>
             <input
               type="text"
-              placeholder="e.g. No onion, extra spicy, less sauce..."
+              placeholder={t(lang, 'menu.specialInstructionsPlaceholder')}
               value={drawerNotes}
               onChange={e => setDrawerNotes(e.target.value)}
               className="w-full text-sm text-white placeholder-gray-600 rounded-xl px-3 py-2.5 focus:outline-none"
@@ -1880,7 +1902,7 @@ function MenuPageInner() {
           {/* Add button */}
           {requiredUnsatisfied.length > 0 ? (
             <div className="w-full py-4 rounded-2xl text-center text-sm font-semibold" style={{ backgroundColor: '#1a1a1a', color: '#555' }}>
-              Please choose: {requiredUnsatisfied.map(g => g.name).join(', ')}
+              {t(lang, 'menu.pleaseChoose')} {requiredUnsatisfied.map(g => ar && (g as any).nameAr ? (g as any).nameAr : g.name).join(', ')}
             </div>
           ) : (
             <button
@@ -1894,13 +1916,13 @@ function MenuPageInner() {
                   prepTimeMins: drawerItem.prepTimeMins,
                   notes: drawerNotes || undefined,
                 })
-                toast.success(`${drawerItem.name}${modLabel} added!`, { duration: 1400, position: 'bottom-center' })
+                toast.success(`${ar && (drawerItem as any).nameAr ? (drawerItem as any).nameAr : drawerItem.name}${modLabel} ${t(lang, 'cart.addedToCart')}`, { duration: 1400, position: 'bottom-center' })
                 setDrawerItem(null)
               }}
               className="w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all active:scale-95"
               style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
               <Plus size={18} />
-              Add to Order · AED {drawerVatPrice.toFixed(2)}
+              {t(lang, 'menu.addToOrder')} {drawerVatPrice.toFixed(2)}
             </button>
           )}
         </div>
@@ -1912,9 +1934,15 @@ function MenuPageInner() {
   const favItems = categories.flatMap(c => c.items).filter(item => favs.includes(item.id))
 
   const allCatPills = [
-    ...(isLoggedIn && favItems.length > 0 ? [{ id: FAV_ID, name: '♥ Favourites' }] : []),
+    ...(isLoggedIn && favItems.length > 0 ? [{ id: FAV_ID, name: t(lang, 'menu.favourites') }] : []),
     ...categories.map(c => ({ id: c.id, name: c.name, nameAr: c.nameAr })),
   ]
+
+  if (!mounted) return (
+    <div style={{ minHeight: '100vh', backgroundColor: '#080808' }}>
+      <ForceDark />
+    </div>
+  )
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#080808' }}>
@@ -1922,38 +1950,49 @@ function MenuPageInner() {
 
       {/* ── Sticky header: brand + category rail ── */}
       <div className="sticky top-0 z-20" style={{ backgroundColor: 'rgba(8,8,8,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        {/* Brand + cart row — compact on mobile */}
-        <div className="px-4 sm:px-8 flex items-center gap-3 h-12 sm:h-14">
-          <Link href="/" className="text-gray-600 hover:text-white transition-colors flex-shrink-0">
-            <ArrowLeft size={18} />
-          </Link>
-          {brandLogoUrl && (
-            <img src={brandLogoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="font-black text-sm text-white tracking-wide leading-none">{brandName || 'AL MANZIL'}</div>
-            <div className="text-[9px] tracking-widest uppercase truncate" style={{ color: 'var(--brand)' }}>
-              {qrTableName || 'Kerala & South Indian Cuisine'}
-            </div>
-          </div>
-          {/* Language toggle */}
-          <button onClick={() => setLang(ar ? 'en' : 'ar')}
-            className="flex-shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
-            style={{ backgroundColor: '#1a1a1a', color: ar ? 'var(--brand)' : '#555', border: '1px solid #2a2a2a' }}>
-            {ar ? 'EN' : 'ع'}
-          </button>
-          {/* Cart button — always visible, shows icon only when empty */}
-          <button onClick={() => setView('cart')} className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
-            style={totalQty > 0
-              ? { backgroundColor: 'var(--brand)', color: '#000' }
-              : { backgroundColor: '#1a1a1a', color: '#666', border: '1px solid #2a2a2a' }}>
-            <ShoppingCart size={15} />
-            {totalQty > 0 && <span className="text-xs font-black whitespace-nowrap">{totalQty} · AED {cart.total().toFixed(0)}</span>}
-          </button>
+        {/* Brand + cart row — dir="ltr" so DOM order controls position regardless of html dir */}
+        <div dir="ltr" className="px-4 sm:px-8 flex items-center gap-3 h-12 sm:h-14">
+          {(() => {
+            const backBtn = (
+              <Link href="/" className="text-gray-600 hover:text-white transition-colors flex-shrink-0">
+                {ar ? <ArrowRight size={18} /> : <ArrowLeft size={18} />}
+              </Link>
+            )
+            const logoEl = brandLogoUrl ? (
+              <img src={brandLogoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
+            ) : null
+            const nameEl = (
+              <div className="flex-1 min-w-0">
+                <div className={`font-black text-sm text-white tracking-wide leading-none ${ar ? 'text-right' : ''}`}>{(ar && brandNameAr) ? brandNameAr : (brandName || 'AL MANZIL')}</div>
+                <div className={`text-[9px] tracking-widest uppercase truncate ${ar ? 'text-right' : ''}`} style={{ color: 'var(--brand)' }}>
+                  {qrTableName || ((ar && brandTaglineAr) ? brandTaglineAr : (brandTagline || 'Kerala & South Indian Cuisine'))}
+                </div>
+              </div>
+            )
+            const langBtn = (
+              <button onClick={() => setLang(ar ? 'en' : 'ar')}
+                className="flex-shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
+                style={{ backgroundColor: '#1a1a1a', color: ar ? 'var(--brand)' : '#555', border: '1px solid #2a2a2a' }}>
+                {ar ? 'EN' : 'ع'}
+              </button>
+            )
+            const cartBtn = (
+              <button onClick={() => setView('cart')} className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
+                style={totalQty > 0
+                  ? { backgroundColor: 'var(--brand)', color: '#000' }
+                  : { backgroundColor: '#1a1a1a', color: '#666', border: '1px solid #2a2a2a' }}>
+                <ShoppingCart size={15} />
+                {totalQty > 0 && <span className="text-xs font-black whitespace-nowrap">{totalQty} · AED {cart.total().toFixed(0)}</span>}
+              </button>
+            )
+            return ar
+              ? <>{cartBtn}{langBtn}{nameEl}{logoEl}{backBtn}</>
+              : <>{backBtn}{logoEl}{nameEl}{langBtn}{cartBtn}</>
+          })()}
         </div>
 
         {/* Category pill rail */}
-        <div ref={catTabsRef} className="flex gap-1.5 overflow-x-auto scrollbar-hide px-4 sm:px-8 pb-2.5">
+        <div ref={catTabsRef} dir={ar ? 'rtl' : 'ltr'} className="flex gap-1.5 overflow-x-auto scrollbar-hide px-4 sm:px-8 pb-2.5">
           {allCatPills.map(c => (
             <button key={c.id} data-cat={c.id} onClick={() => scrollToCategory(c.id)}
               className="flex-shrink-0 px-3.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap"
@@ -2018,7 +2057,7 @@ function MenuPageInner() {
                 <h2 className="text-2xl font-black text-white tracking-tight">
                   {ar && cat.nameAr ? cat.nameAr : cat.name}
                 </h2>
-                <div className="text-xs text-gray-600 mt-0.5">{cat.itemCount ?? cat.items.length} {(cat.itemCount ?? cat.items.length) === 1 ? 'dish' : 'dishes'}</div>
+                <div className="text-xs text-gray-600 mt-0.5">{cat.itemCount ?? cat.items.length} {(cat.itemCount ?? cat.items.length) === 1 ? t(lang, 'menu.dish') : t(lang, 'menu.dishes')}</div>
               </div>
               <div className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(var(--brand-rgb),0.35), transparent)' }} />
             </div>

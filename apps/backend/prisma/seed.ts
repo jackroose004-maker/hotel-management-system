@@ -73,6 +73,7 @@ async function main() {
     { id: 'desserts',  name: 'Desserts',          nameAr: 'حلويات',          sortOrder: 8 },
     { id: 'faloda',    name: 'Falooda',            nameAr: 'فالودة',          sortOrder: 9 },
     { id: 'charcoal',  name: 'Charcoal Grills',    nameAr: 'مشويات الفحم',    sortOrder: 10 },
+    { id: 'pizza',     name: 'Pizza',              nameAr: 'بيتزا',           sortOrder: 11 },
   ]
   for (const cat of catData) {
     await prisma.menuCategory.upsert({ where: { id: cat.id }, update: cat, create: cat })
@@ -174,6 +175,14 @@ async function main() {
     { id: 'cc001000-0000-0000-0000-000000000006', categoryId: 'charcoal', name: 'Charcoal Mixed Grill',     nameAr: 'مشاوي مشكلة فحم',      price: 120, prepTimeMins: 40, imageUrl: 'https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?w=600&q=80', description: 'Platter of charcoal chicken, mutton chops, seekh kebab and prawns. Serves 2.', descriptionAr: 'طبق مشاوي فحم: دجاج وضلوع ضأن وسيخ كباب وجمبري. يكفي شخصين' },
     { id: 'cc001000-0000-0000-0000-000000000007', categoryId: 'charcoal', name: 'Seekh Kebab (4 pcs)',      nameAr: 'سيخ كباب (4 قطع)',     price: 45,  prepTimeMins: 20, imageUrl: 'https://images.unsplash.com/photo-1599487488170-d11ec9c172f0?w=600&q=80', description: 'Minced lamb and beef with spices, skewered and charcoal grilled. Served with mint chutney.', descriptionAr: 'لحم ضأن وبقر مفروم مع البهارات على السيخ، مشوي بالفحم. يُقدم مع صلصة النعناع' },
     { id: 'cc001000-0000-0000-0000-000000000008', categoryId: 'charcoal', name: 'Charcoal Veg Platter',     nameAr: 'طبق خضار فحم',         price: 48,  prepTimeMins: 20, imageUrl: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80', description: 'Grilled paneer tikka, mushrooms, bell peppers and corn on the cob, spiced and charcoal grilled.', descriptionAr: 'تيكا البانير والفطر والفلفل الرومي والذرة المتبلة المشوية على الفحم' },
+
+    // PIZZA
+    { id: 'pz000000-0000-0000-0000-000000000001', categoryId: 'pizza', name: 'Margherita',      nameAr: 'مارغريتا',      price: 42, prepTimeMins: 18, imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=900&auto=format&fit=crop&q=60', description: 'San Marzano tomato, fresh mozzarella, basil', descriptionAr: 'طماطم سان مارتسانو وموتزاريلا طازجة وريحان' },
+    { id: 'pz000000-0000-0000-0000-000000000002', categoryId: 'pizza', name: 'Pepperoni',       nameAr: 'بيبروني',       price: 52, prepTimeMins: 20, imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=900&auto=format&fit=crop&q=60', description: 'Double pepperoni, mozzarella, tomato sauce', descriptionAr: 'بيبروني مضاعف وموتزاريلا وصلصة طماطم' },
+    { id: 'pz000000-0000-0000-0000-000000000003', categoryId: 'pizza', name: 'BBQ Chicken',     nameAr: 'دجاج باربيكيو', price: 55, prepTimeMins: 20, imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=900&auto=format&fit=crop&q=60', description: 'Grilled chicken, BBQ sauce, red onion, peppers', descriptionAr: 'دجاج مشوي وصلصة باربيكيو وبصل أحمر وفلفل' },
+    { id: 'pz000000-0000-0000-0000-000000000004', categoryId: 'pizza', name: 'Veggie Supreme',  nameAr: 'خضار سوبريم',   price: 48, prepTimeMins: 18, imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=900&auto=format&fit=crop&q=60', description: 'Roasted peppers, mushrooms, olives, onion, mozzarella', descriptionAr: 'فلفل مشوي وفطر وزيتون وبصل وموتزاريلا' },
+    { id: 'pz000000-0000-0000-0000-000000000005', categoryId: 'pizza', name: 'Four Cheese',     nameAr: 'أربعة أجبان',   price: 58, prepTimeMins: 20, imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=900&auto=format&fit=crop&q=60', description: 'Mozzarella, cheddar, gouda, parmesan', descriptionAr: 'موتزاريلا وشيدر وجودة وبارميزان' },
+    { id: 'pz000000-0000-0000-0000-000000000006', categoryId: 'pizza', name: 'Prawn & Garlic',  nameAr: 'جمبري وثوم',    price: 65, prepTimeMins: 22, imageUrl: 'https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=900&auto=format&fit=crop&q=60', description: 'Tiger prawns, garlic cream, mozzarella, herbs', descriptionAr: 'جمبري نمر وكريمة ثوم وموتزاريلا وأعشاب' },
   ]
 
   for (const item of items) {
@@ -315,73 +324,73 @@ async function main() {
     // ── Charcoal Grills: Portion + Sides ──
     {
       menuItemId: 'cc001000-0000-0000-0000-000000000003', // Charcoal Fish
-      name: 'Fish Type', required: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
+      name: 'Fish Type', nameAr: 'نوع السمك', required: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
       options: [
-        { name: 'Pomfret',   priceAdd: 0,  isDefault: true,  sortOrder: 0 },
-        { name: 'Kingfish',  priceAdd: 10, isDefault: false, sortOrder: 1 },
-        { name: 'Hammour',   priceAdd: 20, isDefault: false, sortOrder: 2 },
+        { name: 'Pomfret',   nameAr: 'الزبيدي',   priceAdd: 0,  isDefault: true,  sortOrder: 0 },
+        { name: 'Kingfish',  nameAr: 'كنعد',       priceAdd: 10, isDefault: false, sortOrder: 1 },
+        { name: 'Hammour',   nameAr: 'هامور',      priceAdd: 20, isDefault: false, sortOrder: 2 },
       ],
     },
     {
       menuItemId: 'cc001000-0000-0000-0000-000000000003', // Charcoal Fish
-      name: 'Sides', required: false, minSelect: 0, maxSelect: 2, sortOrder: 1,
+      name: 'Sides', nameAr: 'الإضافات', required: false, minSelect: 0, maxSelect: 2, sortOrder: 1,
       options: [
-        { name: 'Extra Garlic Sauce', priceAdd: 3, isDefault: false, sortOrder: 0 },
-        { name: 'Extra Salad',        priceAdd: 5, isDefault: false, sortOrder: 1 },
-        { name: 'Pita Bread',         priceAdd: 4, isDefault: false, sortOrder: 2 },
+        { name: 'Extra Garlic Sauce', nameAr: 'صلصة ثوم إضافية', priceAdd: 3, isDefault: false, sortOrder: 0 },
+        { name: 'Extra Salad',        nameAr: 'سلطة إضافية',     priceAdd: 5, isDefault: false, sortOrder: 1 },
+        { name: 'Pita Bread',         nameAr: 'خبز بيتا',        priceAdd: 4, isDefault: false, sortOrder: 2 },
       ],
     },
     {
       menuItemId: 'cc001000-0000-0000-0000-000000000001', // Charcoal Chicken Full
-      name: 'Marinade', required: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
+      name: 'Marinade', nameAr: 'نوع التتبيلة', required: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
       options: [
-        { name: 'Kerala Spice',   priceAdd: 0, isDefault: true,  sortOrder: 0 },
-        { name: 'Lemon Herb',     priceAdd: 0, isDefault: false, sortOrder: 1 },
-        { name: 'Peri Peri',      priceAdd: 0, isDefault: false, sortOrder: 2 },
+        { name: 'Kerala Spice',   nameAr: 'بهارات كيرالا',   priceAdd: 0, isDefault: true,  sortOrder: 0 },
+        { name: 'Lemon Herb',     nameAr: 'ليمون وأعشاب',   priceAdd: 0, isDefault: false, sortOrder: 1 },
+        { name: 'Peri Peri',      nameAr: 'بيري بيري',      priceAdd: 0, isDefault: false, sortOrder: 2 },
       ],
     },
     {
       menuItemId: 'cc001000-0000-0000-0000-000000000001', // Charcoal Chicken Full
-      name: 'Sides', required: false, minSelect: 0, maxSelect: 3, sortOrder: 1,
+      name: 'Sides', nameAr: 'الإضافات', required: false, minSelect: 0, maxSelect: 3, sortOrder: 1,
       options: [
-        { name: 'Garlic Sauce',   priceAdd: 0, isDefault: true,  sortOrder: 0 },
-        { name: 'Extra Pita',     priceAdd: 4, isDefault: false, sortOrder: 1 },
-        { name: 'French Fries',   priceAdd: 8, isDefault: false, sortOrder: 2 },
-        { name: 'Coleslaw',       priceAdd: 6, isDefault: false, sortOrder: 3 },
+        { name: 'Garlic Sauce',   nameAr: 'صلصة ثوم',        priceAdd: 0, isDefault: true,  sortOrder: 0 },
+        { name: 'Extra Pita',     nameAr: 'خبز بيتا إضافي',  priceAdd: 4, isDefault: false, sortOrder: 1 },
+        { name: 'French Fries',   nameAr: 'بطاطس مقلية',     priceAdd: 8, isDefault: false, sortOrder: 2 },
+        { name: 'Coleslaw',       nameAr: 'سلطة كولسلو',     priceAdd: 6, isDefault: false, sortOrder: 3 },
       ],
     },
     {
       menuItemId: 'cc001000-0000-0000-0000-000000000002', // Charcoal Chicken Half
-      name: 'Marinade', required: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
+      name: 'Marinade', nameAr: 'نوع التتبيلة', required: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
       options: [
-        { name: 'Kerala Spice',   priceAdd: 0, isDefault: true,  sortOrder: 0 },
-        { name: 'Lemon Herb',     priceAdd: 0, isDefault: false, sortOrder: 1 },
-        { name: 'Peri Peri',      priceAdd: 0, isDefault: false, sortOrder: 2 },
+        { name: 'Kerala Spice',   nameAr: 'بهارات كيرالا',   priceAdd: 0, isDefault: true,  sortOrder: 0 },
+        { name: 'Lemon Herb',     nameAr: 'ليمون وأعشاب',   priceAdd: 0, isDefault: false, sortOrder: 1 },
+        { name: 'Peri Peri',      nameAr: 'بيري بيري',      priceAdd: 0, isDefault: false, sortOrder: 2 },
       ],
     },
     {
       menuItemId: 'cc001000-0000-0000-0000-000000000002', // Charcoal Chicken Half
-      name: 'Sides', required: false, minSelect: 0, maxSelect: 2, sortOrder: 1,
+      name: 'Sides', nameAr: 'الإضافات', required: false, minSelect: 0, maxSelect: 2, sortOrder: 1,
       options: [
-        { name: 'Garlic Sauce',   priceAdd: 0, isDefault: true,  sortOrder: 0 },
-        { name: 'French Fries',   priceAdd: 8, isDefault: false, sortOrder: 1 },
-        { name: 'Pita Bread',     priceAdd: 4, isDefault: false, sortOrder: 2 },
+        { name: 'Garlic Sauce',   nameAr: 'صلصة ثوم',       priceAdd: 0, isDefault: true,  sortOrder: 0 },
+        { name: 'French Fries',   nameAr: 'بطاطس مقلية',    priceAdd: 8, isDefault: false, sortOrder: 1 },
+        { name: 'Pita Bread',     nameAr: 'خبز بيتا',       priceAdd: 4, isDefault: false, sortOrder: 2 },
       ],
     },
     {
       menuItemId: 'cc001000-0000-0000-0000-000000000007', // Seekh Kebab
-      name: 'Meat Mix', required: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
+      name: 'Meat Mix', nameAr: 'نوع اللحم', required: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
       options: [
-        { name: 'Lamb & Beef',  priceAdd: 0,  isDefault: true,  sortOrder: 0 },
-        { name: 'Chicken Only', priceAdd: -5, isDefault: false, sortOrder: 1 },
+        { name: 'Lamb & Beef',  nameAr: 'لحم ضأن وبقر',  priceAdd: 0,  isDefault: true,  sortOrder: 0 },
+        { name: 'Chicken Only', nameAr: 'دجاج فقط',      priceAdd: -5, isDefault: false, sortOrder: 1 },
       ],
     },
     {
       menuItemId: 'cc001000-0000-0000-0000-000000000007', // Seekh Kebab
-      name: 'Extras', required: false, minSelect: 0, maxSelect: 2, sortOrder: 1,
+      name: 'Extras', nameAr: 'إضافات', required: false, minSelect: 0, maxSelect: 2, sortOrder: 1,
       options: [
-        { name: 'Extra Mint Chutney', priceAdd: 2, isDefault: false, sortOrder: 0 },
-        { name: 'Pita Bread (2 pcs)', priceAdd: 5, isDefault: false, sortOrder: 1 },
+        { name: 'Extra Mint Chutney', nameAr: 'شتني نعناع إضافي', priceAdd: 2, isDefault: false, sortOrder: 0 },
+        { name: 'Pita Bread (2 pcs)', nameAr: 'خبز بيتا (٢ قطع)', priceAdd: 5, isDefault: false, sortOrder: 1 },
       ],
     },
 
@@ -403,6 +412,38 @@ async function main() {
         { name: '3 pieces', nameAr: '٣ قطع', priceAdd: 22, isDefault: false, sortOrder: 1 },
       ],
     },
+
+    // ── Pizza: Size, Crust, Extra Toppings (all 6 items) ──
+    ...(['pz000000-0000-0000-0000-000000000001', 'pz000000-0000-0000-0000-000000000002', 'pz000000-0000-0000-0000-000000000003', 'pz000000-0000-0000-0000-000000000004', 'pz000000-0000-0000-0000-000000000005', 'pz000000-0000-0000-0000-000000000006'] as const).flatMap((menuItemId) => [
+      {
+        menuItemId,
+        name: 'Size', nameAr: 'الحجم', required: true, minSelect: 1, maxSelect: 1, sortOrder: 0,
+        options: [
+          { name: '10" Personal', nameAr: 'شخصي ١٠ بوصة',   priceAdd: 0,  isDefault: true,  sortOrder: 0 },
+          { name: '12" Medium',   nameAr: 'متوسط ١٢ بوصة',  priceAdd: 12, isDefault: false, sortOrder: 1 },
+          { name: '14" Large',    nameAr: 'كبير ١٤ بوصة',   priceAdd: 22, isDefault: false, sortOrder: 2 },
+        ],
+      },
+      {
+        menuItemId,
+        name: 'Crust', nameAr: 'نوع العجينة', required: true, minSelect: 1, maxSelect: 1, sortOrder: 1,
+        options: [
+          { name: 'Thin Crust',    nameAr: 'عجينة رقيقة',        priceAdd: 0, isDefault: true,  sortOrder: 0 },
+          { name: 'Thick Crust',   nameAr: 'عجينة سميكة',        priceAdd: 0, isDefault: false, sortOrder: 1 },
+          { name: 'Stuffed Crust', nameAr: 'عجينة محشوة بالجبن', priceAdd: 8, isDefault: false, sortOrder: 2 },
+        ],
+      },
+      {
+        menuItemId,
+        name: 'Extra Toppings', nameAr: 'إضافات', required: false, minSelect: 0, maxSelect: 4, sortOrder: 2,
+        options: [
+          { name: 'Extra Cheese', nameAr: 'جبن إضافي',   priceAdd: 5, isDefault: false, sortOrder: 0 },
+          { name: 'Jalapeños',    nameAr: 'هالابينيو',   priceAdd: 3, isDefault: false, sortOrder: 1 },
+          { name: 'Olives',       nameAr: 'زيتون',       priceAdd: 3, isDefault: false, sortOrder: 2 },
+          { name: 'Mushrooms',    nameAr: 'فطر',         priceAdd: 4, isDefault: false, sortOrder: 3 },
+        ],
+      },
+    ]),
   ]
 
   for (const group of modifiers) {

@@ -518,7 +518,9 @@ model DailyReport {
 model RestaurantSettings {
   id                  String   @id @default(uuid())
   restaurantName      String   @default("Al Manzil") @map("restaurant_name")
+  restaurantNameAr    String?  @map("restaurant_name_ar")
   tagline             String?
+  taglineAr           String?  @map("tagline_ar")
   heroConfig          Json?    @map("hero_config")
   phone               String?
   address             String?

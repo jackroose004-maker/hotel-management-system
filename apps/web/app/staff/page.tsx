@@ -21,7 +21,7 @@ interface OrderSummary {
 const TABLE_CFG: Record<string, { label: string; bg: string; text: string }> = {
   EMPTY:        { label: 'Available',  bg: '#10b981', text: '#fff' },
   OCCUPIED:     { label: 'Occupied',   bg: '#f43f5e', text: '#fff' },
-  BILL_PENDING: { label: 'Bill Due',   bg: '#f59e0b', text: '#fff' },
+  BILL_PENDING: { label: 'Bill Due',   bg: 'var(--brand)', text: '#fff' },
   DIRTY:        { label: 'Cleaning',   bg: '#6b7280', text: '#fff' },
 }
 
@@ -176,8 +176,8 @@ export default function Dashboard() {
       label: 'Active Orders',
       value: activeOrders.length,
       sub: pending.length > 0 ? `${pending.length} need approval` : kitchen.length > 0 ? `${kitchen.length} in kitchen` : 'none pending',
-      icon: <Utensils size={16} style={{ color: '#f59e0b' }} />,
-      accent: '#f59e0b',
+      icon: <Utensils size={16} style={{ color: 'var(--brand)' }} />,
+      accent: 'var(--brand)',
       urgent: pending.length > 0,
       href: '/staff/orders',
     },
