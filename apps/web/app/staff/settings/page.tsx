@@ -529,8 +529,9 @@ export default function SettingsPage() {
                       onChange={v => set('loginDesktopImage', v ?? '')}
                       folder="almanzil/login"
                       publicId="login-desktop"
-                      hint="Landscape · 900 × 1200 px recommended"
+                      hint="Image or video · portrait · 900 × 1200 px recommended"
                       aspectRatio="free"
+                      mediaType="both"
                     />
                   </div>
                   <div>
@@ -542,8 +543,9 @@ export default function SettingsPage() {
                       onChange={v => set('loginMobileImage', v ?? '')}
                       folder="almanzil/login"
                       publicId="login-mobile"
-                      hint="Landscape · 600 × 300 px recommended"
+                      hint="Image or video · landscape · 600 × 300 px recommended"
                       aspectRatio="video"
+                      mediaType="both"
                     />
                   </div>
                 </div>

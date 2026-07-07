@@ -2,8 +2,8 @@
 import { useRef, useState, useEffect, useCallback } from 'react'
 import ReactCrop, { type Crop, centerCrop, makeAspectCrop } from 'react-image-crop'
 import 'react-image-crop/dist/ReactCrop.css'
-import { Upload, X, Loader2, Image as ImageIcon, Clipboard, CropIcon, Check } from 'lucide-react'
-import { uploadImage } from '@/lib/upload'
+import { Upload, X, Loader2, Image as ImageIcon, Film, Clipboard, CropIcon, Check } from 'lucide-react'
+import { uploadImage, uploadVideo } from '@/lib/upload'
 
 interface Props {
   value: string
@@ -13,6 +13,7 @@ interface Props {
   label?: string
   hint?: string
   aspectRatio?: 'square' | 'video' | 'free'
+  mediaType?: 'image' | 'video' | 'both'
   className?: string
 }
 
@@ -141,7 +142,7 @@ let pasteHandled = false
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function ImageUpload({
-  value, onChange, folder, publicId, label, hint, aspectRatio = 'free', className = '',
+  value, onChange, folder, publicId, label, hint, aspectRatio = 'free', mediaType = 'image', className = '',
 }: Props) {
   const fileRef                   = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
@@ -150,6 +151,8 @@ export default function ImageUpload({
   const [pasted, setPasted]       = useState(false)
   // crop modal state
   const [cropSrc, setCropSrc]     = useState<string | null>(null)
+
+  const isVideoUrl = (url: string) => /\.(mp4|webm|mov|ogg)(\?|$)/i.test(url)
 
   // Sync preview when parent updates value (e.g. settings load from backend)
   useEffect(() => {
@@ -161,9 +164,31 @@ export default function ImageUpload({
 
   const aspect = LOCKED_ASPECT[aspectRatio]
 
+  // Upload video directly (no crop step)
+  const handleVideoFile = async (file: File) => {
+    setUploading(true)
+    const local = URL.createObjectURL(file)
+    setPreview(local)
+    try {
+      const url = await uploadVideo(file, folder)
+      setPreview(url)
+      onChange(url)
+    } catch (e: any) {
+      setPreview(value)
+      alert(e.message ?? 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   // open crop modal instead of uploading directly
   const stageFile = (file: File | Blob) => {
-    if (!(file as File).type?.startsWith('image/') && !(file instanceof Blob)) return
+    const type = (file as File).type ?? ''
+    if (type.startsWith('video/')) {
+      handleVideoFile(file as File)
+      return
+    }
+    if (!type.startsWith('image/') && !(file instanceof Blob)) return
     const url = URL.createObjectURL(file)
     setCropSrc(url)
   }
@@ -258,25 +283,28 @@ export default function ImageUpload({
 
           {/* Preview */}
           {hasImage && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={preview}
-              alt=""
-              onError={() => setImgErr(true)}
-              className={`w-full h-full ${aspectRatio === 'free' ? 'max-h-48 object-contain p-2' : 'object-cover'}`}
-            />
+            isVideoUrl(preview)
+              ? <video src={preview} autoPlay muted loop playsInline
+                  className={`w-full h-full ${aspectRatio === 'free' ? 'max-h-48 object-contain p-2' : 'object-cover'}`} />
+              // eslint-disable-next-line @next/next/no-img-element
+              : <img src={preview} alt="" onError={() => setImgErr(true)}
+                  className={`w-full h-full ${aspectRatio === 'free' ? 'max-h-48 object-contain p-2' : 'object-cover'}`} />
           )}
 
           {/* Empty state */}
           {!hasImage && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'var(--card-border)' }}>
-                <ImageIcon size={18} style={{ color: 'var(--text-muted)' }} />
+                {mediaType === 'video' ? <Film size={18} style={{ color: 'var(--text-muted)' }} />
+                  : mediaType === 'both' ? <><ImageIcon size={14} style={{ color: 'var(--text-muted)' }} /><Film size={14} style={{ color: 'var(--text-muted)' }} /></>
+                  : <ImageIcon size={18} style={{ color: 'var(--text-muted)' }} />}
               </div>
               <div className="text-center">
                 <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Click · Drag · or Paste</p>
                 <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>
-                  PNG, JPG, WebP · ⌘V / Ctrl+V
+                  {mediaType === 'image' ? 'PNG, JPG, WebP · ⌘V / Ctrl+V'
+                    : mediaType === 'video' ? 'MP4, WebM, MOV'
+                    : 'Image or Video (MP4, JPG, WebP…)'}
                 </p>
               </div>
             </div>
@@ -326,7 +354,7 @@ export default function ImageUpload({
         <input
           ref={fileRef}
           type="file"
-          accept="image/*"
+          accept={mediaType === 'image' ? 'image/*' : mediaType === 'video' ? 'video/*' : 'image/*,video/*'}
           className="hidden"
           onChange={e => { const f = e.target.files?.[0]; if (f) stageFile(f); e.target.value = '' }}
         />

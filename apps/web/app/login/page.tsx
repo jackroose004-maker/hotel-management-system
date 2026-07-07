@@ -142,10 +142,11 @@ function LoginForm() {
       <div className="hidden lg:flex lg:w-1/2 xl:w-5/12 relative flex-col">
         {/* Background food photo */}
         <div className="absolute inset-0">
-          <img
-            src={brand.loginDesktopImage ?? 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=900&q=80'}
-            alt="" className="w-full h-full object-cover"
-          />
+          {brand.loginDesktopImage && /\.(mp4|webm|mov|ogg)(\?|$)/i.test(brand.loginDesktopImage)
+            ? <video src={brand.loginDesktopImage} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+            : <img src={brand.loginDesktopImage ?? 'https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=900&q=80'}
+                alt="" className="w-full h-full object-cover" />
+          }
           <div className="absolute inset-0 bg-gradient-to-br from-gray-950/90 via-gray-900/80 to-neutral-950/70" />
         </div>
 
@@ -193,8 +194,11 @@ function LoginForm() {
         {/* Mobile header */}
         <div className="lg:hidden relative">
           <div className="h-52 overflow-hidden">
-            <img src={brand.loginMobileImage ?? 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=600&q=80'}
-              alt="" className="w-full h-full object-cover" />
+            {brand.loginMobileImage && /\.(mp4|webm|mov|ogg)(\?|$)/i.test(brand.loginMobileImage)
+              ? <video src={brand.loginMobileImage} autoPlay muted loop playsInline className="w-full h-full object-cover" />
+              : <img src={brand.loginMobileImage ?? 'https://images.unsplash.com/photo-1589301760014-d929f3979dbc?w=600&q=80'}
+                  alt="" className="w-full h-full object-cover" />
+            }
             <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-gray-950" />
           </div>
           <div className="absolute top-4 left-4">
