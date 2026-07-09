@@ -9,7 +9,7 @@ import api from '@/lib/api'
 import { notify } from '@/lib/notify'
 import { getSocket } from '@/lib/socket'
 import { useBrandStore, initBrand } from '@/store/brand'
-import { useLangStore, applyLangDir, t, type Lang } from '@/store/lang'
+import { useLangStore, applyLangDir, t, syncLangToServer, type Lang } from '@/store/lang'
 import ForceDark from '@/components/ForceDark'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -631,9 +631,10 @@ function OrderTrackCard({ o, lang, onCancel }: { o: Order; lang: Lang; onCancel:
 export default function MenuOrdersPage() {
   const router = useRouter()
   const { lang, setLang } = useLangStore()
-  const brandLogoUrl = useBrandStore(s => s.logoUrl)
-  const brandName    = useBrandStore(s => s.restaurantName)
-  const brandNameAr  = useBrandStore(s => s.restaurantNameAr)
+  const brandLogoUrl    = useBrandStore(s => s.logoUrl)
+  const brandName       = useBrandStore(s => s.restaurantName)
+  const brandNameAr     = useBrandStore(s => s.restaurantNameAr)
+  const showLangToggle  = useBrandStore(s => s.showLanguageToggle)
   const ar = lang === 'ar'
 
   const [orders, setOrders]             = useState<Order[]>([])
@@ -818,11 +819,18 @@ export default function MenuOrdersPage() {
             ) : (
               <span className="text-xs font-semibold text-gray-400">{t(lang, 'menu.yourOrder')}</span>
             )}
-            <button onClick={() => setLang(ar ? 'en' : 'ar')}
-              className="flex-shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
-              style={{ backgroundColor: '#0d0d0d', color: ar ? 'var(--brand)' : '#555', border: '1px solid #1e1e1e' }}>
-              {ar ? 'EN' : 'ع'}
-            </button>
+            {showLangToggle && (
+              <button onClick={() => {
+                const next: Lang = ar ? 'en' : 'ar'
+                setLang(next)
+                const tk = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+                syncLangToServer(next, tk)
+              }}
+                className="flex-shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
+                style={{ backgroundColor: '#0d0d0d', color: ar ? 'var(--brand)' : '#555', border: '1px solid #1e1e1e' }}>
+                {ar ? 'EN' : 'ع'}
+              </button>
+            )}
             <Link href={menuUrl} className="flex items-center gap-1 ml-1 transition-colors"
               style={{ color: 'var(--brand)' }}>
               <ChevronLeft size={16} />

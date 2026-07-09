@@ -43,11 +43,16 @@ interface HeroConfig {
   ambienceImg1?: string; ambienceImg2?: string; ambienceImg3?: string; ambienceImg4?: string
   ambienceImg5?: string; ambienceImg6?: string; ambienceImg7?: string; ambienceImg8?: string
 }
+interface Shift { openTime: string; closeTime: string }
+interface DaySchedule { open: boolean; shifts?: Shift[]; openTime?: string; closeTime?: string }
 interface RestaurantSettings {
   restaurantName: string; restaurantNameAr?: string
   tagline: string | null; taglineAr?: string | null
   phone: string | null; address: string | null; logoUrl: string | null
-  openTime: string; closeTime: string; heroConfig?: HeroConfig | null
+  openTime: string; closeTime: string
+  weeklySchedule?: Record<string, DaySchedule> | null
+  heroConfig?: HeroConfig | null
+  bookingsEnabled?: boolean
 }
 
 const DISHES_FALLBACK = [
@@ -87,6 +92,25 @@ function fmtTime(t: string) {
   const suffix = h >= 12 ? 'PM' : 'AM'
   const h12 = h % 12 || 12
   return m === 0 ? `${h12}${suffix}` : `${h12}:${String(m).padStart(2, '0')}${suffix}`
+}
+
+const DAY_KEYS_PAGE = ['SUN','MON','TUE','WED','THU','FRI','SAT']
+function todaySchedule(cfg: RestaurantSettings): { open: boolean; openTime: string; closeTime: string; is24h: boolean; shiftsLabel: string } {
+  const dayKey = DAY_KEYS_PAGE[new Date().getDay()]
+  const d = cfg.weeklySchedule?.[dayKey]
+  const open = d ? d.open : true
+  // Support both new shifts[] format and legacy openTime/closeTime on day
+  const shifts: Shift[] = d?.shifts?.length
+    ? d.shifts
+    : [{ openTime: d?.openTime ?? cfg.openTime ?? '00:00', closeTime: d?.closeTime ?? cfg.closeTime ?? '00:00' }]
+  const firstShift = shifts[0]
+  const openTime = firstShift.openTime
+  const closeTime = firstShift.closeTime
+  const is24h = openTime === '00:00' && closeTime === '00:00'
+  const shiftsLabel = open
+    ? (is24h ? '24 hours' : shifts.map(s => `${fmtTime(s.openTime)} – ${fmtTime(s.closeTime)}`).join(', '))
+    : 'Closed today'
+  return { open, openTime, closeTime, is24h, shiftsLabel }
 }
 
 // ── Full-bleed food showcase — premium auto-fade ──────────────────────────────
@@ -823,21 +847,6 @@ export default function LandingPage() {
           )
           const navCenter = (
             <div className="hidden md:flex items-center gap-0.5 absolute left-1/2 -translate-x-1/2">
-              <Link href="/menu"
-                className="px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200"
-                style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}
-                onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
-                onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
-                {tr(lang, 'nav.menu')}
-              </Link>
-              <Link href="/book"
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all duration-200"
-                style={{ color: scrolled ? pal.muted : 'rgba(255,255,255,0.65)' }}
-                onMouseEnter={e => { e.currentTarget.style.color = scrolled ? pal.text : '#fff'; e.currentTarget.style.backgroundColor = scrolled ? pal.bg3 : 'rgba(255,255,255,0.08)' }}
-                onMouseLeave={e => { e.currentTarget.style.color = scrolled ? pal.muted : 'rgba(255,255,255,0.65)'; e.currentTarget.style.backgroundColor = 'transparent' }}>
-                <CalendarDays size={13} style={{ opacity: 0.7 }} />
-                {tr(lang, 'nav.book')}
-              </Link>
               {hasActiveOrder && (
                 <Link href="/menu/orders"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold animate-pulse"
@@ -960,7 +969,7 @@ export default function LandingPage() {
                 {[
                   { href: '/menu',    label: tr(lang, 'nav.menu'),  icon: '🍽️' },
                   ...(hasActiveOrder ? [{ href: '/menu?track=1', label: ar ? 'تتبع الطلب' : 'Track Order', icon: '🔴' }] : []),
-                  { href: '/book',    label: tr(lang, 'nav.book'),  icon: '📅' },
+                  ...(cfg.bookingsEnabled !== false ? [{ href: '/book', label: tr(lang, 'nav.book'), icon: '📅' }] : []),
                   { href: token ? '/account' : '/login', label: token && user ? user.name?.split(' ')[0] ?? tr(lang, 'nav.myAccount') : tr(lang, 'nav.signIn'), icon: '👤' },
                 ].map(n => (
                   <Link key={n.href} href={n.href} onClick={() => setNavOpen(false)}
@@ -1074,6 +1083,7 @@ export default function LandingPage() {
               style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 40px rgba(var(--brand-rgb),0.38)', padding: 'clamp(10px,2.5vw,16px) clamp(20px,5vw,32px)', fontSize: 'clamp(13px,3.5vw,16px)' }}>
               {(ar && cfg.heroConfig?.ctaLabelAr) ? cfg.heroConfig.ctaLabelAr : (cfg.heroConfig?.ctaLabel || 'Order Now')} {ar ? <ArrowLeft size={14} /> : <ArrowRight size={14} />}
             </Link>
+            {cfg.bookingsEnabled !== false && (
             <Link href="/book"
               className="flex items-center gap-2 rounded-2xl font-medium"
               style={{ backgroundColor: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.82)', backdropFilter: 'blur(12px)', padding: 'clamp(10px,2.5vw,16px) clamp(16px,4vw,32px)', fontSize: 'clamp(13px,3.5vw,16px)' }}
@@ -1081,6 +1091,7 @@ export default function LandingPage() {
               onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)' }}>
               {(ar && cfg.heroConfig?.ctaSecondaryLabelAr) ? cfg.heroConfig.ctaSecondaryLabelAr : (cfg.heroConfig?.ctaSecondaryLabel || 'Reserve a Table')}
             </Link>
+            )}
           </div>
 
           {/* Stats */}
@@ -1089,7 +1100,7 @@ export default function LandingPage() {
             {[
               { value: '4.8', label: tr(lang, 'home.reviews'), sub: true },
               { value: '18m', label: tr(lang, 'home.avgPrepTime'), sub: false },
-              { value: fmtTime(cfg.openTime), label: tr(lang, 'home.opensDaily'), sub: false },
+              { value: todaySchedule(cfg).is24h ? '24h' : todaySchedule(cfg).open ? fmtTime(todaySchedule(cfg).openTime) : 'Closed', label: tr(lang, 'home.opensDaily'), sub: false },
             ].map((s, i) => (
               <div key={i} className="flex items-center gap-8">
                 {i > 0 && <div style={{ width: 1, height: 32, backgroundColor: 'rgba(255,255,255,0.1)' }} />}
@@ -1437,11 +1448,13 @@ export default function LandingPage() {
               style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 8px 28px rgba(var(--brand-rgb),0.28)' }}>
               {tr(lang, 'nav.orderNow')} {ar ? <ArrowLeft size={14} /> : <ArrowRight size={14} />}
             </Link>
+            {cfg.bookingsEnabled !== false && (
             <Link href="/book"
               className="flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold no-underline border border-white/10"
               style={{ color: 'rgba(255,255,255,0.75)', backgroundColor: 'rgba(255,255,255,0.03)' }}>
               <CalendarDays size={13} style={{ color: 'var(--brand)' }} /> {tr(lang, 'home.bookTable')}
             </Link>
+            )}
             <a href={`https://maps.google.com/?q=${encodeURIComponent(cfg.address ?? 'Dubai UAE')}`}
               target="_blank" rel="noopener noreferrer"
               className="flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-semibold no-underline border border-white/10"
@@ -1502,7 +1515,9 @@ export default function LandingPage() {
                   </div>
                   <div>
                     <p style={{ color: 'rgba(255,255,255,0.25)', fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 2 }}>{tr(lang, 'home.hours')}</p>
-                    <p className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.7)' }}>{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
+                    <p className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                      {(() => { const t = todaySchedule(cfg); return t.shiftsLabel })()}
+                    </p>
                   </div>
                 </div>
                 {cfg.phone ? (
@@ -1564,7 +1579,9 @@ export default function LandingPage() {
               <div className="hidden md:block">
                 <p style={{ color: 'rgba(255,255,255,0.22)', fontSize: 10, fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 14 }}>{tr(lang, 'home.visit')}</p>
                 <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{cfg.address ?? 'Dubai, UAE'}</p>
-                <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>{fmtTime(cfg.openTime)} – {fmtTime(cfg.closeTime)}</p>
+                <p className="text-sm mb-1" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                  {(() => { const t = todaySchedule(cfg); return t.open ? (t.is24h ? 'Open 24 hours' : t.shiftsLabel) : 'Closed today' })()}
+                </p>
                 {cfg.phone && <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>{cfg.phone}</p>}
               </div>
             </div>

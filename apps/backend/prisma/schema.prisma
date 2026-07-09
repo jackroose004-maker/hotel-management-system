@@ -13,10 +13,8 @@ datasource db {
 
 enum Role {
   OWNER
-  MANAGER
   STAFF
-  USER
-  GUEST
+  CUSTOMER
 }
 
 enum OrderType {
@@ -25,6 +23,7 @@ enum OrderType {
 }
 
 enum OrderStatus {
+  PRE_ORDER
   PENDING
   ACCEPTED
   PREPARING
@@ -36,6 +35,7 @@ enum OrderStatus {
 enum PaymentStatus {
   UNPAID
   PAID
+  VOID
   REFUND_REQUESTED
   REFUNDED
 }
@@ -43,6 +43,7 @@ enum PaymentStatus {
 enum PaymentMethod {
   CASH
   CARD
+  SPLIT
   APPLE_PAY
   GOOGLE_PAY
   CHARGE_TO_ROOM
@@ -85,20 +86,36 @@ enum BookingStatus {
 // USER & AUTH
 // ─────────────────────────────────────────────
 
+model StaffRole {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  color       String   @default("#6b7280")
+  permissions Json     @default("[]")
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  users       User[]
+
+  @@map("staff_roles")
+}
+
 model User {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   name         String
-  email        String   @unique
-  passwordHash String?  @map("password_hash")
-  googleId     String?  @unique @map("google_id")
-  avatarUrl    String?  @map("avatar_url")
-  role         Role     @default(GUEST)
-  isActive     Boolean  @default(true) @map("is_active")
+  email        String    @unique
+  passwordHash String?   @map("password_hash")
+  googleId     String?   @unique @map("google_id")
+  avatarUrl    String?   @map("avatar_url")
+  role         Role      @default(CUSTOMER)
+  staffRoleId  String?   @map("staff_role_id")
+  staffRole    StaffRole? @relation(fields: [staffRoleId], references: [id], onDelete: SetNull)
+  isActive     Boolean   @default(true) @map("is_active")
   phone        String?
   dietaryTags           String    @default("") @map("dietary_tags")
   notifOrderUpdates     Boolean   @default(true) @map("notif_order_updates")
   notifBookingReminders Boolean   @default(true) @map("notif_booking_reminders")
   isVerified            Boolean   @default(false) @map("is_verified")
+  language              String    @default("en") @map("language")
   otpCode               String?   @map("otp_code")
   otpExpiry             DateTime? @map("otp_expiry")
   createdAt    DateTime @default(now()) @map("created_at")
@@ -108,6 +125,7 @@ model User {
   orders          Order[]
   approvedOrders  Order[]  @relation("ApprovedOrders")
   cancelledOrders Order[]  @relation("CancelledOrders")
+  settledOrders   Order[]  @relation("SettledOrders")
   bookings        Booking[]
   strike          CustomerStrike?
   favorites       UserFavorite[]
@@ -118,8 +136,24 @@ model User {
   statusChanges   OrderStatusHistory[] @relation("StatusChanges")
   createdPromos   Promo[]         @relation("CreatedPromos")
   promoUsages     PromoUsage[]
+  shifts          Shift[]
 
   @@map("users")
+}
+
+model Shift {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  clockIn    DateTime  @default(now()) @map("clock_in")
+  clockOut   DateTime? @map("clock_out")
+  role       String
+  notes      String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, clockIn])
+  @@map("shifts")
 }
 
 // Proper M2M join table — replaces the comma-string hack
@@ -191,6 +225,7 @@ model MenuModifierGroup {
   menuItem MenuItem            @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   options  MenuModifierOption[]
 
+  @@index([menuItemId])
   @@map("menu_modifier_groups")
 }
 
@@ -207,6 +242,7 @@ model MenuModifierOption {
   group        MenuModifierGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
   orderChoices OrderItemModifier[]
 
+  @@index([groupId])
   @@map("menu_modifier_options")
 }
 
@@ -220,12 +256,17 @@ model RestaurantTable {
   name        String?
   capacity    Int         @default(4)
   status      TableStatus @default(EMPTY)
+  isActive      Boolean     @default(true) @map("is_active")
+  isReservable  Boolean     @default(true) @map("is_reservable")
+  zone          String      @default("Indoor")
   qrCode      String?     @unique @map("qr_code")
   updatedAt   DateTime    @updatedAt @map("updated_at")
 
   orders   Order[]
   bookings Booking[]
 
+  @@index([status])                    // table status board / cleanup queries
+  @@index([isReservable, isActive])    // booking slot capacity count
   @@map("restaurant_tables")
 }
 
@@ -241,13 +282,17 @@ model Order {
   userId          String?        @map("user_id")
   stripeIntentId  String?        @unique @map("stripe_intent_id")
   tokenNumber     Int?           @map("token_number")
+  bookingId       String?        @map("booking_id")
   status          OrderStatus    @default(PENDING)
   subtotal        Decimal        @db.Decimal(10, 2)
   vatAmount       Decimal        @db.Decimal(10, 2) @map("vat_amount")
-  discountAmount  Decimal        @default(0) @db.Decimal(10, 2) @map("discount_amount")
-  total           Decimal        @db.Decimal(10, 2)
-  paymentStatus   PaymentStatus  @default(UNPAID) @map("payment_status")
-  paymentMethod   PaymentMethod? @map("payment_method")
+  discountAmount   Decimal        @default(0) @db.Decimal(10, 2) @map("discount_amount")
+  discountReason   String?        @map("discount_reason")
+  splitCashAmount  Decimal?       @db.Decimal(10, 2) @map("split_cash_amount")
+  tipAmount        Decimal        @default(0) @db.Decimal(10, 2) @map("tip_amount")
+  total            Decimal        @db.Decimal(10, 2)
+  paymentStatus    PaymentStatus  @default(UNPAID) @map("payment_status")
+  paymentMethod    PaymentMethod? @map("payment_method")
   notes           String?
   clientIp        String?        @map("client_ip")
   contactPhone    String?        @map("contact_phone")
@@ -257,14 +302,23 @@ model Order {
   cancelledById   String?        @map("cancelled_by_id")
   cancelledAt     DateTime?      @map("cancelled_at")
   cancelReason    String?        @map("cancel_reason")
+  isRush          Boolean        @default(false) @map("is_rush")
+  isVoided        Boolean        @default(false) @map("is_voided")
+  voidReason      String?        @map("void_reason")
+  voidedById      String?        @map("voided_by_id")
+  voidedAt        DateTime?      @map("voided_at")
+  settledById     String?        @map("settled_by_id")
+  settledAt       DateTime?      @map("settled_at")
   expectedReadyAt DateTime?      @map("expected_ready_at")
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")
 
-  table         RestaurantTable?  @relation(fields: [tableId], references: [id])
+  table         RestaurantTable?  @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  booking       Booking?          @relation(fields: [bookingId], references: [id], onDelete: Restrict)
   user          User?             @relation(fields: [userId], references: [id])
-  approvedBy    User?             @relation("ApprovedOrders", fields: [approvedById], references: [id])
-  cancelledBy   User?             @relation("CancelledOrders", fields: [cancelledById], references: [id])
+  approvedBy    User?             @relation("ApprovedOrders", fields: [approvedById], references: [id], onDelete: SetNull)
+  cancelledBy   User?             @relation("CancelledOrders", fields: [cancelledById], references: [id], onDelete: SetNull)
+  settledBy     User?             @relation("SettledOrders", fields: [settledById], references: [id], onDelete: SetNull)
   promo         Promo?            @relation(fields: [promoId], references: [id])
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
@@ -272,8 +326,13 @@ model Order {
   promoUsage    PromoUsage?
 
   @@index([tableSessionId])
+  @@index([bookingId])
   @@index([userId, createdAt])
   @@index([status, paymentStatus])
+  @@index([tableId, paymentStatus])       // table bill / active-orders check
+  @@index([tableId, tableSessionId])      // session groupBy per table
+  @@index([createdAt])                    // reports: date-range scans
+  @@index([paymentStatus])               // refund queue, daily totals
   @@map("orders")
 }
 
@@ -289,6 +348,8 @@ model OrderItem {
   menuItem  MenuItem           @relation(fields: [menuItemId], references: [id])
   modifiers OrderItemModifier[]
 
+  @@index([orderId])        // items per order fetch
+  @@index([menuItemId])     // menu analytics / popularity
   @@map("order_items")
 }
 
@@ -303,6 +364,7 @@ model OrderItemModifier {
   orderItem OrderItem          @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   option    MenuModifierOption @relation(fields: [optionId], references: [id])
 
+  @@index([orderItemId])
   @@map("order_item_modifiers")
 }
 
@@ -317,7 +379,7 @@ model OrderStatusHistory {
   note        String?
 
   order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  changedBy User? @relation("StatusChanges", fields: [changedById], references: [id])
+  changedBy User? @relation("StatusChanges", fields: [changedById], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@map("order_status_history")
@@ -359,7 +421,7 @@ model PromoUsage {
   usedAt  DateTime @default(now()) @map("used_at")
 
   promo Promo  @relation(fields: [promoId], references: [id])
-  user  User?  @relation(fields: [userId], references: [id])
+  user  User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
   order Order  @relation(fields: [orderId], references: [id])
 
   @@index([promoId, userId])
@@ -422,7 +484,7 @@ model ActivityLog {
   userAgent  String?  @map("user_agent")
   createdAt  DateTime @default(now()) @map("created_at")
 
-  actor User? @relation("ActivityLogs", fields: [actorId], references: [id])
+  actor User? @relation("ActivityLogs", fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([entityType, entityId])
   @@index([actorId, createdAt])
@@ -443,9 +505,10 @@ model Feedback {
   tags      String?  // e.g. "slow_service,cold_food,great_taste"
   createdAt DateTime @default(now()) @map("created_at")
 
-  order Order @relation(fields: [orderId], references: [id])
-  user  User? @relation(fields: [userId], references: [id])
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([createdAt])    // reports date-range scan
   @@map("feedback")
 }
 
@@ -454,24 +517,28 @@ model Feedback {
 // ─────────────────────────────────────────────
 
 model Booking {
-  id             String        @id @default(uuid())
-  customerId     String        @map("customer_id")
-  tableId        String?       @map("table_id")
-  partySize      Int           @map("party_size")
-  slotDate       DateTime      @db.Date @map("slot_date")
-  slotTime       String        @map("slot_time")
-  slotExpiresAt  DateTime?     @map("slot_expires_at")
-  status         BookingStatus @default(PENDING)
-  idempotencyKey String        @unique @map("idempotency_key")
-  notes          String?
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
+  id                String        @id @default(uuid())
+  customerId        String?       @map("customer_id")
+  tableId           String?       @map("table_id")
+  partySize         Int           @map("party_size")
+  slotDate          DateTime      @db.Date @map("slot_date")
+  slotTime          String        @map("slot_time")
+  slotExpiresAt     DateTime?     @map("slot_expires_at")
+  status            BookingStatus @default(PENDING)
+  idempotencyKey    String        @unique @map("idempotency_key")
+  notes             String?
+  seatingPreference String?       @map("seating_preference")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
 
-  customer User             @relation(fields: [customerId], references: [id])
-  table    RestaurantTable? @relation(fields: [tableId], references: [id])
+  customer    User?            @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  table       RestaurantTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  preOrders   Order[]
 
   @@unique([tableId, slotDate, slotTime])
   @@index([customerId, slotDate])
+  @@index([slotDate, status])
+  @@index([status])
   @@map("bookings")
 }
 
@@ -485,7 +552,7 @@ model CustomerStrike {
   isFlagged      Boolean   @default(false) @map("is_flagged")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
-  customer User @relation(fields: [customerId], references: [id])
+  customer User @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@map("customer_strikes")
 }
@@ -531,25 +598,26 @@ model RestaurantSettings {
   phone               String?
   address             String?
   logoUrl             String?  @map("logo_url")
-  openTime            String   @default("07:00") @map("open_time")
-  closeTime           String   @default("23:00") @map("close_time")
+  openTime            String   @default("00:00") @map("open_time")
+  closeTime           String   @default("00:00") @map("close_time")
+  weeklySchedule      Json     @default("{\"MON\":{\"open\":true,\"shifts\":[{\"openTime\":\"00:00\",\"closeTime\":\"00:00\"}]},\"TUE\":{\"open\":true,\"shifts\":[{\"openTime\":\"00:00\",\"closeTime\":\"00:00\"}]},\"WED\":{\"open\":true,\"shifts\":[{\"openTime\":\"00:00\",\"closeTime\":\"00:00\"}]},\"THU\":{\"open\":true,\"shifts\":[{\"openTime\":\"00:00\",\"closeTime\":\"00:00\"}]},\"FRI\":{\"open\":true,\"shifts\":[{\"openTime\":\"00:00\",\"closeTime\":\"00:00\"}]},\"SAT\":{\"open\":true,\"shifts\":[{\"openTime\":\"00:00\",\"closeTime\":\"00:00\"}]},\"SUN\":{\"open\":true,\"shifts\":[{\"openTime\":\"00:00\",\"closeTime\":\"00:00\"}]}}") @map("weekly_schedule")
   timezone            String   @default("Asia/Dubai")
-  totalTables         Int      @default(10) @map("total_tables")
   defaultCapacity     Int      @default(4) @map("default_capacity")
   vatRate             Decimal  @default(0.05) @db.Decimal(5, 4) @map("vat_rate")
   serviceChargeRate   Decimal  @default(0) @db.Decimal(5, 4) @map("service_charge_rate")
   currency            String   @default("AED")
   currencySymbol      String   @default("AED") @map("currency_symbol")
   defaultPrepTimeMins Int      @default(15) @map("default_prep_time_mins")
-  bookingsEnabled     Boolean  @default(true) @map("bookings_enabled")
-  slotDurationMins    Int      @default(30) @map("slot_duration_mins")
-  walkInBuffer        Int      @default(3) @map("walk_in_buffer")
-  peakHoursEnabled    Boolean  @default(true) @map("peak_hours_enabled")
-  peakStart           String   @default("19:00") @map("peak_start")
-  peakEnd             String   @default("22:00") @map("peak_end")
-  noShowWindowOffPeak Int      @default(20) @map("no_show_window_off_peak")
-  noShowWindowPeak    Int      @default(5) @map("no_show_window_peak")
-  maxBookingDaysAhead Int      @default(7) @map("max_booking_days_ahead")
+  bookingsEnabled          Boolean  @default(true) @map("bookings_enabled")
+  slotDurationMins         Int      @default(30) @map("slot_duration_mins")
+  expectedDiningMins       Int      @default(90) @map("expected_dining_mins")
+  tableReleaseWindowMins   Int      @default(60) @map("table_release_window_mins")
+  sameDayCutoffMins        Int      @default(15) @map("same_day_cutoff_mins")
+  peakHoursEnabled         Boolean  @default(true) @map("peak_hours_enabled")
+  peakRanges               Json     @default("[]") @map("peak_ranges")  // [{start,end}] array of peak time windows
+  noShowGracePeriodOffPeak Int      @default(20) @map("no_show_grace_period_off_peak")
+  noShowGracePeriodPeak    Int      @default(5) @map("no_show_grace_period_peak")
+  maxBookingDaysAhead      Int      @default(7) @map("max_booking_days_ahead")
   requireLoginToBook  Boolean  @default(true) @map("require_login_to_book")
   remindersEnabled    Boolean  @default(false) @map("reminders_enabled")
   reminderMinsBefore  Int      @default(60) @map("reminder_mins_before")
@@ -560,7 +628,60 @@ model RestaurantSettings {
   loginMobileImage    String?  @map("login_mobile_image")
   vatNumber           String?  @map("vat_number")
   billConfig          Json?    @map("bill_config")
+  kotConfig           Json?    @map("kot_config")
+  // Payment & order feature flags
+  splitPaymentEnabled Boolean  @default(true)  @map("split_payment_enabled")
+  tipEnabled          Boolean  @default(true)  @map("tip_enabled")
+  discountEnabled     Boolean  @default(true)  @map("discount_enabled")
+  preOrderEnabled     Boolean  @default(true)  @map("pre_order_enabled")
+  kdsEnabled          Boolean  @default(false) @map("kds_enabled")
+  thermalEnabled      Boolean  @default(false) @map("thermal_enabled")
+  thermalPrinterIp    String?  @map("thermal_printer_ip")
+  thermalPrinterPort  Int      @default(9100) @map("thermal_printer_port")
+  // Email — SMTP + global sender identity
+  smtpHost            String?  @map("smtp_host")
+  smtpPort            Int      @default(465) @map("smtp_port")
+  smtpSecure          Boolean  @default(true) @map("smtp_secure")
+  smtpUser            String?  @map("smtp_user")
+  smtpPass            String?  @map("smtp_pass")
+  emailFromName       String?  @map("email_from_name")
+  emailFromAddress    String?  @map("email_from_address")
+  emailReplyTo        String?  @map("email_reply_to")
+  supportEmail        String?  @map("support_email")
+  supportPhone        String?  @map("support_phone")
+  // Social presence — { instagram?, whatsapp?, telegram?, tiktok?, facebook?, twitter? }
+  // Keys present → shown in email footers + login/landing pages
+  socialLinks         Json?    @map("social_links")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
   @@map("restaurant_settings")
+}
+
+// ─────────────────────────────────────────────
+// EMAIL TEMPLATES
+// ─────────────────────────────────────────────
+
+model EmailTemplate {
+  id            String   @id @default(uuid())
+  key           String   @unique   // 'booking_confirmation' | 'booking_cancelled' | 'order_cancelled' | 'otp' | 'welcome'
+  name          String             // display name in settings UI
+  subject       String             // supports {{restaurantName}}, {{ref}}, {{name}}, etc.
+  fromName      String?  @map("from_name")      // null = use global emailFromName
+  replyTo       String?  @map("reply_to")       // null = use global emailReplyTo
+  enabled       Boolean  @default(true)
+  localeEnabled Boolean  @default(false) @map("locale_enabled")  // show AR/EN switcher for this template
+  bgColor       String   @default("#f0f0f0") @map("bg_color")
+  cardTheme     String   @default("light") @map("card_theme")    // 'light' | 'dark'
+  footerNote    String?  @map("footer_note")
+  // Localizable no-reply footer line — editable in settings, shown in email footer
+  footerNoReply   String?  @map("footer_no_reply")
+  footerNoReplyAr String?  @map("footer_no_reply_ar")
+  // Optional custom greeting override
+  greeting        String?
+  greetingAr      String?  @map("greeting_ar")
+  // Extensible per-template config — social overrides, custom CTAs, A/B data, etc.
+  metadata      Json?
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("email_templates")
 }

@@ -63,7 +63,7 @@ export interface ReceiptData {
   sessionId: string
   table?: { name?: string; tableNumber?: number } | null
   orders: ReceiptOrder[]
-  summary: { subtotal: number; vatAmount: number; total: number }
+  summary: { subtotal: number; vatAmount: number; discount?: number; tipAmount?: number; total: number }
   restaurant: {
     restaurantName: string
     tagline?: string | null
@@ -118,6 +118,8 @@ const BillReceipt = forwardRef<HTMLDivElement, Props>(({ data, config, receiptNu
 
   const subtotal = Number(data.summary.subtotal)
   const vatAmount = Number(data.summary.vatAmount)
+  const discount = Number(data.summary.discount ?? 0)
+  const tip = Number(data.summary.tipAmount ?? 0)
   const total = Number(data.summary.total)
 
   const divider = (style: 'solid' | 'dashed' = 'dashed') => (
@@ -230,11 +232,17 @@ const BillReceipt = forwardRef<HTMLDivElement, Props>(({ data, config, receiptNu
             {row(`Subtotal (excl. VAT)`, `${currency} ${subtotal.toFixed(2)}`)}
             {row(`VAT (${((r.vatRate ?? 0.05) * 100).toFixed(0)}%)`, `${currency} ${vatAmount.toFixed(2)}`)}
             {config.showServiceCharge && row('Service Charge', `${currency} 0.00`)}
+            {discount > 0 && row('Discount', `- ${currency} ${discount.toFixed(2)}`)}
+            {tip > 0 && row('Tip (Gratuity)', `${currency} ${tip.toFixed(2)}`)}
             {divider('solid')}
-            {row('TOTAL', `${currency} ${total.toFixed(2)}`, true)}
+            {row('TOTAL', `${currency} ${(total + tip).toFixed(2)}`, true)}
           </>
         ) : (
-          row('TOTAL', `${currency} ${total.toFixed(2)}`, true)
+          <>
+            {discount > 0 && row('Discount', `- ${currency} ${discount.toFixed(2)}`)}
+            {tip > 0 && row('Tip (Gratuity)', `${currency} ${tip.toFixed(2)}`)}
+            {row('TOTAL', `${currency} ${(total + tip).toFixed(2)}`, true)}
+          </>
         )}
       </div>
 

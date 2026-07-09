@@ -6,7 +6,7 @@ import { RolesGuard } from '../common/guards/roles.guard'
 
 @Controller('activity-log')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('OWNER', 'MANAGER')
+@Roles('OWNER')
 export class ActivityLogController {
   constructor(private svc: ActivityLogService) {}
 

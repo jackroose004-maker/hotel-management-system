@@ -7,16 +7,21 @@ import {
 import { useAuthStore } from '@/store/auth'
 import api from '@/lib/api'
 
+interface StaffRoleOption { id: string; name: string; color: string; permissions: string[] }
+
 interface StaffMember {
   id: string; name: string; email: string
-  role: 'OWNER' | 'MANAGER' | 'STAFF'
+  role: 'OWNER' | 'MANAGER' | 'STAFF' | 'CHEF'
   isActive: boolean; createdAt: string; avatarUrl?: string | null
+  staffRoleId?: string | null
+  staffRole?: StaffRoleOption | null
 }
 
 const ROLE_META = {
   OWNER:   { label: 'Owner',   icon: Shield,    color: 'var(--brand)', bg: 'rgba(var(--brand-rgb),0.14)', gFrom: 'var(--brand)', gTo: '#fbbf24' },
   MANAGER: { label: 'Manager', icon: UserCheck, color: '#818cf8', bg: 'rgba(129,140,248,0.14)', gFrom: '#818cf8', gTo: '#a5b4fc' },
-  STAFF:   { label: 'Staff',   icon: ChefHat,   color: '#34d399', bg: 'rgba(52,211,153,0.14)', gFrom: '#34d399', gTo: '#6ee7b7' },
+  STAFF:   { label: 'Staff',   icon: Users,     color: '#34d399', bg: 'rgba(52,211,153,0.14)', gFrom: '#34d399', gTo: '#6ee7b7' },
+  CHEF:    { label: 'Chef',    icon: ChefHat,   color: '#f97316', bg: 'rgba(249,115,22,0.14)', gFrom: '#f97316', gTo: '#fb923c' },
 }
 
 function initials(name: string) {
@@ -88,15 +93,28 @@ function MemberCard({ m, isSelf, isOwner, onEdit, onToggle }: {
           </div>
         </div>
 
-        {/* Role badge */}
+        {/* System role badge */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px',
           borderRadius: 10, fontSize: 11, fontWeight: 700, flexShrink: 0,
           backgroundColor: meta.bg, color: meta.color,
         }}>
           <Icon size={11} />
-          {meta.label}
+          {m.role === 'OWNER' ? 'Owner' : m.staffRole ? m.staffRole.name : meta.label}
         </div>
+      </div>
+
+      {/* Role / permissions line */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+        {m.staffRole ? (
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.55 }}>
+            {m.staffRole.permissions.length} module{m.staffRole.permissions.length !== 1 ? 's' : ''}
+          </span>
+        ) : m.role !== 'OWNER' ? (
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.55 }}>
+            No role assigned
+          </span>
+        ) : null}
       </div>
 
       {/* Meta row */}
@@ -167,6 +185,15 @@ function PasswordInput({ value, onChange, placeholder }: { value: string; onChan
   )
 }
 
+// Derive system Role enum from a custom role's permissions
+function deriveRoleEnum(permissions: string[]): 'MANAGER' | 'STAFF' | 'CHEF' {
+  if (permissions.includes('kitchen') && !permissions.some(p => ['orders','tables','bookings','bills','menu','analytics','team','settings'].includes(p)))
+    return 'CHEF'
+  if (permissions.some(p => ['team', 'menu', 'analytics'].includes(p)))
+    return 'MANAGER'
+  return 'STAFF'
+}
+
 // ─── Create / Edit modal ──────────────────────────────────────────────────────
 function StaffModal({ member, onClose, onSaved }: {
   member: StaffMember | null; onClose: () => void; onSaved: (m: StaffMember) => void
@@ -174,49 +201,70 @@ function StaffModal({ member, onClose, onSaved }: {
   const { token } = useAuthStore()
   const isNew = !member
   const isEditingOwner = member?.role === 'OWNER'
-  const [form, setForm] = useState({
-    name: member?.name ?? '', email: member?.email ?? '',
-    role: member?.role === 'OWNER' ? 'MANAGER' : (member?.role ?? 'STAFF'),
-    password: '', confirmPassword: '',
-  })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [showPass, setShowPass] = useState(false)
-  const f = (k: keyof typeof form, v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  const [name, setName]               = useState(member?.name ?? '')
+  const [email, setEmail]             = useState(member?.email ?? '')
+  const [password, setPassword]       = useState('')
+  const [confirmPw, setConfirmPw]     = useState('')
+  const [showPass, setShowPass]       = useState(false)
+  const [staffRoleId, setStaffRoleId] = useState<string | null>(member?.staffRoleId ?? null)
+  const [availableRoles, setAvailableRoles] = useState<StaffRoleOption[]>([])
+  const [rolesLoading, setRolesLoading]     = useState(true)
+  const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState('')
+
+  useEffect(() => {
+    api.get('/roles', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => { setAvailableRoles(r.data); setRolesLoading(false) })
+      .catch(() => setRolesLoading(false))
+  }, [token])
+
+  const selectedRole = staffRoleId ? availableRoles.find(r => r.id === staffRoleId) ?? null : null
 
   const submit = async () => {
     setError('')
+    if (!name.trim()) { setError('Name is required'); return }
     if (isNew) {
-      if (!form.name.trim() || !form.email.trim() || !form.password) { setError('All fields are required'); return }
-      if (form.password !== form.confirmPassword) { setError('Passwords do not match'); return }
-      if (form.password.length < 6) { setError('Password must be at least 6 characters'); return }
+      if (!email.trim() || !password) { setError('All fields are required'); return }
+      if (password !== confirmPw) { setError('Passwords do not match'); return }
+      if (password.length < 6) { setError('Password must be at least 6 characters'); return }
     } else {
-      if (!form.name.trim()) { setError('Name is required'); return }
-      if (showPass && form.password && form.password !== form.confirmPassword) { setError('Passwords do not match'); return }
-      if (showPass && form.password && form.password.length < 6) { setError('Password must be at least 6 characters'); return }
+      if (showPass && password && password !== confirmPw) { setError('Passwords do not match'); return }
+      if (showPass && password && password.length < 6) { setError('Password must be at least 6 characters'); return }
     }
+
+    // Derive the system role enum from the selected custom role, or keep existing
+    const derivedRole = selectedRole
+      ? deriveRoleEnum(selectedRole.permissions)
+      : isNew ? 'STAFF' : (member?.role === 'OWNER' ? undefined : member?.role)
+
     setSaving(true)
     try {
       const { data } = isNew
-        ? await api.post('/users/staff', { name: form.name, email: form.email, password: form.password, role: form.role }, { headers: { Authorization: `Bearer ${token}` } })
+        ? await api.post('/users/staff',
+            { name: name.trim(), email: email.trim(), password, role: derivedRole, staffRoleId: staffRoleId ?? undefined },
+            { headers: { Authorization: `Bearer ${token}` } })
         : await api.patch(`/users/staff/${member!.id}`,
             {
-              name: form.name.trim(),
-              ...(isEditingOwner ? {} : { role: form.role }),
-              ...(showPass && form.password ? { password: form.password } : {}),
+              name: name.trim(),
+              ...(isEditingOwner ? {} : { role: derivedRole, staffRoleId }),
+              ...(showPass && password ? { password } : {}),
             },
             { headers: { Authorization: `Bearer ${token}` } })
       onSaved(data); onClose()
-    } catch (e: any) { setError(e.message ?? 'Save failed') }
+    } catch (e: any) { setError(e?.response?.data?.message ?? e?.message ?? 'Save failed') }
     finally { setSaving(false) }
   }
 
   const inputCls = "w-full px-3 py-2.5 rounded-xl text-sm outline-none border transition-colors"
+  const inputStyle = { backgroundColor: 'var(--input-bg)', borderColor: 'var(--card-border)', color: 'var(--text-primary)' }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
       style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }} onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden" style={{ backgroundColor: 'var(--card-bg)' }} onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden" style={{ backgroundColor: 'var(--card-bg)' }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--card-border)' }}>
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)' }}>
@@ -231,70 +279,91 @@ function StaffModal({ member, onClose, onSaved }: {
           </button>
         </div>
 
-        <div className="px-6 py-5 space-y-4">
-          {isNew ? (
-            <>
-              <Field label="Full Name">
-                <input value={form.name} onChange={e => f('name', e.target.value)} placeholder="e.g. Ahmed Al Farsi"
-                  className={inputCls} style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--card-border)', color: 'var(--text-primary)' }} />
-              </Field>
-              <Field label="Email">
-                <input value={form.email} onChange={e => f('email', e.target.value)} type="email" placeholder="ahmed@almanzil.ae"
-                  className={inputCls} style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--card-border)', color: 'var(--text-primary)' }} />
-              </Field>
-            </>
-          ) : (
-            <>
-              <Field label="Full Name">
-                <input value={form.name} onChange={e => f('name', e.target.value)} placeholder="e.g. Ahmed Al Farsi"
-                  className={inputCls} style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--card-border)', color: 'var(--text-primary)' }} />
-              </Field>
-              <Field label="Email">
-                <input value={form.email} readOnly
-                  className={`${inputCls} opacity-60 cursor-not-allowed`}
-                  style={{ backgroundColor: 'var(--input-bg)', borderColor: 'var(--card-border)', color: 'var(--text-muted)' }} />
-              </Field>
-            </>
-          )}
-          {!isEditingOwner && (
-            <Field label="Role">
-              <div className="grid grid-cols-2 gap-2">
-                {(['MANAGER', 'STAFF'] as const).map(r => {
-                  const meta = ROLE_META[r]; const Icon = meta.icon; const active = form.role === r
-                  return (
-                    <button key={r} onClick={() => f('role', r)}
-                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all"
-                      style={{ borderColor: active ? meta.color : 'var(--card-border)', backgroundColor: active ? meta.bg : 'var(--input-bg)', color: active ? meta.color : 'var(--text-muted)' }}>
-                      <Icon size={14} /> {meta.label} {active && <Check size={12} className="ml-auto" />}
-                    </button>
-                  )
-                })}
-              </div>
-              <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
-                {form.role === 'MANAGER' ? 'Full access — can manage menu, orders, bills & bookings' : 'Limited access — orders, tables & bookings only'}
-              </p>
-            </Field>
-          )}
-          {isEditingOwner && (
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4 max-h-[80vh] overflow-y-auto">
+
+          {/* Name */}
+          <Field label="Full Name">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Ahmed Al Farsi"
+              className={inputCls} style={inputStyle} />
+          </Field>
+
+          {/* Email */}
+          <Field label="Email">
+            {isNew
+              ? <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="ahmed@almanzil.ae"
+                  className={inputCls} style={inputStyle} />
+              : <input value={email} readOnly className={`${inputCls} opacity-60 cursor-not-allowed`}
+                  style={{ ...inputStyle, color: 'var(--text-muted)' }} />}
+          </Field>
+
+          {/* Role — single unified picker */}
+          {isEditingOwner ? (
             <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm"
               style={{ borderColor: ROLE_META.OWNER.color, backgroundColor: ROLE_META.OWNER.bg, color: ROLE_META.OWNER.color }}>
               <Shield size={14} />
               <span className="font-semibold">Owner</span>
               <span className="text-[11px] opacity-80 ml-auto">Role cannot be changed</span>
             </div>
+          ) : (
+            <Field label="Role">
+              {rolesLoading ? (
+                <div className="flex items-center gap-2 py-2" style={{ color: 'var(--text-muted)' }}>
+                  <Loader2 size={13} className="animate-spin" />
+                  <span className="text-xs">Loading roles…</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {/* Role cards */}
+                  <div className="grid grid-cols-1 gap-2">
+                    {availableRoles.map(r => {
+                      const active = staffRoleId === r.id
+                      return (
+                        <button type="button" key={r.id} onClick={() => setStaffRoleId(active ? null : r.id)}
+                          className="flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all w-full"
+                          style={{
+                            borderColor: active ? r.color : 'var(--card-border)',
+                            backgroundColor: active ? `${r.color}10` : 'var(--input-bg)',
+                          }}>
+                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: r.color }} />
+                          <div className="flex-1 min-w-0">
+                            <span className="block text-sm font-semibold" style={{ color: active ? r.color : 'var(--text-primary)' }}>
+                              {r.name}
+                            </span>
+                            <span className="block text-[11px] mt-0.5 capitalize" style={{ color: 'var(--text-muted)' }}>
+                              {r.permissions.length === 0
+                                ? 'No modules'
+                                : r.permissions.slice(0, 4).join(', ') + (r.permissions.length > 4 ? ` +${r.permissions.length - 4}` : '')}
+                            </span>
+                          </div>
+                          {active && <Check size={14} style={{ color: r.color, flexShrink: 0 }} />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {!staffRoleId && (
+                    <p className="text-[11px] px-1" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>
+                      Select a role above to set module access for this person.
+                    </p>
+                  )}
+                </div>
+              )}
+            </Field>
           )}
+
+          {/* Password */}
           {isNew ? (
             <>
               <Field label="Password">
-                <PasswordInput value={form.password} onChange={v => f('password', v)} placeholder="Min 6 characters" />
+                <PasswordInput value={password} onChange={setPassword} placeholder="Min 6 characters" />
               </Field>
               <Field label="Confirm Password">
-                <PasswordInput value={form.confirmPassword} onChange={v => f('confirmPassword', v)} placeholder="Repeat password" />
+                <PasswordInput value={confirmPw} onChange={setConfirmPw} placeholder="Repeat password" />
               </Field>
             </>
           ) : (
             <div>
-              <button onClick={() => setShowPass(v => !v)}
+              <button type="button" onClick={() => setShowPass(v => !v)}
                 className="flex items-center gap-1.5 text-xs font-medium mb-2 transition-colors"
                 style={{ color: showPass ? 'var(--brand)' : 'var(--text-muted)' }}>
                 <KeyRound size={12} /> {showPass ? 'Cancel password reset' : 'Reset password'}
@@ -302,15 +371,16 @@ function StaffModal({ member, onClose, onSaved }: {
               {showPass && (
                 <div className="space-y-3">
                   <Field label="New Password">
-                    <PasswordInput value={form.password} onChange={v => f('password', v)} placeholder="Min 6 characters" />
+                    <PasswordInput value={password} onChange={setPassword} placeholder="Min 6 characters" />
                   </Field>
                   <Field label="Confirm New Password">
-                    <PasswordInput value={form.confirmPassword} onChange={v => f('confirmPassword', v)} placeholder="Repeat password" />
+                    <PasswordInput value={confirmPw} onChange={setConfirmPw} placeholder="Repeat password" />
                   </Field>
                 </div>
               )}
             </div>
           )}
+
           {error && (
             <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20">
               <AlertTriangle size={13} className="text-red-400 flex-shrink-0" />
@@ -319,14 +389,15 @@ function StaffModal({ member, onClose, onSaved }: {
           )}
         </div>
 
+        {/* Footer */}
         <div className="flex gap-2 px-6 py-4 border-t" style={{ borderColor: 'var(--card-border)' }}>
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors"
             style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)', backgroundColor: 'var(--input-bg)' }}>
             Cancel
           </button>
           <button onClick={submit} disabled={saving}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all"
-            style={{ backgroundColor: 'var(--brand)' }}>
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50 transition-all"
+            style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
             {saving ? <><Loader2 size={13} className="animate-spin" />Saving…</> : <><Check size={13} />{isNew ? 'Create Account' : 'Save Changes'}</>}
           </button>
         </div>
@@ -340,9 +411,9 @@ function ConfirmDeactivate({ member, onClose, onConfirm, saving }: {
   member: StaffMember; onClose: () => void; onConfirm: () => void; saving: boolean
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
       style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }} onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden" style={{ backgroundColor: 'var(--card-bg)' }} onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden" style={{ backgroundColor: 'var(--card-bg)' }} onClick={e => e.stopPropagation()}>
         <div className="px-6 py-6 text-center">
           <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center"
             style={{ backgroundColor: member.isActive ? 'rgba(239,68,68,0.12)' : 'rgba(52,211,153,0.12)' }}>
@@ -384,7 +455,7 @@ export default function TeamPage() {
   const [modal, setModal] = useState<'create' | StaffMember | null>(null)
   const [confirmMember, setConfirmMember] = useState<StaffMember | null>(null)
   const [toggling, setToggling] = useState(false)
-  const [filter, setFilter] = useState<'ALL' | 'OWNER' | 'MANAGER' | 'STAFF'>('ALL')
+  const [filter, setFilter] = useState<'ALL' | 'OWNER' | 'MANAGER' | 'STAFF' | 'CHEF'>('ALL')
   const [search, setSearch] = useState('')
 
   const load = useCallback(async () => {
@@ -424,6 +495,7 @@ export default function TeamPage() {
     OWNER: members.filter(m => m.role === 'OWNER').length,
     MANAGER: members.filter(m => m.role === 'MANAGER').length,
     STAFF: members.filter(m => m.role === 'STAFF').length,
+    CHEF: members.filter(m => m.role === 'CHEF').length,
   }
   const activeCount = members.filter(m => m.isActive).length
 
@@ -435,70 +507,58 @@ export default function TeamPage() {
       <div className="flex flex-col flex-1">
 
         {/* ── Page header ── */}
-        <div className="flex flex-col lg:flex-row lg:items-center gap-3 px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)' }}>
-                <Users size={16} style={{ color: 'var(--brand)' }} />
-              </div>
-              <h1 className="text-lg font-bold text-gray-900 dark:text-white">Team</h1>
-            </div>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
-                {members.length} member{members.length !== 1 ? 's' : ''}
-              </span>
-              <span className="text-[11px] font-semibold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full">
-                {activeCount} active
-              </span>
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ color: 'var(--brand)', backgroundColor: 'rgba(var(--brand-rgb),0.1)' }}>
-                {counts.OWNER} owner{counts.OWNER !== 1 ? 's' : ''}
-              </span>
-              <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-0.5 rounded-full">
-                {counts.MANAGER} manager{counts.MANAGER !== 1 ? 's' : ''}
-              </span>
-              <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full">
-                {counts.STAFF} staff
-              </span>
-            </div>
+        <div className="h-14 flex items-center gap-2 px-4 sm:px-6 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
+          <h1 className="text-base font-bold text-gray-900 dark:text-white whitespace-nowrap">Team</h1>
+          {/* Role filter tabs inline — desktop */}
+          <div className="hidden sm:flex items-center gap-1 ml-2">
+            {(['ALL', 'OWNER', 'MANAGER', 'STAFF', 'CHEF'] as const).map(r => (
+              <button key={r} onClick={() => setFilter(r)}
+                className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all"
+                style={filter === r
+                  ? { backgroundColor: 'var(--brand)', color: '#000' }
+                  : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
+                {r === 'ALL' ? 'All' : ROLE_META[r].label}
+                <span className="text-[10px] font-bold opacity-70">{counts[r]}</span>
+              </button>
+            ))}
           </div>
-
+          <div className="flex-1" />
           <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="relative flex-1 lg:w-64">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-              <input
-                value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search by name or email…"
-                className="w-full pl-8 pr-4 py-2.5 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl text-sm focus:outline-none focus:border-[var(--brand)] focus:bg-white dark:focus:bg-gray-900 transition-all placeholder-gray-400"
-              />
+            <div className="relative hidden sm:block w-48">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
+                className="w-full pl-7 pr-3 py-1.5 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg text-xs focus:outline-none focus:border-[var(--brand)] transition-all placeholder-gray-400" />
             </div>
             {isOwner && (
               <button onClick={() => setModal('create')}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm flex-shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex-shrink-0"
                 style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-                <Plus size={14} /> Add Member
+                <Plus size={13} /><span className="hidden sm:inline">Add Member</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* ── Role filter tabs ── */}
-        <div className="flex items-center gap-2 overflow-x-auto px-4 sm:px-6 py-3 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
-          {(['ALL', 'OWNER', 'MANAGER', 'STAFF'] as const).map(r => {
-            const isActive = filter === r
-            return (
+        {/* Mobile: search + filter tabs */}
+        <div className="sm:hidden border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
+          <div className="px-4 pt-2 pb-1">
+            <div className="relative">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email…"
+                className="w-full pl-7 pr-3 py-1.5 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 rounded-lg text-xs focus:outline-none focus:border-[var(--brand)] transition-all placeholder-gray-400" style={{ color: 'var(--text-primary)' }} />
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 overflow-x-auto px-4 py-2">
+            {(['ALL', 'OWNER', 'MANAGER', 'STAFF', 'CHEF'] as const).map(r => (
               <button key={r} onClick={() => setFilter(r)}
-                className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors
-                  ${isActive
-                    ? ''
-                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-                style={isActive ? { backgroundColor: 'var(--brand)', color: '#000' } : undefined}>
-                {r === 'ALL' ? 'All' : ROLE_META[r].label}
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${isActive ? 'bg-white/20' : 'bg-white dark:bg-gray-900 text-gray-400'}`}>
-                  {counts[r]}
-                </span>
+                className="flex-shrink-0 flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
+                style={filter === r
+                  ? { backgroundColor: 'var(--brand)', color: '#000' }
+                  : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
+                {r === 'ALL' ? 'All' : ROLE_META[r].label} <span className="opacity-60">{counts[r]}</span>
               </button>
-            )
-          })}
+            ))}
+          </div>
         </div>
 
         {/* ── Content ── */}

@@ -17,6 +17,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ResponseInterceptor())
   app.useGlobalFilters(new GlobalExceptionFilter())
   app.enableCors({ origin: '*', credentials: false })
+  app.enableShutdownHooks()
 
   // Back-fill names for any tables created before this feature
   await app.get(TablesService).seedDefaultNames()

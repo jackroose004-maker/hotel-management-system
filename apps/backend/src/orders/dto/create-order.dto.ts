@@ -1,6 +1,21 @@
-import { IsArray, IsEnum, IsOptional, IsString, ValidateNested, IsInt, Min } from 'class-validator'
+import { IsArray, IsEnum, IsOptional, IsString, ValidateNested, IsInt, IsNumber, Min } from 'class-validator'
 import { Type } from 'class-transformer'
 import { OrderType, PaymentMethod } from '@prisma/client'
+
+export class OrderItemModifierDto {
+  @IsString()
+  optionId: string
+
+  @IsString()
+  name: string
+
+  @IsString()
+  @IsOptional()
+  groupName?: string
+
+  @IsNumber()
+  priceAdd: number
+}
 
 export class OrderItemDto {
   @IsString()
@@ -13,10 +28,24 @@ export class OrderItemDto {
   @IsString()
   @IsOptional()
   notes?: string
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemModifierDto)
+  @IsOptional()
+  modifiers?: OrderItemModifierDto[]
+}
+
+export class AddOrderItemsDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemDto)
+  items: OrderItemDto[]
 }
 
 export class CreateOrderDto {
   @IsEnum(OrderType)
+  @IsOptional()
   type: OrderType
 
   @IsString()
@@ -27,13 +56,10 @@ export class CreateOrderDto {
   @IsOptional()
   notes?: string
 
-  // Device-generated token that identifies one person's tab at a table.
-  // Each device/phone that scans the QR generates its own UUID → their personal bill.
   @IsString()
   @IsOptional()
   guestTabToken?: string
 
-  // Takeaway: phone number to call/SMS when order is ready
   @IsString()
   @IsOptional()
   contactPhone?: string

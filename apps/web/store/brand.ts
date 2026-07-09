@@ -2,7 +2,9 @@ import { create } from 'zustand'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
-const DEFAULT_COLOR = '#f59e0b'
+const DEFAULT_COLOR = '#9B2335'
+const CACHE_KEY = 'brand_cache'
+const CACHE_VERSION = 2
 
 interface BrandStore {
   ready: boolean
@@ -13,6 +15,7 @@ interface BrandStore {
   taglineAr: string
   brandColor: string
   showLanguageToggle: boolean
+  loginBg: string
 }
 
 function hexToHsl(hex: string): [number, number, number] {
@@ -78,13 +81,35 @@ export const useBrandStore = create<BrandStore>(() => ({
   taglineAr: '',
   brandColor: DEFAULT_COLOR,
   showLanguageToggle: false,
+  loginBg: '',
 }))
 
 export async function initBrand() {
   if (typeof window === 'undefined') return
-  applyBrandColor(DEFAULT_COLOR)
+
+  // Apply cached brand instantly — eliminates flash on every refresh after first load
   try {
-    const res = await fetch(`${API}/settings`)
+    const cached = localStorage.getItem(CACHE_KEY)
+    if (cached) {
+      const c = JSON.parse(cached)
+      if (c._v === CACHE_VERSION) {
+        applyBrandColor(c.brandColor ?? DEFAULT_COLOR)
+        if (c.logoUrl) applyFavicon(c.logoUrl)
+        useBrandStore.setState({ ...c })
+      } else {
+        localStorage.removeItem(CACHE_KEY)
+        applyBrandColor(DEFAULT_COLOR)
+      }
+    } else {
+      applyBrandColor(DEFAULT_COLOR)
+    }
+  } catch {
+    applyBrandColor(DEFAULT_COLOR)
+  }
+
+  // Fetch fresh from API and update cache
+  try {
+    const res = await fetch(`${API}/settings/brand`)
     if (res.ok) {
       const data = await res.json()
       const d = data?.data ?? data
@@ -95,9 +120,12 @@ export async function initBrand() {
       const taglineAr = d?.taglineAr ?? ''
       const brandColor = d?.brandColor ?? DEFAULT_COLOR
       const showLanguageToggle = d?.showLanguageToggle ?? false
+      const loginBg = d?.loginBg ?? d?.loginDesktopImage ?? ''
+
       if (logoUrl) applyFavicon(logoUrl)
       applyBrandColor(brandColor)
-      useBrandStore.setState({
+
+      const state = {
         logoUrl,
         ...(restaurantName ? { restaurantName } : {}),
         restaurantNameAr,
@@ -105,8 +133,14 @@ export async function initBrand() {
         taglineAr,
         brandColor,
         showLanguageToggle,
-      })
+        loginBg,
+      }
+      useBrandStore.setState(state)
+
+      // Save to cache for next page load (with version to invalidate stale entries)
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ...state, _v: CACHE_VERSION })) } catch {}
     }
   } catch {}
+
   useBrandStore.setState({ ready: true })
 }

@@ -14,42 +14,214 @@ async function main() {
   await prisma.user.upsert({
     where: { email: 'manager@hotel.com' },
     update: {},
-    create: { name: 'Rajan Manager', email: 'manager@hotel.com', passwordHash: await bcrypt.hash('manager123', 10), role: 'MANAGER' },
+    create: { name: 'Rajan Manager', email: 'manager@hotel.com', passwordHash: await bcrypt.hash('manager123', 10), role: 'STAFF' },
+  })
+  await prisma.user.upsert({
+    where: { email: 'staff@hotel.com' },
+    update: {},
+    create: { name: 'Ahmed Staff', email: 'staff@hotel.com', passwordHash: await bcrypt.hash('staff123', 10), role: 'STAFF' },
+  })
+  await prisma.user.upsert({
+    where: { email: 'chef@hotel.com' },
+    update: {},
+    create: { name: 'Chef Ali', email: 'chef@hotel.com', passwordHash: await bcrypt.hash('chef123', 10), role: 'STAFF' },
   })
   console.log('✅ Staff accounts seeded')
+
+  // ── Default staff roles ──────────────────────────────────────────────────
+  const defaultRoles = [
+    { name: 'Manager',  color: '#818cf8', permissions: ['dashboard','orders','tables','bookings','bills','menu','analytics','team'], isSystem: true },
+    { name: 'Waiter',   color: '#34d399', permissions: ['dashboard','orders','tables','bookings'], isSystem: true },
+    { name: 'Cashier',  color: '#f59e0b', permissions: ['dashboard','bills','orders'], isSystem: true },
+    { name: 'Chef',     color: '#f97316', permissions: ['kitchen'], isSystem: true },
+  ]
+  for (const r of defaultRoles) {
+    await prisma.staffRole.upsert({
+      where: { name: r.name },
+      update: { permissions: r.permissions, color: r.color },
+      create: r,
+    })
+  }
+  console.log('✅ Default staff roles seeded')
 
   // ── Default settings ──────────────────────────────────────────────────
   const existingSettings = await prisma.restaurantSettings.findFirst()
   if (!existingSettings) {
     await prisma.restaurantSettings.create({
       data: {
-        restaurantName:      'Al Manzil',
-        tagline:             'Authentic Kerala & South Indian Cuisine',
-        phone:               '+971 4 000 0000',
-        address:             'Al Quoz, Dubai, UAE',
-        openTime:            '07:00',
-        closeTime:           '23:00',
-        totalTables:         12,
-        defaultCapacity:     4,
-        vatRate:             0.05,
-        currency:            'AED',
-        defaultPrepTimeMins: 15,
-        bookingsEnabled:     true,
-        slotDurationMins:    30,
-        walkInBuffer:        3,
-        peakHoursEnabled:    true,
-        peakStart:           '19:00',
-        peakEnd:             '22:00',
-        noShowWindowOffPeak: 20,
-        noShowWindowPeak:    5,
-        maxBookingDaysAhead: 7,
-        requireLoginToBook:  true,
-        remindersEnabled:    false,
-        reminderMinsBefore:  60,
+        // ── Identity (EN + AR) ──
+        restaurantName:           'Al Manzil',
+        restaurantNameAr:         'المنزل',
+        tagline:                  'Authentic Kerala & South Indian Cuisine',
+        taglineAr:                'مأكولات كيرالا وجنوب الهند الأصيلة',
+        // ── Contact ──
+        phone:                    '+971 4 000 0000',
+        address:                  'Al Quoz, Dubai, UAE',
+        supportEmail:             'support@almanzil.ae',
+        supportPhone:             '+971 4 000 0000',
+        // ── Locale & currency ──
+        timezone:                 'Asia/Dubai',
+        currency:                 'AED',
+        currencySymbol:           'AED',
+        showLanguageToggle:       true,
+        // ── Operating hours (legacy flat fields — weeklySchedule is canonical) ──
+        openTime:                 '07:00',
+        closeTime:                '23:00',
+        weeklySchedule: {
+          MON: { open: true, shifts: [{ openTime: '07:00', closeTime: '23:00' }] },
+          TUE: { open: true, shifts: [{ openTime: '07:00', closeTime: '23:00' }] },
+          WED: { open: true, shifts: [{ openTime: '07:00', closeTime: '23:00' }] },
+          THU: { open: true, shifts: [{ openTime: '07:00', closeTime: '23:00' }] },
+          FRI: { open: true, shifts: [{ openTime: '12:00', closeTime: '23:59' }] },
+          SAT: { open: true, shifts: [{ openTime: '07:00', closeTime: '23:00' }] },
+          SUN: { open: true, shifts: [{ openTime: '07:00', closeTime: '23:00' }] },
+        },
+        // ── Dining defaults ──
+        defaultCapacity:          4,
+        defaultPrepTimeMins:      15,
+        // ── Financials ──
+        vatRate:                  0.05,
+        vatNumber:                '',
+        serviceChargeRate:        0,
+        // ── Bookings ──
+        bookingsEnabled:          true,
+        slotDurationMins:         30,
+        expectedDiningMins:       90,
+        tableReleaseWindowMins:   60,
+        sameDayCutoffMins:        15,
+        peakHoursEnabled:         true,
+        peakRanges:               [{ start: '19:00', end: '22:00' }],
+        noShowGracePeriodOffPeak: 20,
+        noShowGracePeriodPeak:    5,
+        maxBookingDaysAhead:      7,
+        requireLoginToBook:       true,
+        remindersEnabled:         false,
+        reminderMinsBefore:       60,
+        preOrderEnabled:          true,
+        // ── Bill / payment features ──
+        splitPaymentEnabled:      true,
+        tipEnabled:               true,
+        discountEnabled:          true,
+        // ── Kitchen ──
+        kdsEnabled:               false,
+        thermalEnabled:           false,
+        thermalPrinterPort:       9100,
+        // ── Brand ──
+        brandColor:               '#c0392b',
+        brandPreset:              'red',
+        // ── Email sender identity ──
+        emailFromName:            'Al Manzil',
+        emailReplyTo:             'noreply@almanzil.ae',
+        // ── Social links ──
+        socialLinks: {
+          instagram: '',
+          whatsapp:  '',
+        },
       },
     })
     console.log('✅ Default restaurant settings seeded')
+  } else {
+    // Backfill new fields for existing installs (idempotent — only sets fields that are null/missing)
+    await prisma.restaurantSettings.update({
+      where: { id: existingSettings.id },
+      data: {
+        restaurantNameAr:     existingSettings.restaurantNameAr     ?? 'المنزل',
+        taglineAr:            existingSettings.taglineAr             ?? 'مأكولات كيرالا وجنوب الهند الأصيلة',
+        splitPaymentEnabled:  existingSettings.splitPaymentEnabled   ?? true,
+        tipEnabled:           existingSettings.tipEnabled            ?? true,
+        discountEnabled:      existingSettings.discountEnabled       ?? true,
+        preOrderEnabled:      existingSettings.preOrderEnabled       ?? true,
+        emailFromName:        existingSettings.emailFromName         ?? 'Al Manzil',
+        showLanguageToggle:   existingSettings.showLanguageToggle    ?? true,
+      },
+    })
+    console.log('✅ Existing settings backfilled')
   }
+
+  // ── Email templates ───────────────────────────────────────────────────
+  const emailTemplates = [
+    {
+      key:           'booking_confirmation',
+      name:          'Booking Confirmation',
+      subject:       'Your table at {{restaurantName}} is confirmed — {{slotDate}}',
+      bgColor:       '#f0f0f0',
+      cardTheme:     'light',
+      enabled:       true,
+      localeEnabled: true,                           // show EN/AR toggle in settings
+      greeting:      'Dear {{name}},',
+      greetingAr:    'عزيزي {{name}}،',
+      footerNoReply:   'This is an automated message. Please do not reply.',
+      footerNoReplyAr: 'هذه رسالة آلية. يرجى عدم الرد عليها.',
+    },
+    {
+      key:           'booking_cancelled',
+      name:          'Booking Cancelled',
+      subject:       'Your booking at {{restaurantName}} has been cancelled — Ref #{{ref}}',
+      bgColor:       '#f0f0f0',
+      cardTheme:     'light',
+      enabled:       true,
+      localeEnabled: true,
+      greeting:      'Dear {{name}},',
+      greetingAr:    'عزيزي {{name}}،',
+      footerNoReply:   'This is an automated message. Please do not reply.',
+      footerNoReplyAr: 'هذه رسالة آلية. يرجى عدم الرد عليها.',
+    },
+    {
+      key:           'order_cancelled',
+      name:          'Order Cancelled',
+      subject:       'Your order #{{ref}} has been cancelled — {{restaurantName}}',
+      bgColor:       '#f0f0f0',
+      cardTheme:     'light',
+      enabled:       true,
+      localeEnabled: false,
+      greeting:      'Dear {{name}},',
+      greetingAr:    'عزيزي {{name}}،',
+      footerNoReply:   'This is an automated message. Please do not reply.',
+      footerNoReplyAr: 'هذه رسالة آلية. يرجى عدم الرد عليها.',
+    },
+    {
+      key:           'otp',
+      name:          'OTP / Verification',
+      subject:       'Your {{restaurantName}} verification code',
+      bgColor:       '#f0f0f0',
+      cardTheme:     'light',
+      enabled:       true,
+      localeEnabled: false,
+      greeting:      'Hello {{name}},',
+      greetingAr:    'مرحباً {{name}}،',
+      footerNoReply:   'This is an automated message. Please do not reply.',
+      footerNoReplyAr: 'هذه رسالة آلية. يرجى عدم الرد عليها.',
+    },
+    {
+      key:           'welcome',
+      name:          'Welcome',
+      subject:       'Welcome to {{restaurantName}}',
+      bgColor:       '#f0f0f0',
+      cardTheme:     'light',
+      enabled:       true,
+      localeEnabled: true,
+      greeting:      'Welcome, {{name}}!',
+      greetingAr:    'أهلاً وسهلاً، {{name}}!',
+      footerNoReply:   'This is an automated message. Please do not reply.',
+      footerNoReplyAr: 'هذه رسالة آلية. يرجى عدم الرد عليها.',
+    },
+  ]
+  for (const tpl of emailTemplates) {
+    await prisma.emailTemplate.upsert({
+      where:  { key: tpl.key },
+      update: {
+        // On re-seed update subject/greetings but don't overwrite user-customised fields
+        subject:         tpl.subject,
+        greeting:        tpl.greeting,
+        greetingAr:      tpl.greetingAr,
+        footerNoReply:   tpl.footerNoReply,
+        footerNoReplyAr: tpl.footerNoReplyAr,
+        localeEnabled:   tpl.localeEnabled,
+      },
+      create: tpl,
+    })
+  }
+  console.log('✅ Email templates seeded')
 
   // ── Tables with QR codes ──────────────────────────────────────────────
   for (let i = 1; i <= 12; i++) {

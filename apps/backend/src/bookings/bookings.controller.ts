@@ -24,10 +24,17 @@ export class BookingsController {
       slotDate: string
       slotTime: string
       notes?: string
+      seatingPreference?: string
       idempotencyKey: string
     },
   ) {
     return this.bookings.createBooking(req.user.id, dto)
+  }
+
+  // Public — QR scan on arrival: mark booking as ARRIVED
+  @Post(':id/arrive')
+  arriveByQr(@Param('id') id: string) {
+    return this.bookings.markArrived(id)
   }
 
   // Customer — view own bookings
@@ -46,15 +53,49 @@ export class BookingsController {
 
   // Staff — today's bookings
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Get('today')
-  getTodayBookings() {
-    return this.bookings.getTodayBookings()
+  getTodayBookings(@Query('date') date?: string) {
+    return this.bookings.getTodayBookings(date)
+  }
+
+  // Staff — available reservable tables for a given slot + party size
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Get('available-tables')
+  getAvailableTables(
+    @Query('date') date: string,
+    @Query('time') time: string,
+    @Query('partySize') partySize: string,
+  ) {
+    return this.bookings.getAvailableTablesForSlot(date, time, parseInt(partySize, 10))
+  }
+
+  // Staff — all reservable tables for a date + party size (wizard step 3)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Get('tables-for-date')
+  getTablesForDate(
+    @Query('date') date: string,
+    @Query('partySize') partySize: string,
+  ) {
+    return this.bookings.getTablesForDate(date, parseInt(partySize, 10))
+  }
+
+  // Staff — available slots for a specific table on a date (wizard step 4)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Get('slots-for-table')
+  getSlotsForTable(
+    @Query('date') date: string,
+    @Query('tableId') tableId: string,
+  ) {
+    return this.bookings.getSlotsForTable(date, tableId)
   }
 
   // Staff — mark arrived
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Patch(':id/arrived')
   markArrived(@Param('id') id: string) {
     return this.bookings.markArrived(id)
@@ -62,10 +103,36 @@ export class BookingsController {
 
   // Staff — cancel any booking
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Patch(':id/cancel')
   staffCancel(@Param('id') id: string, @Request() req: any) {
     return this.bookings.cancelBooking(id, req.user.id, true)
+  }
+
+  // Staff — create booking for a walk-in guest
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post('staff-create')
+  staffCreate(@Body() dto: {
+    guestName: string
+    guestEmail: string
+    guestPhone?: string
+    partySize: number
+    slotDate: string
+    slotTime: string
+    tableId?: string
+    notes?: string
+    skipEmail?: boolean
+  }) {
+    return this.bookings.staffCreateBooking(dto)
+  }
+
+  // Staff — confirm a pending booking
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Patch(':id/confirm')
+  confirmBooking(@Param('id') id: string) {
+    return this.bookings.staffConfirmBooking(id)
   }
 
   // Owner — clear strikes

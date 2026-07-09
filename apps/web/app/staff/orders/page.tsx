@@ -1,35 +1,29 @@
 'use client'
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import {
   Clock, Package, Utensils, RefreshCw, Banknote, CreditCard,
   ChefHat, CheckCircle, Loader2, AlertCircle, ChevronDown, ChevronRight,
-  Users, Receipt, ArrowRight, BadgeCheck, WifiOff, Trash2,
+  Users, Receipt, ArrowRight, BadgeCheck, WifiOff, Wifi, Trash2, Plus, Search, X, Send,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { notify } from '@/lib/notify'
 import { getSocket } from '@/lib/socket'
+import { useAuthStore } from '@/store/auth'
 
 interface Order {
   id: string; type: string; status: string; total: number; vatAmount: number; subtotal: number
   paymentMethod?: string | null; paymentStatus?: string; stripeIntentId?: string | null
   tokenNumber?: number; notes?: string; createdAt: string; clientIp?: string | null
+  isRush?: boolean
   table?: { id: string; tableNumber: number; name?: string }
   user?: { name: string } | null
   items: { quantity: number; unitPrice: number; notes?: string | null; menuItem: { id: string; name: string; prepTimeMins?: number } }[]
 }
 
-interface TableGroup {
-  tableId: string
-  tableName: string
-  orders: Order[]
-  cashTotal: number
-  cardTotal: number
-  hasCash: boolean
-  peopleCount: number
-}
-
 const NEXT_STATUS: Record<string, string>  = { PENDING: 'ACCEPTED', ACCEPTED: 'PREPARING', PREPARING: 'READY', READY: 'DELIVERED' }
 const NEXT_LABEL: Record<string, string>   = { PENDING: 'Accept & Send to Kitchen', ACCEPTED: 'Start Preparing', PREPARING: 'Mark Ready', READY: 'Mark Served' }
+const NEXT_LABEL_SHORT: Record<string, string> = { PENDING: 'Accept', ACCEPTED: 'Preparing', PREPARING: 'Ready', READY: 'Served' }
 const NEXT_COLOR: Record<string, string>   = {
   PENDING:   '',   // handled inline with var(--brand)
   ACCEPTED:  'bg-blue-500 hover:bg-blue-600 text-white',
@@ -60,17 +54,33 @@ function useOrderTimer(createdAt: string, estMins: number) {
 }
 
 // ── Compact order card (Kanban columns) ──────────────────────────────────────
-function OrderCard({ order, onAdvance, onCancel, busy, isNew }: {
+const CANCELLABLE_BY_ROLE: Record<string, string[]> = {
+  STAFF:   ['PENDING'],
+  MANAGER: ['PENDING', 'ACCEPTED', 'PREPARING'],
+  OWNER:   ['PENDING', 'ACCEPTED', 'PREPARING'],
+}
+
+function OrderCard({ order, onAdvance, onCancel, onVoid, onAddItems, onRush, onReply, hasGuestMessage, busy, isNew, userRole, hasKitchenPerm }: {
   order: Order
   onAdvance: (id: string, status: string) => void
   onCancel?: (id: string) => void
+  onVoid?:   (id: string) => void
+  onAddItems?: (id: string) => void
+  onRush?: (id: string, isRush: boolean) => void
+  onReply?: (id: string) => void
+  hasGuestMessage?: boolean
   busy: boolean
   isNew?: boolean
+  userRole?: string
+  hasKitchenPerm?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const estMins = Math.max(...order.items.map(i => i.menuItem.prepTimeMins ?? 15), 15)
   const { label: timeLabel, overdue, isUrgent } = useOrderTimer(order.createdAt, estMins)
-  const next = NEXT_STATUS[order.status]
+  // Kitchen-permission users can only advance kitchen stages (ACCEPTED→PREPARING→READY)
+  const KITCHEN_STAGES = ['ACCEPTED', 'PREPARING']
+  const canAdvance = !hasKitchenPerm || KITCHEN_STAGES.includes(order.status)
+  const next = canAdvance ? NEXT_STATUS[order.status] : undefined
   const tableLabel = order.type === 'DINE_IN'
     ? (order.table?.name ?? (order.table?.tableNumber ? `Table ${order.table.tableNumber}` : 'Dine-in'))
     : `#${order.tokenNumber}`
@@ -91,7 +101,7 @@ function OrderCard({ order, onAdvance, onCancel, busy, isNew }: {
       className="rounded-xl overflow-hidden flex flex-col"
       style={{
         background: 'var(--card-bg)',
-        border: `1px solid ${isUrgent ? '#ef4444' : 'var(--card-border)'}`,
+        border: `1px solid ${order.isRush ? '#ef4444' : isUrgent ? '#ef4444' : 'var(--card-border)'}`,
         ...(isNew ? { boxShadow: '0 0 0 2px var(--brand), 0 0 16px rgba(var(--brand-rgb),0.2)' } : {}),
       }}
     >
@@ -120,6 +130,18 @@ function OrderCard({ order, onAdvance, onCancel, busy, isNew }: {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-bold text-[13px] leading-tight" style={{ color: 'var(--text-primary)' }}>{tableLabel}</span>
+                {order.isRush && (
+                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded flex-shrink-0 animate-pulse"
+                    style={{ backgroundColor: 'rgba(239,68,68,0.2)', color: '#f87171', border: '1px solid rgba(239,68,68,0.4)' }}>
+                    ⚡ RUSH
+                  </span>
+                )}
+                {hasGuestMessage && (
+                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded flex-shrink-0 animate-bounce"
+                    style={{ backgroundColor: 'rgba(99,102,241,0.2)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.4)' }}>
+                    💬 Help
+                  </span>
+                )}
                 <span className={`text-[9px] font-bold flex items-center gap-0.5 flex-shrink-0 ${overdue ? 'text-red-500' : 'text-green-400'}`}>
                   <Clock size={7} />{overdue ? timeLabel : `${timeLabel} left`}
                 </span>
@@ -127,12 +149,6 @@ function OrderCard({ order, onAdvance, onCancel, busy, isNew }: {
               </div>
               <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                 <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{summaryText}</p>
-                {order.clientIp && (
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded flex-shrink-0"
-                    style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
-                    {order.clientIp}
-                  </span>
-                )}
               </div>
             </div>
 
@@ -179,31 +195,61 @@ function OrderCard({ order, onAdvance, onCancel, busy, isNew }: {
             </div>
           )}
 
-          {/* ── Action row (always same height) ── */}
-          {next && (
-            <div className="px-3 pb-3 pt-2 flex gap-2" style={{ borderTop: '1px solid var(--card-border)' }}>
-              {order.status === 'PENDING' ? (
-                <>
-                  <button onClick={() => onAdvance(order.id, next)} disabled={busy}
-                    className={actionBtnClass}
-                    style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-                    {busy ? <Loader2 size={11} className="animate-spin" /> : null}
-                    Accept
-                  </button>
-                  {onCancel && (
-                    <button onClick={() => onCancel(order.id)} disabled={busy}
-                      className={`${actionBtnClass} flex-none px-4`}
-                      style={{ border: '1px solid rgba(239,68,68,0.4)', color: '#f87171' }}>
-                      Cancel
+          {/* ── Action row ── */}
+          {(next || onVoid || onAddItems || onRush || (onReply && hasGuestMessage)) && (
+            <div className="px-3 pb-3 pt-2 space-y-2" style={{ borderTop: '1px solid var(--card-border)' }}>
+              {/* Primary advance — full width, shorter label on mobile */}
+              {next && (
+                <button onClick={() => onAdvance(order.id, next)} disabled={busy}
+                  className={`w-full py-2.5 rounded-lg text-[11px] font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-[0.98] ${order.status === 'PENDING' ? '' : NEXT_COLOR[order.status]}`}
+                  style={order.status === 'PENDING' ? { backgroundColor: 'var(--brand)', color: '#000' } : undefined}>
+                  {busy ? <Loader2 size={11} className="animate-spin" /> : null}
+                  <span className="hidden sm:inline">{NEXT_LABEL[order.status]}</span>
+                  <span className="sm:hidden">{NEXT_LABEL_SHORT[order.status]}</span>
+                </button>
+              )}
+              {/* Secondary actions — compact row */}
+              {(onAddItems || onCancel || onVoid || onRush || (onReply && hasGuestMessage)) && (
+                <div className="flex gap-1.5">
+                  {onAddItems && ['PENDING','ACCEPTED','PREPARING'].includes(order.status) && (
+                    <button onClick={() => onAddItems(order.id)} disabled={busy}
+                      className="flex-1 py-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all disabled:opacity-50"
+                      style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}
+                      title="Add more items">
+                      <Plus size={11} /> Add
                     </button>
                   )}
-                </>
-              ) : (
-                <button onClick={() => onAdvance(order.id, next)} disabled={busy}
-                  className={`${actionBtnClass} ${NEXT_COLOR[order.status]}`}>
-                  {busy ? <Loader2 size={11} className="animate-spin" /> : null}
-                  {NEXT_LABEL[order.status]}
-                </button>
+                  {onCancel && userRole && (CANCELLABLE_BY_ROLE[userRole] ?? []).includes(order.status) && (
+                    <button onClick={() => onCancel(order.id)} disabled={busy}
+                      className="flex-1 py-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all disabled:opacity-50"
+                      style={{ border: '1px solid rgba(239,68,68,0.4)', color: '#f87171' }}>
+                      <X size={11} /> Cancel
+                    </button>
+                  )}
+                  {onVoid && ['MANAGER','OWNER'].includes(userRole ?? '') && ['READY','DELIVERED'].includes(order.status) && (
+                    <button onClick={() => onVoid(order.id)} disabled={busy}
+                      className="flex-1 py-2 rounded-lg text-[11px] font-bold flex items-center justify-center transition-all disabled:opacity-50"
+                      style={{ border: '1px solid rgba(234,179,8,0.4)', color: '#eab308' }}>
+                      Void
+                    </button>
+                  )}
+                  {onReply && hasGuestMessage && (
+                    <button onClick={() => onReply(order.id)} disabled={busy}
+                      className="flex-1 py-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all disabled:opacity-50"
+                      style={{ backgroundColor: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc' }}>
+                      💬 Reply
+                    </button>
+                  )}
+                  {onRush && !['DELIVERED','CANCELLED'].includes(order.status) && (
+                    <button onClick={() => onRush(order.id, !order.isRush)} disabled={busy}
+                      className="flex-1 py-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all disabled:opacity-50"
+                      style={order.isRush
+                        ? { backgroundColor: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.5)', color: '#f87171' }
+                        : { border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+                      ⚡ {order.isRush ? 'Rushed' : 'Rush'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -215,361 +261,6 @@ function OrderCard({ order, onAdvance, onCancel, busy, isNew }: {
 
 // ── Payment method modal ──────────────────────────────────────────────────────
 const CASH_NOTES = [5, 10, 20, 50, 100, 200, 500]
-
-function SettleModal({ amount, items, onConfirm, onClose, busy }: {
-  amount: number
-  items: { name: string; qty: number; price: number }[]
-  onConfirm: (method: 'CASH' | 'CARD') => void
-  onClose: () => void
-  busy: boolean
-}) {
-  const [step, setStep] = useState<'review' | 'method' | 'cash'>('review')
-  const [received, setReceived] = useState('')
-  const [confirming, setConfirming] = useState<'CASH' | 'CARD' | null>(null)
-  const receivedNum = parseFloat(received) || 0
-  const change = receivedNum - amount
-  const changeValid = receivedNum >= amount
-
-  const handleConfirm = (method: 'CASH' | 'CARD') => {
-    setConfirming(method)
-    onConfirm(method)
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
-      onClick={onClose}>
-      <div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 space-y-4"
-        style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
-        onClick={e => e.stopPropagation()}>
-
-        {step === 'review' && (
-          <>
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-black" style={{ color: 'var(--text-primary)' }}>Review Bill</h2>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }}>
-                Verify before settling
-              </span>
-            </div>
-            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--card-border)' }}>
-              <div>
-                {items.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--card-border)' }}>
-                    <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                      <span className="font-black text-xs mr-1.5" style={{ color: 'var(--brand)' }}>{item.qty}×</span>
-                      {item.name}
-                    </span>
-                    <span className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-                      AED {item.price.toFixed(2)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center justify-between px-3 py-2.5" style={{ backgroundColor: 'var(--muted-bg)' }}>
-                <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Total</span>
-                <span className="text-lg font-black" style={{ color: 'var(--text-primary)' }}>AED {amount.toFixed(2)}</span>
-              </div>
-            </div>
-            <button onClick={() => setStep('method')}
-              className="w-full py-3.5 rounded-2xl font-black text-sm"
-              style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-              ✓ Looks Good — Choose Payment
-            </button>
-            <button onClick={onClose}
-              className="w-full py-2.5 rounded-2xl text-sm font-semibold"
-              style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
-              Go Back
-            </button>
-          </>
-        )}
-
-        {step === 'method' && (
-          <>
-            <div className="text-center">
-              <div className="text-4xl mb-2">💳</div>
-              <h2 className="text-lg font-black" style={{ color: 'var(--text-primary)' }}>How did they pay?</h2>
-              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                Bill total: <strong style={{ color: 'var(--text-primary)' }}>AED {amount.toFixed(2)}</strong>
-              </p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => setStep('cash')} disabled={!!confirming}
-                className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 transition-all hover:opacity-90 disabled:opacity-50"
-                style={{ borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.08)' }}>
-                <Banknote size={24} style={{ color: '#16a34a' }} />
-                <div className="text-center">
-                  <p className="text-sm font-black text-green-600 dark:text-green-400">Cash</p>
-                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Physical notes</p>
-                </div>
-              </button>
-              <button onClick={() => handleConfirm('CARD')} disabled={!!confirming}
-                className="flex flex-col items-center gap-2 py-5 rounded-2xl border-2 transition-all hover:opacity-90 disabled:opacity-50"
-                style={{ borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.08)' }}>
-                {confirming === 'CARD' ? <Loader2 size={24} className="animate-spin" style={{ color: '#3b82f6' }} /> : <CreditCard size={24} style={{ color: '#3b82f6' }} />}
-                <div className="text-center">
-                  <p className="text-sm font-black text-blue-600 dark:text-blue-400">{confirming === 'CARD' ? 'Recording…' : 'Card · Tap'}</p>
-                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Online · Transfer</p>
-                </div>
-              </button>
-            </div>
-            {!confirming && (
-              <button onClick={() => setStep('review')}
-                className="w-full py-3 rounded-2xl text-sm font-semibold"
-                style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
-                ← Back to Review
-              </button>
-            )}
-          </>
-        )}
-
-        {step === 'cash' && (
-          <>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setStep('method')} style={{ color: 'var(--text-muted)' }}>←</button>
-              <h2 className="text-base font-black" style={{ color: 'var(--text-primary)' }}>Cash Collection</h2>
-            </div>
-            <div className="rounded-xl px-4 py-3 flex justify-between items-center"
-              style={{ backgroundColor: 'var(--muted-bg)' }}>
-              <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Bill Total</span>
-              <span className="text-lg font-black" style={{ color: 'var(--text-primary)' }}>AED {amount.toFixed(2)}</span>
-            </div>
-            <div>
-              <p className="text-[10px] font-semibold mb-2 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Amount received</p>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {CASH_NOTES.filter(n => n >= amount || n === Math.ceil(amount / 10) * 10).slice(0, 6).map(n => (
-                  <button key={n} onClick={() => setReceived(String(n))}
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
-                    style={Number(received) === n
-                      ? { backgroundColor: 'var(--brand, #f97316)', color: '#000' }
-                      : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-primary)', border: '1px solid var(--card-border)' }}>
-                    {n}
-                  </button>
-                ))}
-              </div>
-              <input type="number" inputMode="decimal" placeholder={`Enter amount (min ${amount.toFixed(2)})`}
-                value={received} onChange={e => setReceived(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl text-base font-bold outline-none"
-                style={{ backgroundColor: 'var(--muted-bg)', border: `2px solid ${changeValid && received ? '#16a34a' : 'var(--card-border)'}`, color: 'var(--text-primary)' }} />
-            </div>
-            {received && (
-              <div className="rounded-xl px-4 py-3 flex justify-between items-center"
-                style={{ backgroundColor: changeValid ? 'rgba(22,163,74,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${changeValid ? '#16a34a' : 'rgba(239,68,68,0.3)'}` }}>
-                <span className="text-sm font-semibold" style={{ color: changeValid ? '#16a34a' : '#f87171' }}>
-                  {changeValid ? 'Change to return' : 'Not enough'}
-                </span>
-                <span className="text-xl font-black" style={{ color: changeValid ? '#16a34a' : '#f87171' }}>
-                  {changeValid ? `AED ${change.toFixed(2)}` : `Short AED ${Math.abs(change).toFixed(2)}`}
-                </span>
-              </div>
-            )}
-            <button onClick={() => handleConfirm('CASH')} disabled={!!confirming || !changeValid}
-              className="w-full py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all disabled:opacity-40"
-              style={{ backgroundColor: '#16a34a', color: '#fff' }}>
-              {confirming === 'CASH' ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />}
-              {confirming === 'CASH' ? 'Recording…' : `Confirm — AED ${amount.toFixed(2)} received`}
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ── Payment collection row ────────────────────────────────────────────────────
-function PaymentRow({ group, onSettle, onViewBill, busy, myIp }: {
-  group: TableGroup
-  onSettle: (tableId: string, method: 'CASH' | 'CARD') => void
-  onViewBill: (tableId: string) => void
-  busy: boolean
-  myIp: string
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const [showSettle, setShowSettle] = useState(false)
-  const [showIpWarning, setShowIpWarning] = useState(false)
-
-  // True if any order in this group was placed from the same IP as the current device
-  const hasSameIpOrder = myIp
-    ? group.orders.some(o => o.clientIp && o.clientIp === myIp)
-    : false
-
-  const handleSettleClick = () => {
-    if (hasSameIpOrder) { setShowIpWarning(true); return }
-    setShowSettle(true)
-  }
-
-  const itemMap = new Map<string, { name: string; qty: number; price: number }>()
-  for (const o of group.orders) {
-    for (const i of o.items) {
-      const k = i.menuItem.name
-      const ex = itemMap.get(k)
-      if (ex) { ex.qty += i.quantity; ex.price += i.quantity * Number(i.unitPrice) }
-      else itemMap.set(k, { name: k, qty: i.quantity, price: i.quantity * Number(i.unitPrice) })
-    }
-  }
-  const reviewItems = [...itemMap.values()]
-
-  const personMap = new Map<string, { label: string; orders: Order[]; total: number; isPaid: boolean }>()
-  for (const o of group.orders) {
-    const key = o.user?.name ?? `guest-${o.id.slice(-4)}`
-    const label = o.user?.name?.split(' ')[0] ?? `Guest`
-    if (!personMap.has(key)) personMap.set(key, { label, orders: [], total: 0, isPaid: false })
-    const p = personMap.get(key)!
-    p.orders.push(o)
-    p.total += Number(o.total)
-    p.isPaid = o.paymentStatus === 'PAID'
-  }
-  const people = [...personMap.values()]
-
-  return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--card-bg)', border: '1px solid rgba(168,85,247,0.4)' }}>
-      <button onClick={() => setExpanded(p => !p)} className="w-full px-3 py-2.5 flex items-center gap-3 text-left">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ background: 'rgba(168,85,247,0.15)' }}>
-          <Utensils size={15} className="text-purple-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-sm leading-tight" style={{ color: 'var(--text-primary)' }}>{group.tableName}</span>
-            <span className="text-[10px] text-purple-400 px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0"
-              style={{ background: 'rgba(168,85,247,0.15)' }}>
-              {group.orders.length} order{group.orders.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            {group.hasCash && (
-              <span className="text-[10px] font-semibold flex items-center gap-0.5" style={{ color: 'var(--text-muted)' }}>
-                <Banknote size={9} className="text-orange-400" /> {group.cashTotal.toFixed(2)} cash
-              </span>
-            )}
-            {group.cardTotal > 0 && (
-              <span className="text-[10px] font-semibold flex items-center gap-0.5" style={{ color: 'var(--text-muted)' }}>
-                <CreditCard size={9} className="text-green-400" /> {group.cardTotal.toFixed(2)} card
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex flex-col items-end gap-1 flex-shrink-0">
-          <span className="text-sm font-black tabular-nums" style={{ color: 'var(--text-primary)' }}>
-            AED {(group.cashTotal + group.cardTotal).toFixed(2)}
-          </span>
-          <span style={{ color: 'var(--text-muted)' }}>
-            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          </span>
-        </div>
-      </button>
-
-      {expanded && (
-        <div style={{ borderTop: '1px solid var(--card-border)' }}>
-          {people.map((person, i) => (
-            <div key={i} className="px-4 py-2.5 flex items-center justify-between gap-3"
-              style={{ borderBottom: '1px solid var(--card-border)' }}>
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
-                  style={{ background: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
-                  {person.label[0]}
-                </div>
-                <span className="text-sm truncate" style={{ color: 'var(--text-muted)' }}>{person.label}</span>
-                {person.orders[0]?.user && <span className="text-[9px] text-blue-400 font-semibold">member</span>}
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>AED {person.total.toFixed(2)}</span>
-                {person.isPaid ? (
-                  <span className="text-[10px] text-green-400 font-semibold flex items-center gap-0.5">
-                    <CheckCircle size={11} /> Paid
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-yellow-500 font-semibold">Pending</span>
-                )}
-              </div>
-            </div>
-          ))}
-          <div className="px-4 py-2" style={{ background: 'var(--muted-bg)' }}>
-            <div className="flex items-center gap-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-              <Package size={9} />
-              {(() => {
-                const allItems = group.orders.flatMap(o => o.items)
-                const iMap = new Map<string, number>()
-                for (const i of allItems) iMap.set(i.menuItem.name, (iMap.get(i.menuItem.name) ?? 0) + i.quantity)
-                const top3 = [...iMap.entries()].slice(0, 3).map(([name, qty]) => `${qty}× ${name}`).join(', ')
-                const rest = iMap.size - 3
-                return top3 + (rest > 0 ? ` +${rest} more` : '')
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="px-3 pb-3 pt-2 flex gap-2" style={{ borderTop: '1px solid var(--card-border)' }}>
-        {group.hasCash && (
-          <button onClick={handleSettleClick} disabled={busy}
-            className="flex-1 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
-            style={{ background: '#7c3aed', color: '#fff' }}>
-            {busy ? <Loader2 size={13} className="animate-spin" /> : <Banknote size={13} />}
-            <span>Collect</span>
-            <span className="font-black">AED {(group.cashTotal + group.cardTotal).toFixed(2)}</span>
-          </button>
-        )}
-        {!group.hasCash && group.cardTotal > 0 && (
-          <div className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold py-2 rounded-xl"
-            style={{ background: 'rgba(34,197,94,0.1)', color: '#4ade80' }}>
-            <CreditCard size={13} /> Fully Paid by Card
-          </div>
-        )}
-        <button onClick={() => onViewBill(group.tableId)}
-          className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors"
-          style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
-          <Receipt size={13} />
-        </button>
-      </div>
-
-      {showIpWarning && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center px-4"
-          style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}>
-          <div className="w-full max-w-sm rounded-2xl p-6 space-y-4"
-            style={{ backgroundColor: 'var(--card-bg)', border: '1px solid rgba(239,68,68,0.4)' }}>
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ backgroundColor: 'rgba(239,68,68,0.15)' }}>
-                <span className="text-xl">⚠️</span>
-              </div>
-              <div>
-                <p className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>
-                  Order from your device
-                </p>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                  One or more orders in this group were placed from this device ({myIp}).
-                  Are you sure you want to close the bill?
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
-                style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}
-                onClick={() => setShowIpWarning(false)}>
-                Cancel
-              </button>
-              <button className="flex-1 py-2.5 rounded-xl text-sm font-bold"
-                style={{ backgroundColor: '#ef4444', color: '#fff' }}
-                onClick={() => { setShowIpWarning(false); setShowSettle(true) }}>
-                Yes, close bill
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showSettle && (
-        <SettleModal
-          amount={group.cashTotal + group.cardTotal}
-          items={reviewItems}
-          busy={busy}
-          onClose={() => setShowSettle(false)}
-          onConfirm={method => { setShowSettle(false); onSettle(group.tableId, method) }}
-        />
-      )}
-    </div>
-  )
-}
 
 // ── Completed order card ──────────────────────────────────────────────────────
 const TIMELINE_STEPS = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY', 'DELIVERED']
@@ -675,17 +366,32 @@ const CANCEL_REASONS = [
   'Other',
 ]
 
-function CancelReasonModal({ order, onConfirm, onClose, busy }: {
+const VOID_REASONS = [
+  'Wrong item served',
+  'Quality issue',
+  'Allergy concern',
+  'Customer complaint',
+  'Management decision',
+  'Other',
+]
+
+function CancelReasonModal({ order, onConfirm, onClose, busy, mode = 'cancel' }: {
   order: Order
   onConfirm: (id: string, reason: string) => void
   onClose: () => void
   busy: boolean
+  mode?: 'cancel' | 'void'
 }) {
   const [reason, setReason] = useState('')
   const [custom, setCustom] = useState('')
   const finalReason = reason === 'Other' ? custom.trim() : reason
 
-  const canReorder = order.items.length > 0
+  const isVoid = mode === 'void'
+  const reasons = isVoid ? VOID_REASONS : CANCEL_REASONS
+  const canReorder = !isVoid && order.items.length > 0
+  const accentColor = isVoid ? '#eab308' : '#dc2626'
+  const accentBg   = isVoid ? 'rgba(234,179,8,0.1)' : 'rgba(239,68,68,0.1)'
+  const accentBorder = isVoid ? 'rgba(234,179,8,0.5)' : 'rgba(239,68,68,0.5)'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -695,7 +401,14 @@ function CancelReasonModal({ order, onConfirm, onClose, busy }: {
         style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
         onClick={e => e.stopPropagation()}>
         <div>
-          <h3 className="font-bold text-base mb-0.5" style={{ color: 'var(--text-primary)' }}>Cancel Order?</h3>
+          <h3 className="font-bold text-base mb-0.5" style={{ color: 'var(--text-primary)' }}>
+            {isVoid ? 'Void Order?' : 'Cancel Order?'}
+          </h3>
+          {isVoid && (
+            <p className="text-[11px] mb-1 px-2 py-1 rounded-lg" style={{ background: 'rgba(234,179,8,0.1)', color: '#eab308' }}>
+              Voiding removes this order from the bill. Use for served items with a quality issue.
+            </p>
+          )}
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {order.type === 'DINE_IN'
               ? `Table ${order.table?.tableNumber ?? ''} · AED ${Number(order.total).toFixed(2)}`
@@ -710,12 +423,14 @@ function CancelReasonModal({ order, onConfirm, onClose, busy }: {
         </div>
 
         <div className="space-y-1.5">
-          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Reason for cancelling</p>
-          {CANCEL_REASONS.map(r => (
+          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+            Reason for {isVoid ? 'voiding' : 'cancelling'}
+          </p>
+          {reasons.map(r => (
             <button key={r} onClick={() => setReason(r)}
               className="w-full text-left px-3 py-2 rounded-xl text-sm transition-all"
               style={reason === r
-                ? { backgroundColor: 'rgba(239,68,68,0.1)', border: '1.5px solid rgba(239,68,68,0.5)', color: '#f87171' }
+                ? { backgroundColor: accentBg, border: `1.5px solid ${accentBorder}`, color: accentColor }
                 : { backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
               {r}
             </button>
@@ -731,8 +446,8 @@ function CancelReasonModal({ order, onConfirm, onClose, busy }: {
         <div className="flex flex-col gap-2 pt-1">
           <button onClick={() => finalReason && onConfirm(order.id, finalReason)} disabled={busy || !finalReason}
             className="w-full py-2.5 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-40"
-            style={{ backgroundColor: '#dc2626' }}>
-            {busy ? 'Cancelling…' : 'Confirm Cancel'}
+            style={{ backgroundColor: accentColor }}>
+            {busy ? (isVoid ? 'Voiding…' : 'Cancelling…') : (isVoid ? 'Confirm Void' : 'Confirm Cancel')}
           </button>
           {canReorder && (
             <button onClick={() => finalReason && onConfirm(order.id, finalReason + ' [reorder-requested]')}
@@ -791,18 +506,559 @@ function KanbanColumn({
   )
 }
 
+// ── Add Items Modal ───────────────────────────────────────────────────────────
+interface MenuItem { id: string; name: string; price: number; categoryName?: string; isAvailable: boolean }
+interface AddModifierOption { id: string; name: string; priceAdd: number; isDefault: boolean }
+interface AddModifierGroup { id: string; name: string; required: boolean; minSelect: number; maxSelect: number; options: AddModifierOption[] }
+interface AddMenuItem { id: string; name: string; price: number; categoryId: string; isAvailable: boolean; modifierGroups?: AddModifierGroup[] }
+interface AddCartEntry { menuItemId: string; quantity: number; optionIds: string[]; label: string }
+
+function AddItemsModal({ order, onClose, onSaved }: {
+  order: Order; onClose: () => void; onSaved: (updated: Order) => void
+}) {
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
+  const [menuItems, setMenuItems] = useState<AddMenuItem[]>([])
+  const [activeCatId, setActiveCatId] = useState<string | null>(null)
+  const [menuSearch, setMenuSearch] = useState('')
+  const [cart, setCart] = useState<AddCartEntry[]>([])
+  const [modSheet, setModSheet] = useState<{ item: AddMenuItem; selections: Record<string, string[]> } | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/menu/categories'),
+      api.get('/menu/items?includeUnavailable=false'),
+    ]).then(([catRes, itemRes]) => {
+      const cats = catRes.data?.data ?? catRes.data ?? []
+      const items = (itemRes.data?.data ?? itemRes.data ?? []).filter((i: AddMenuItem) => i.isAvailable)
+      setCategories(cats)
+      setMenuItems(items)
+      setActiveCatId(cats[0]?.id ?? null)
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [])
+
+  const cartCount = cart.reduce((s, e) => s + e.quantity, 0)
+  const cartTotal = cart.reduce((s, e) => {
+    const item = menuItems.find(i => i.id === e.menuItemId)
+    if (!item) return s
+    const modExtra = (item.modifierGroups ?? []).flatMap(g => g.options).filter(o => e.optionIds.includes(o.id)).reduce((a, o) => a + o.priceAdd, 0)
+    return s + (item.price + modExtra) * e.quantity
+  }, 0)
+
+  function cartAddSimple(item: AddMenuItem) {
+    setCart(c => [...c, { menuItemId: item.id, quantity: 1, optionIds: [], label: '' }])
+  }
+  function cartRemoveEntry(idx: number) {
+    setCart(c => {
+      const n = [...c]
+      if (n[idx].quantity > 1) { n[idx] = { ...n[idx], quantity: n[idx].quantity - 1 }; return n }
+      n.splice(idx, 1); return n
+    })
+  }
+  function cartAddEntry(idx: number) {
+    setCart(c => { const n = [...c]; n[idx] = { ...n[idx], quantity: n[idx].quantity + 1 }; return n })
+  }
+  function openModSheet(item: AddMenuItem) {
+    const defaults: Record<string, string[]> = {}
+    for (const g of item.modifierGroups ?? []) {
+      defaults[g.id] = g.options.filter(o => o.isDefault).map(o => o.id)
+    }
+    setModSheet({ item, selections: defaults })
+  }
+  function confirmModSheet() {
+    if (!modSheet) return
+    const { item, selections } = modSheet
+    const optionIds = Object.values(selections).flat()
+    const labelParts: string[] = []
+    for (const g of item.modifierGroups ?? []) {
+      const chosen = g.options.filter(o => selections[g.id]?.includes(o.id))
+      if (chosen.length) labelParts.push(chosen.map(o => o.name).join(', '))
+    }
+    setCart(c => [...c, { menuItemId: item.id, quantity: 1, optionIds, label: labelParts.join(' · ') }])
+    setModSheet(null)
+  }
+  function toggleModOption(groupId: string, optionId: string, maxSelect: number) {
+    setModSheet(s => {
+      if (!s) return s
+      const prev = s.selections[groupId] ?? []
+      let next: string[]
+      if (prev.includes(optionId)) {
+        next = prev.filter(id => id !== optionId)
+      } else if (maxSelect === 1) {
+        next = [optionId]
+      } else {
+        next = prev.length < maxSelect ? [...prev, optionId] : prev
+      }
+      return { ...s, selections: { ...s.selections, [groupId]: next } }
+    })
+  }
+
+  const tableLabel = order.type === 'DINE_IN'
+    ? (order.table?.name ?? `Table ${order.table?.tableNumber}`)
+    : `#${order.tokenNumber}`
+
+  const submit = async () => {
+    if (!cart.length) return
+    setSaving(true); setError('')
+    try {
+      // Build modifier payloads: look up name+priceAdd from menuItems
+      const items = cart.map(e => {
+        const item = menuItems.find(i => i.id === e.menuItemId)!
+        const allOpts = (item.modifierGroups ?? []).flatMap(g => g.options)
+        const modifiers = e.optionIds.map(oid => {
+          const opt = allOpts.find(o => o.id === oid)!
+          return { optionId: oid, name: opt.name, priceAdd: opt.priceAdd }
+        })
+        return { menuItemId: e.menuItemId, quantity: e.quantity, ...(modifiers.length ? { modifiers } : {}) }
+      })
+      const { data } = await api.post(`/orders/${order.id}/items`, { items })
+      onSaved(data); onClose()
+    } catch (e: any) {
+      setError(e?.response?.data?.message ?? 'Failed to add items')
+    } finally { setSaving(false) }
+  }
+
+  const visibleItems = (() => {
+    const q = menuSearch.trim().toLowerCase()
+    return q ? menuItems.filter(i => i.name.toLowerCase().includes(q)) : menuItems.filter(i => i.categoryId === activeCatId)
+  })()
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
+      <div className="relative w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
+        style={{ backgroundColor: 'var(--card-bg)', maxHeight: '90vh' }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0"
+          style={{ borderColor: 'var(--card-border)' }}>
+          <div>
+            <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Add Items</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{tableLabel}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg" style={{ color: 'var(--text-muted)' }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Search + categories + list */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          {loading ? (
+            <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
+          ) : (
+            <>
+              {/* Search */}
+              <div className="relative">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                <input value={menuSearch}
+                  onChange={e => { setMenuSearch(e.target.value); if (e.target.value) setActiveCatId(null) }}
+                  placeholder="Search dishes…"
+                  className="w-full pl-8 pr-3 py-2 rounded-xl text-sm outline-none"
+                  style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }} />
+              </div>
+
+              {/* Category tabs */}
+              {!menuSearch && (
+                <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+                  {categories.map(cat => (
+                    <button key={cat.id} type="button" onClick={() => setActiveCatId(cat.id)}
+                      className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+                      style={{
+                        backgroundColor: activeCatId === cat.id ? 'var(--brand)' : 'var(--muted-bg)',
+                        color: activeCatId === cat.id ? '#fff' : 'var(--text-muted)',
+                        border: '1px solid var(--card-border)',
+                      }}>
+                      {cat.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Items */}
+              <div className="space-y-2">
+                {visibleItems.length === 0 ? (
+                  <p className="text-center text-sm py-6" style={{ color: 'var(--text-muted)' }}>
+                    {menuSearch ? `No results for "${menuSearch}"` : 'No items in this category'}
+                  </p>
+                ) : visibleItems.map(item => {
+                  const hasModifiers = (item.modifierGroups ?? []).length > 0
+                  const itemEntries = cart.filter(e => e.menuItemId === item.id)
+                  const totalQty = itemEntries.reduce((s, e) => s + e.quantity, 0)
+                  return (
+                    <div key={item.id} className="rounded-xl overflow-hidden cursor-pointer active:opacity-80 transition-opacity"
+                      style={{ border: `1px solid ${totalQty > 0 ? 'rgba(var(--brand-rgb),0.3)' : 'var(--card-border)'}`, backgroundColor: totalQty > 0 ? 'rgba(var(--brand-rgb),0.04)' : 'var(--card-bg)' }}
+                      onClick={() => hasModifiers ? openModSheet(item) : cartAddSimple(item)}>
+                      <div className="flex items-center gap-3 px-3 py-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            AED {Number(item.price).toFixed(2)}{hasModifiers && <span className="ml-1 opacity-60">· customisable</span>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                          {hasModifiers ? (
+                            <button type="button" onClick={() => openModSheet(item)}
+                              className="px-3 h-7 rounded-full text-xs font-semibold"
+                              style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>
+                              + Add
+                            </button>
+                          ) : totalQty > 0 ? (
+                            <>
+                              <button type="button"
+                                onClick={() => { const idx = cart.findLastIndex(e => e.menuItemId === item.id); if (idx >= 0) cartRemoveEntry(idx) }}
+                                className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm"
+                                style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-primary)', border: '1px solid var(--card-border)' }}>−</button>
+                              <span className="w-5 text-center text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{totalQty}</span>
+                              <button type="button" onClick={() => cartAddSimple(item)}
+                                className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm"
+                                style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>+</button>
+                            </>
+                          ) : (
+                            <button type="button" onClick={() => cartAddSimple(item)}
+                              className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm"
+                              style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>+</button>
+                          )}
+                        </div>
+                      </div>
+                      {hasModifiers && itemEntries.length > 0 && (
+                        <div className="px-3 pb-2 space-y-1">
+                          {itemEntries.map((e, idx) => {
+                            const globalIdx = cart.indexOf(e)
+                            return (
+                              <div key={idx} className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                <span className="flex-1 truncate">{e.label || 'No extras'} ×{e.quantity}</span>
+                                <button type="button" onClick={() => cartRemoveEntry(globalIdx)} className="text-red-400 flex items-center justify-center"><Trash2 size={12} /></button>
+                                <button type="button" onClick={() => cartAddEntry(globalIdx)} className="font-bold" style={{ color: 'var(--brand)' }}>+1</button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Cart summary pill */}
+              {cartCount > 0 && (
+                <div className="rounded-xl p-3 flex items-center justify-between"
+                  style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
+                  <span className="text-sm font-semibold" style={{ color: 'var(--brand)' }}>
+                    {cartCount} item{cartCount > 1 ? 's' : ''} added
+                  </span>
+                  <span className="text-sm font-bold" style={{ color: 'var(--brand)' }}>AED {cartTotal.toFixed(2)}</span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 py-4 border-t flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
+          {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
+          <button onClick={submit} disabled={saving || cartCount === 0}
+            className="w-full py-3 rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ background: 'var(--brand)', color: '#fff' }}>
+            {saving && <Loader2 size={13} className="animate-spin" />}
+            {saving ? 'Adding…' : cartCount > 0 ? `Add ${cartCount} item${cartCount > 1 ? 's' : ''} to order` : 'Select items above'}
+          </button>
+        </div>
+
+        {/* Modifier bottom sheet */}
+        {modSheet && (
+          <div className="absolute inset-0 z-20 flex flex-col justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+            onClick={e => { if (e.target === e.currentTarget) setModSheet(null) }}>
+            <div className="rounded-t-2xl overflow-hidden flex flex-col max-h-[80vh]"
+              style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
+              <div className="px-5 py-4 border-b flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{modSheet.item.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>AED {Number(modSheet.item.price).toFixed(2)}</p>
+                </div>
+                <button type="button" onClick={() => setModSheet(null)} className="text-lg font-bold leading-none" style={{ color: 'var(--text-muted)' }}>×</button>
+              </div>
+              <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+                {(modSheet.item.modifierGroups ?? []).map(group => (
+                  <div key={group.id}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{group.name}</p>
+                      {group.required && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)' }}>Required</span>}
+                      {group.maxSelect > 1 && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Pick up to {group.maxSelect}</span>}
+                    </div>
+                    <div className="space-y-1.5">
+                      {group.options.map(opt => {
+                        const selected = (modSheet.selections[group.id] ?? []).includes(opt.id)
+                        return (
+                          <button key={opt.id} type="button" onClick={() => toggleModOption(group.id, opt.id, group.maxSelect)}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all"
+                            style={{ border: `1px solid ${selected ? 'var(--brand)' : 'var(--card-border)'}`, backgroundColor: selected ? 'rgba(var(--brand-rgb),0.06)' : 'var(--muted-bg)' }}>
+                            <div className="flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                              style={{ borderColor: selected ? 'var(--brand)' : 'var(--card-border)', backgroundColor: selected ? 'var(--brand)' : 'transparent' }}>
+                              {selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            </div>
+                            <span className="flex-1 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{opt.name}</span>
+                            {opt.priceAdd > 0 && <span className="text-xs font-semibold" style={{ color: 'var(--brand)' }}>+AED {opt.priceAdd.toFixed(2)}</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="px-5 py-4 border-t flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
+                {(() => {
+                  const missing = (modSheet.item.modifierGroups ?? []).filter(g => g.required && !(modSheet.selections[g.id]?.length))
+                  return (
+                    <button type="button" onClick={confirmModSheet} disabled={missing.length > 0}
+                      className="w-full py-3 rounded-xl text-sm font-bold disabled:opacity-40"
+                      style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>
+                      {missing.length > 0 ? `Select ${missing[0].name}` : 'Add to Order'}
+                    </button>
+                  )
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Staff Place Order Panel ───────────────────────────────────────────────────
+interface MenuItem { id: string; name: string; price: number; isAvailable: boolean; prepTimeMins?: number }
+interface Category { id: string; name: string }
+
+function StaffPlaceOrderPanel({ tableId, tableName, onClose, onPlaced }: {
+  tableId: string; tableName: string; onClose: () => void; onPlaced: () => void
+}) {
+  const [categories, setCategories] = useState<Category[]>([])
+  const [items, setItems] = useState<MenuItem[]>([])
+  const [catId, setCatId] = useState('')
+  const [cart, setCart] = useState<{ item: MenuItem; qty: number }[]>([])
+  const [notes, setNotes] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    api.get('/menu/categories').then(r => {
+      const cats = Array.isArray(r.data) ? r.data : []
+      setCategories(cats)
+      if (cats.length) setCatId(cats[0].id)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!catId) return
+    setLoading(true)
+    api.get(`/menu/items?categoryId=${catId}&all=true`).then(r => {
+      setItems(Array.isArray(r.data) ? r.data : (r.data?.items ?? []))
+    }).finally(() => setLoading(false))
+  }, [catId])
+
+  function addToCart(item: MenuItem) {
+    setCart(prev => {
+      const ex = prev.find(c => c.item.id === item.id)
+      return ex ? prev.map(c => c.item.id === item.id ? { ...c, qty: c.qty + 1 } : c) : [...prev, { item, qty: 1 }]
+    })
+  }
+
+  function updateQty(itemId: string, delta: number) {
+    setCart(prev => prev.map(c => c.item.id === itemId ? { ...c, qty: Math.max(0, c.qty + delta) } : c).filter(c => c.qty > 0))
+  }
+
+  async function placeOrder() {
+    if (!cart.length) return
+    setBusy(true)
+    try {
+      await api.post(`/orders/table/${tableId}/staff-order`, {
+        items: cart.map(c => ({ menuItemId: c.item.id, quantity: c.qty })),
+        notes: notes.trim() || undefined,
+      })
+      notify.success(`Order placed for ${tableName}`)
+      onPlaced()
+    } catch (e: any) {
+      notify.error(e?.response?.data?.message ?? 'Could not place order')
+    } finally { setBusy(false) }
+  }
+
+  const filtered = items.filter(i => i.isAvailable && (!search || i.name.toLowerCase().includes(search.toLowerCase())))
+  const total = cart.reduce((s, c) => s + c.item.price * c.qty, 0)
+  const INPUT = 'w-full rounded-xl px-3 py-2 text-sm outline-none'
+  const inputStyle = { backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
+      <div className="w-full sm:max-w-xl sm:mx-4 sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[92dvh]"
+        style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
+
+        {/* Header */}
+        <div className="px-5 py-4 border-b flex items-center gap-3 flex-shrink-0"
+          style={{ borderColor: 'var(--card-border)' }}>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Place Order</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{tableName}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg" style={{ color: 'var(--text-muted)' }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex flex-1 min-h-0">
+          {/* Left: menu */}
+          <div className="flex-1 flex flex-col min-w-0 border-r" style={{ borderColor: 'var(--card-border)' }}>
+            {/* Category tabs */}
+            <div className="flex gap-1 px-3 py-2 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--card-border)' }}>
+              {categories.map(c => (
+                <button key={c.id} onClick={() => setCatId(c.id)}
+                  className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all"
+                  style={catId === c.id
+                    ? { backgroundColor: 'var(--brand)', color: '#fff' }
+                    : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            {/* Search */}
+            <div className="px-3 py-2 flex-shrink-0">
+              <div className="relative">
+                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
+                  className="w-full rounded-lg pl-8 pr-3 py-1.5 text-xs outline-none"
+                  style={inputStyle} />
+              </div>
+            </div>
+            {/* Items */}
+            <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5">
+              {loading && <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>}
+              {!loading && filtered.map(item => {
+                const inCart = cart.find(c => c.item.id === item.id)
+                return (
+                  <div key={item.id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl"
+                    style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)' }}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--brand)' }}>AED {item.price.toFixed(2)}</p>
+                    </div>
+                    {inCart ? (
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button onClick={() => updateQty(item.id, -1)} className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold"
+                          style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>−</button>
+                        <span className="text-sm font-bold w-4 text-center" style={{ color: 'var(--text-primary)' }}>{inCart.qty}</span>
+                        <button onClick={() => updateQty(item.id, 1)} className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold"
+                          style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>+</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => addToCart(item)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>
+                        <Plus size={13} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Right: cart */}
+          <div className="w-44 sm:w-52 flex flex-col flex-shrink-0">
+            <div className="px-3 py-2 border-b flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
+              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Cart</p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+              {cart.length === 0 && (
+                <p className="text-xs text-center pt-6" style={{ color: 'var(--text-muted)' }}>No items yet</p>
+              )}
+              {cart.map(c => (
+                <div key={c.item.id} className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>{c.item.name}</p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>AED {(c.item.price * c.qty).toFixed(2)}</p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => updateQty(c.item.id, -1)} className="w-5 h-5 rounded flex items-center justify-center text-xs"
+                      style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>−</button>
+                    <span className="text-xs font-bold w-3 text-center" style={{ color: 'var(--text-primary)' }}>{c.qty}</span>
+                    <button onClick={() => updateQty(c.item.id, 1)} className="w-5 h-5 rounded flex items-center justify-center text-xs"
+                      style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>+</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {cart.length > 0 && (
+              <div className="px-3 py-2 border-t flex-shrink-0 space-y-2" style={{ borderColor: 'var(--card-border)' }}>
+                <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes…"
+                  className="w-full rounded-lg px-2 py-1.5 text-xs outline-none"
+                  style={inputStyle} />
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Total</span>
+                  <span className="text-sm font-black" style={{ color: 'var(--brand)' }}>AED {total.toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-semibold"
+            style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
+            Cancel
+          </button>
+          <div className="flex-1" />
+          <button onClick={placeOrder} disabled={!cart.length || busy}
+            className="px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2 disabled:opacity-50"
+            style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Utensils size={14} />}
+            Place Order {cart.length > 0 && `(${cart.reduce((s, c) => s + c.qty, 0)} items)`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
-export default function OrdersPage() {
+function OrdersPageInner() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const [orders, setOrders] = useState<Order[]>([])
   const [filter, setFilter] = useState<'active' | 'all'>('active')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
   const [mobileTab, setMobileTab] = useState(0)
-  const [cancelTarget, setCancelTarget] = useState<Order | null>(null)
+  const [cancelTarget, setCancelTarget]       = useState<Order | null>(null)
+  const [voidTarget, setVoidTarget]           = useState<Order | null>(null)
+  const [addItemsTarget, setAddItemsTarget]   = useState<Order | null>(null)
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set())
   const [socketConnected, setSocketConnected] = useState(true)
-  const [myIp, setMyIp] = useState<string>('')
+  const [helpAlerts, setHelpAlerts] = useState<{ orderId: string; message: string; at: Date }[]>([])
+  const [guestMessages, setGuestMessages] = useState<Record<string, { from: 'staff' | 'guest'; text: string }[]>>({})
+  const [replyTarget, setReplyTarget] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState('')
+  const [replyBusy, setReplyBusy] = useState(false)
+  const [staffOrderTable, setStaffOrderTable] = useState<{ id: string; name: string } | null>(null)
   const recentlyActioned = useRef<Set<string>>(new Set())
+  const userRole = useAuthStore(s => s.user?.role ?? 'STAFF')
+  // Kitchen-only mode: user has 'kitchen' but NOT 'orders' — pure KDS/display user (Chef role)
+  // Owners, managers, and general staff who also have 'orders' can advance all stages including Accept
+  const hasKitchenPerm = useAuthStore(s => s.permissions.includes('kitchen' as any) && !s.permissions.includes('orders' as any))
+
+  // Auto-open place-order panel if tableId is in URL (from bookings page)
+  useEffect(() => {
+    const tableId = searchParams.get('tableId')
+    const tableName = searchParams.get('tableName') ?? `Table`
+    if (tableId) {
+      setStaffOrderTable({ id: tableId, name: tableName })
+      router.replace('/staff/orders')
+    }
+  }, [searchParams])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -813,7 +1069,6 @@ export default function OrdersPage() {
   }, [filter])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { api.get('/orders/my-ip').then(r => setMyIp(r.data.ip)).catch(() => {}) }, [])
 
   useEffect(() => {
     const socket = getSocket()
@@ -837,18 +1092,27 @@ export default function OrdersPage() {
         notify.order.ready(o.type === 'DINE_IN' ? `Table ${o.table?.tableNumber}` : `Token #${o.tokenNumber}`)
       }
     }
+    const onHelp = (payload: { orderId: string; message: string }) => {
+      setHelpAlerts(prev => [...prev, { orderId: payload.orderId, message: payload.message, at: new Date() }])
+      setGuestMessages(prev => ({
+        ...prev,
+        [payload.orderId]: [...(prev[payload.orderId] ?? []), { from: 'guest', text: payload.message || 'Needs help' }],
+      }))
+    }
 
     socket.on('connect',       onConnect)
     socket.on('disconnect',    onDisconnect)
     socket.on('order:new',     onNew)
     socket.on('order:updated', onUpdated)
     socket.on('order:ready',   onReady)
+    socket.on('order:help',    onHelp)
     return () => {
       socket.off('connect',       onConnect)
       socket.off('disconnect',    onDisconnect)
       socket.off('order:new',     onNew)
       socket.off('order:updated', onUpdated)
       socket.off('order:ready',   onReady)
+      socket.off('order:help',    onHelp)
     }
   }, [])
 
@@ -859,6 +1123,40 @@ export default function OrdersPage() {
     try {
       await api.patch(`/orders/${id}/status`, { status })
       setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o))
+    } finally { setBusy(p => ({ ...p, [id]: false })) }
+  }
+
+  const sendReply = async (orderId: string) => {
+    if (!replyText.trim()) return
+    setReplyBusy(true)
+    try {
+      await api.post(`/orders/${orderId}/message`, { message: replyText.trim() })
+      setGuestMessages(prev => ({
+        ...prev,
+        [orderId]: [...(prev[orderId] ?? []), { from: 'staff', text: replyText.trim() }],
+      }))
+      setReplyText('')
+      setReplyTarget(null)
+    } finally { setReplyBusy(false) }
+  }
+
+  const rushOrder = async (id: string, isRush: boolean) => {
+    setBusy(p => ({ ...p, [id]: true }))
+    try {
+      await api.patch(`/orders/${id}/rush`, { isRush })
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, isRush } : o))
+    } finally { setBusy(p => ({ ...p, [id]: false })) }
+  }
+
+  const voidOrder = async (id: string, reason: string) => {
+    setBusy(p => ({ ...p, [id]: true }))
+    try {
+      await api.post(`/orders/${id}/void`, { reason })
+      setOrders(prev => prev.filter(o => o.id !== id))
+      setVoidTarget(null)
+      notify.info('Order voided — removed from bill')
+    } catch (e: any) {
+      notify.error(e?.message ?? 'Could not void order')
     } finally { setBusy(p => ({ ...p, [id]: false })) }
   }
 
@@ -891,23 +1189,7 @@ export default function OrdersPage() {
     } finally { setBusy(p => ({ ...p, [id]: false })) }
   }
 
-  const settleTable = async (tableId: string, method: 'CASH' | 'CARD') => {
-    setBusy(p => ({ ...p, [tableId]: true }))
-    try {
-      const { data } = await api.post(`/payments/table/${tableId}/settle-all-cash`, { method })
-      const label = method === 'CARD' ? 'Card payment recorded' : `Cash collected`
-      notify.success(`${label} — AED ${Number(data.total).toFixed(2)}`)
-      setOrders(prev => prev.map(o =>
-        o.table?.id === tableId && o.paymentStatus === 'UNPAID'
-          ? { ...o, paymentStatus: 'PAID', paymentMethod: method }
-          : o
-      ))
-    } finally { setBusy(p => ({ ...p, [tableId]: false })) }
-  }
 
-  const viewBill = (_tableId: string) => {
-    window.location.href = '/staff/bills'
-  }
 
   const dismissZombie = async (id: string) => {
     setBusy(p => ({ ...p, [id]: true }))
@@ -918,25 +1200,11 @@ export default function OrdersPage() {
   }
 
   // ── Buckets ────────────────────────────────────────────────────────────────
-  const pending   = orders.filter(o => o.status === 'PENDING' && o.paymentMethod === 'CASH')
+  const rushFirst = (a: Order, b: Order) => (b.isRush ? 1 : 0) - (a.isRush ? 1 : 0)
+  const pending   = orders.filter(o => o.status === 'PENDING' && o.paymentMethod === 'CASH').sort(rushFirst)
   const zombies   = orders.filter(o => o.status === 'PENDING' && o.stripeIntentId && !o.paymentMethod)
-  const kitchen   = orders.filter(o => ['ACCEPTED', 'PREPARING'].includes(o.status))
-  const ready     = orders.filter(o => o.status === 'READY')
-  const takeawayHandover = orders.filter(o => o.type === 'TAKEAWAY' && o.status === 'DELIVERED' && o.paymentStatus === 'UNPAID')
-
-  const awaitingPayment = orders.filter(o => o.type === 'DINE_IN' && o.status === 'DELIVERED' && o.paymentStatus === 'UNPAID')
-  const tableGroups = new Map<string, TableGroup>()
-  for (const o of awaitingPayment) {
-    if (!o.table) continue
-    const key = o.table.id
-    if (!tableGroups.has(key)) {
-      tableGroups.set(key, { tableId: key, tableName: o.table.name ?? `Table ${o.table.tableNumber}`, orders: [], cashTotal: 0, cardTotal: 0, hasCash: false, peopleCount: 0 })
-    }
-    const g = tableGroups.get(key)!
-    g.orders.push(o)
-    if (o.paymentMethod === 'CASH' || !o.paymentMethod) { g.cashTotal += Number(o.total); g.hasCash = true }
-    else g.cardTotal += Number(o.total)
-  }
+  const kitchen   = orders.filter(o => ['ACCEPTED', 'PREPARING'].includes(o.status)).sort(rushFirst)
+  const ready     = orders.filter(o => o.status === 'READY').sort(rushFirst)
 
   const completed = filter === 'all'
     ? orders.filter(o => o.status === 'DELIVERED' && o.paymentStatus !== 'UNPAID')
@@ -952,9 +1220,8 @@ export default function OrdersPage() {
   }, {})
   const pendingGroups = Object.values(pendingByTable)
 
-  const col4Count = tableGroups.size + takeawayHandover.length
   const col1Count = pending.length + zombies.length
-  const allEmpty  = col1Count === 0 && kitchen.length === 0 && ready.length === 0 && col4Count === 0
+  const allEmpty  = col1Count === 0 && kitchen.length === 0 && ready.length === 0
 
   return (
     <>
@@ -962,8 +1229,8 @@ export default function OrdersPage() {
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
 
       {/* ── Sticky Header ─────────────────────────────────────────────────── */}
-      <div className="flex-shrink-0 px-4 sm:px-6 py-3"
-        style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--card-bg)' }}>
+      <div className="flex-shrink-0 h-14 flex flex-col justify-center px-4 sm:px-6"
+        style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--header-bg)' }}>
         <div className="flex items-center gap-2 mb-1">
           <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Live Orders</h1>
           {socketConnected ? (
@@ -979,11 +1246,11 @@ export default function OrdersPage() {
               OFFLINE
             </span>
           )}
-          <div className="ml-auto flex items-center gap-2">
-            <div className="flex rounded-xl p-1" style={{ background: 'var(--muted-bg)', border: '1px solid var(--card-border)' }}>
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+            <div className="flex rounded-xl p-0.5" style={{ background: 'var(--muted-bg)', border: '1px solid var(--card-border)' }}>
               {(['active', 'all'] as const).map(f => (
                 <button key={f} onClick={() => setFilter(f)}
-                  className="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all"
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
                   style={filter === f
                     ? { backgroundColor: 'var(--card-bg)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }
                     : { color: 'var(--text-muted)' }}>
@@ -992,9 +1259,9 @@ export default function OrdersPage() {
               ))}
             </div>
             <button onClick={load}
-              className="p-2.5 rounded-xl border transition-colors"
-              style={{ backgroundColor: 'var(--muted-bg)', borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+              className="p-1.5 rounded-lg transition-colors"
+              style={{ color: 'var(--text-muted)' }}>
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
@@ -1008,7 +1275,6 @@ export default function OrdersPage() {
             { label: 'Approval', dot: '#eab308', count: pending.length + zombies.length },
             { label: 'Kitchen',  dot: '#3b82f6', count: kitchen.length },
             { label: 'Ready',    dot: '#22c55e', count: ready.length },
-            { label: 'Payment',  dot: '#a855f7', count: col4Count },
           ].map((tab, i) => (
             <button key={i} onClick={() => setMobileTab(i)}
               className="flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl text-[10px] font-bold transition-all"
@@ -1038,6 +1304,7 @@ export default function OrdersPage() {
           flex: 1,
           overflow: 'hidden',
           alignItems: 'stretch',
+          maxWidth: 1200,
         }}>
 
           {/* ── Col 1: Needs Approval (always visible) ── */}
@@ -1068,6 +1335,13 @@ export default function OrdersPage() {
                       order={o}
                       onAdvance={advance}
                       onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
+                      onVoid={id => setVoidTarget(orders.find(x => x.id === id) ?? null)}
+                      onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
+                      userRole={userRole}
+                      hasKitchenPerm={hasKitchenPerm}
+                      onRush={rushOrder}
+                      onReply={id => setReplyTarget(id)}
+                      hasGuestMessage={!!(guestMessages[o.id]?.length)}
                       busy={!!busy[o.id]}
                       isNew={newOrderIds.has(o.id)}
                     />
@@ -1111,39 +1385,29 @@ export default function OrdersPage() {
           </KanbanColumn>
 
           {/* ── Col 2: In Kitchen ── */}
-          {kitchen.length > 0 && (
-            <KanbanColumn title="In Kitchen" dotColor="#3b82f6" count={kitchen.length}
-              emptyIcon={<ChefHat size={28} />} emptyText="Nothing here">
-              {kitchen.map(o => (
-                <OrderCard key={o.id} order={o} onAdvance={advance}
-                  busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
-              ))}
-            </KanbanColumn>
-          )}
+          <KanbanColumn title="In Kitchen" dotColor="#3b82f6" count={kitchen.length}
+            emptyIcon={<ChefHat size={28} />} emptyText="Nothing cooking">
+            {kitchen.map(o => (
+              <OrderCard key={o.id} order={o} onAdvance={advance}
+                onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
+                onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
+                userRole={userRole} hasKitchenPerm={hasKitchenPerm} onRush={rushOrder}
+                onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)}
+                busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
+            ))}
+          </KanbanColumn>
 
           {/* ── Col 3: Ready ── */}
-          {ready.length > 0 && (
-            <KanbanColumn title="Ready" dotColor="#22c55e" count={ready.length}
-              emptyIcon={<CheckCircle size={28} />} emptyText="Nothing here">
-              {ready.map(o => (
-                <OrderCard key={o.id} order={o} onAdvance={advance}
-                  busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
-              ))}
-            </KanbanColumn>
-          )}
-
-          {/* ── Col 4: Collect Payment ── */}
-          {col4Count > 0 && (
-            <KanbanColumn title="Collect Payment" dotColor="#a855f7" count={col4Count}
-              emptyIcon={<Banknote size={28} />} emptyText="Nothing here">
-              {[...tableGroups.values()].map(g => (
-                <PaymentRow key={g.tableId} group={g} onSettle={settleTable} onViewBill={viewBill} busy={!!busy[g.tableId]} myIp={myIp} />
-              ))}
-              {takeawayHandover.map(o => (
-                <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} />
-              ))}
-            </KanbanColumn>
-          )}
+          <KanbanColumn title="Ready" dotColor="#22c55e" count={ready.length}
+            emptyIcon={<CheckCircle size={28} />} emptyText="Nothing ready yet">
+            {ready.map(o => (
+              <OrderCard key={o.id} order={o} onAdvance={advance}
+                onVoid={id => setVoidTarget(orders.find(x => x.id === id) ?? null)}
+                userRole={userRole} hasKitchenPerm={hasKitchenPerm} onRush={rushOrder}
+                onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)}
+                busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
+            ))}
+          </KanbanColumn>
 
         </div>
         )}
@@ -1162,6 +1426,10 @@ export default function OrdersPage() {
                 {group.orders.map(o => (
                   <OrderCard key={o.id} order={o} onAdvance={advance}
                     onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
+                      onVoid={id => setVoidTarget(orders.find(x => x.id === id) ?? null)}
+                      onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
+                      userRole={userRole} hasKitchenPerm={hasKitchenPerm} onRush={rushOrder}
+                      onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)}
                     busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
                 ))}
               </div>
@@ -1191,17 +1459,17 @@ export default function OrdersPage() {
             )}
           </>}
           {mobileTab === 1 && <>
-            {kitchen.map(o => <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
+            {kitchen.map(o => <OrderCard key={o.id} order={o} onAdvance={advance}
+              onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
+              onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
+              userRole={userRole} hasKitchenPerm={hasKitchenPerm} onRush={rushOrder} onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
             {kitchen.length === 0 && <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}><ChefHat size={28} /><span className="text-xs">Nothing here</span></div>}
           </>}
           {mobileTab === 2 && <>
-            {ready.map(o => <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
+            {ready.map(o => <OrderCard key={o.id} order={o} onAdvance={advance}
+              onVoid={id => setVoidTarget(orders.find(x => x.id === id) ?? null)}
+              userRole={userRole} hasKitchenPerm={hasKitchenPerm} onRush={rushOrder} onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
             {ready.length === 0 && <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}><CheckCircle size={28} /><span className="text-xs">Nothing here</span></div>}
-          </>}
-          {mobileTab === 3 && <>
-            {[...tableGroups.values()].map(g => <PaymentRow key={g.tableId} group={g} onSettle={settleTable} onViewBill={viewBill} busy={!!busy[g.tableId]} myIp={myIp} />)}
-            {takeawayHandover.map(o => <OrderCard key={o.id} order={o} onAdvance={advance} busy={!!busy[o.id]} />)}
-            {col4Count === 0 && <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}><Banknote size={28} /><span className="text-xs">Nothing here</span></div>}
           </>}
         </div>
 
@@ -1235,8 +1503,129 @@ export default function OrdersPage() {
         onConfirm={cancel}
         onClose={() => setCancelTarget(null)}
         busy={!!busy[cancelTarget.id]}
+        mode="cancel"
+      />
+    )}
+    {voidTarget && (
+      <CancelReasonModal
+        order={voidTarget}
+        onConfirm={voidOrder}
+        onClose={() => setVoidTarget(null)}
+        busy={!!busy[voidTarget.id]}
+        mode="void"
+      />
+    )}
+    {addItemsTarget && (
+      <AddItemsModal
+        order={addItemsTarget}
+        onClose={() => setAddItemsTarget(null)}
+        onSaved={updated => {
+          setOrders(prev => prev.map(o => o.id === updated.id ? updated : o))
+          setAddItemsTarget(null)
+        }}
+      />
+    )}
+
+    {/* ── Guest help alerts ── */}
+    {helpAlerts.length > 0 && (
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-xs w-full">
+        {helpAlerts.map((a, i) => {
+          const order = orders.find(o => o.id === a.orderId)
+          const label = order
+            ? (order.type === 'DINE_IN' ? (order.table?.name ?? `Table ${order.table?.tableNumber}`) : `Takeaway #${order.tokenNumber}`)
+            : `Order`
+          return (
+            <div key={i} className="rounded-2xl p-3.5 flex items-start gap-3 shadow-2xl"
+              style={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(239,68,68,0.4)' }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
+                style={{ backgroundColor: 'rgba(239,68,68,0.15)' }}>🙋</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-white">{label} needs help</p>
+                {a.message && a.message !== 'Needs help' && (
+                  <p className="text-[11px] text-gray-400 mt-0.5 truncate">"{a.message}"</p>
+                )}
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => { setReplyTarget(a.orderId); setHelpAlerts(p => p.filter((_, j) => j !== i)) }}
+                    className="text-[11px] font-bold px-3 py-1.5 rounded-lg"
+                    style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                    Reply
+                  </button>
+                  <button onClick={() => setHelpAlerts(p => p.filter((_, j) => j !== i))}
+                    className="text-[11px] px-3 py-1.5 rounded-lg"
+                    style={{ backgroundColor: '#2a2a2a', color: '#666' }}>
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )}
+
+    {/* ── Reply to guest modal ── */}
+    {replyTarget && (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+        style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+        <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+          style={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}>
+          <div className="px-4 py-3.5 border-b" style={{ borderColor: '#2a2a2a' }}>
+            <p className="text-sm font-black text-white">Reply to guest</p>
+            {guestMessages[replyTarget]?.filter(m => m.from === 'guest').slice(-1).map((m, i) => (
+              <p key={i} className="text-xs text-gray-500 mt-0.5">"{m.text}"</p>
+            ))}
+          </div>
+          <div className="p-4 space-y-3">
+            <div className="flex gap-2 flex-wrap">
+              {['On its way!', 'Just 5 more minutes', 'Sorry for the wait', 'Coming right up'].map(q => (
+                <button key={q} onClick={() => setReplyText(q)}
+                  className="text-[11px] px-2.5 py-1.5 rounded-lg transition-all"
+                  style={replyText === q
+                    ? { backgroundColor: 'var(--brand)', color: '#000' }
+                    : { backgroundColor: '#2a2a2a', color: '#aaa' }}>
+                  {q}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                value={replyText}
+                onChange={e => setReplyText(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && sendReply(replyTarget)}
+                placeholder="Type a message…"
+                className="flex-1 rounded-xl px-3 py-2.5 text-sm outline-none"
+                style={{ backgroundColor: '#111', border: '1px solid #2a2a2a', color: '#e5e5e5' }}
+              />
+              <button onClick={() => sendReply(replyTarget)} disabled={replyBusy || !replyText.trim()}
+                className="w-10 h-10 rounded-xl flex items-center justify-center disabled:opacity-40"
+                style={{ backgroundColor: 'var(--brand)' }}>
+                {replyBusy ? <Loader2 size={13} className="animate-spin" style={{ color: '#000' }} /> : <Send size={13} style={{ color: '#000' }} />}
+              </button>
+            </div>
+            <button onClick={() => { setReplyTarget(null); setReplyText('') }}
+              className="w-full py-2 rounded-xl text-xs text-gray-500 hover:text-gray-400 transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    {staffOrderTable && (
+      <StaffPlaceOrderPanel
+        tableId={staffOrderTable.id}
+        tableName={staffOrderTable.name}
+        onClose={() => setStaffOrderTable(null)}
+        onPlaced={() => { setStaffOrderTable(null); load() }}
       />
     )}
     </>
+  )
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense>
+      <OrdersPageInner />
+    </Suspense>
   )
 }

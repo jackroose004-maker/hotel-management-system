@@ -6,7 +6,7 @@
   <title>Welcome to {{restaurantName}}</title>
 </head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:48px 16px;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{{bgColor}};padding:48px 16px;">
     <tr>
       <td align="center">
         <table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
@@ -70,11 +70,32 @@
             </td>
           </tr>
 
+          <!-- Social -->
+          {{#if hasSocial}}
+          <tr>
+            <td style="background:#f4f4f5;padding:14px 40px;text-align:center;border-top:1px solid #e8e8e8;">
+              <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                <tr>
+                  {{#if socialInstagram}}<td style="padding:0 5px;"><a href="{{socialInstagram}}" style="color:#999;text-decoration:none;font-size:11px;">Instagram</a></td>{{/if}}
+                  {{#if socialWhatsapp}}<td style="padding:0 5px;"><a href="{{socialWhatsapp}}" style="color:#999;text-decoration:none;font-size:11px;">WhatsApp</a></td>{{/if}}
+                  {{#if socialTelegram}}<td style="padding:0 5px;"><a href="{{socialTelegram}}" style="color:#999;text-decoration:none;font-size:11px;">Telegram</a></td>{{/if}}
+                  {{#if socialTiktok}}<td style="padding:0 5px;"><a href="{{socialTiktok}}" style="color:#999;text-decoration:none;font-size:11px;">TikTok</a></td>{{/if}}
+                  {{#if socialFacebook}}<td style="padding:0 5px;"><a href="{{socialFacebook}}" style="color:#999;text-decoration:none;font-size:11px;">Facebook</a></td>{{/if}}
+                  {{#if socialTwitter}}<td style="padding:0 5px;"><a href="{{socialTwitter}}" style="color:#999;text-decoration:none;font-size:11px;">Twitter</a></td>{{/if}}
+                </tr>
+              </table>
+            </td>
+          </tr>
+          {{/if}}
+
           <!-- Footer -->
           <tr>
-            <td style="background:#f4f4f5;border-radius:0 0 16px 16px;padding:20px 40px;text-align:center;">
-              <p style="margin:0;color:#aaa;font-size:11px;">
+            <td style="background:#f4f4f5;border-radius:0 0 16px 16px;padding:16px 40px;text-align:center;">
+              <p style="margin:0 0 3px;color:#aaa;font-size:11px;">
                 © {{year}} {{restaurantName}}. You're receiving this because you created an account.
+              </p>
+              <p style="margin:0;color:#ccc;font-size:10px;">
+                {{footerNoReplyText}}{{#if supportEmail}} · {{supportEmail}}{{/if}}
               </p>
             </td>
           </tr>

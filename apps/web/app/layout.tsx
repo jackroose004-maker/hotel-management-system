@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { Geist } from 'next/font/google'
-import { Toaster } from 'react-hot-toast'
+import ToastProvider from '@/components/ToastProvider'
 import ThemeInit from '@/components/ThemeInit'
 import BrandInit from '@/components/BrandInit'
 import AuthInit from '@/components/AuthInit'
@@ -21,22 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <BrandInit />
         <AuthInit />
         {children}
-        <Toaster
-          position="top-center"
-          containerStyle={{ zIndex: 99999 }}
-          toastOptions={{
-            duration: 3500,
-            style: {
-              background: 'var(--card-bg, #fff)',
-              color: 'var(--foreground, #111)',
-              border: '1px solid var(--card-border, #e5e7eb)',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-              fontWeight: 600,
-              fontSize: '14px',
-            },
-            success: { iconTheme: { primary: 'var(--brand, #C9A84C)', secondary: '#fff' } },
-          }}
-        />
+        <ToastProvider />
       </body>
     </html>
   )

@@ -36,12 +36,13 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@Request() req) {
-    return req.user
+    // Fetch fresh from DB so language and other profile fields are always current
+    return this.auth.getMe(req.user.id)
   }
 
   @UseGuards(JwtAuthGuard)
   @Patch('me')
-  updateMe(@Request() req, @Body() body: { name?: string; phone?: string; dietaryTags?: string; notifOrderUpdates?: boolean; notifBookingReminders?: boolean }) {
+  updateMe(@Request() req, @Body() body: { name?: string; phone?: string; dietaryTags?: string; notifOrderUpdates?: boolean; notifBookingReminders?: boolean; language?: string }) {
     return this.auth.updateMe(req.user.id, body)
   }
 

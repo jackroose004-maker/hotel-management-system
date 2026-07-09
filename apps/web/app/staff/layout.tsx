@@ -1,40 +1,58 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Table2, ClipboardList, Receipt, CalendarDays,
   BookOpen, BarChart2, Settings, LogOut, LayoutGrid, Users,
   UtensilsCrossed, Sun, Moon, ChevronLeft, ChevronRight, Menu, X,
+  Timer, TimerOff,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { initBrand, useBrandStore } from '@/store/brand'
 import { requestNotifyPermission } from '@/lib/notify'
+import api from '@/lib/api'
 
+// permission key maps 1-to-1 with the Permission type in auth store
 const NAV = [
-  { href: '/staff',           icon: LayoutGrid,     label: 'Dashboard',   roles: ['OWNER','MANAGER','STAFF'], exact: true },
-  { href: '/staff/orders',    icon: ClipboardList,  label: 'Orders',      roles: ['OWNER','MANAGER','STAFF'] },
-  { href: '/staff/tables',    icon: Table2,         label: 'Tables',      roles: ['OWNER','MANAGER','STAFF'] },
-  { href: '/staff/bookings',  icon: CalendarDays,   label: 'Bookings',    roles: ['OWNER','MANAGER','STAFF'] },
-  { href: '/staff/bills',     icon: Receipt,        label: 'Bills',       roles: ['OWNER','MANAGER'] },
-  { href: '/staff/menu',      icon: BookOpen,       label: 'Menu',        roles: ['OWNER','MANAGER'] },
-  { href: '/staff/analytics', icon: BarChart2,      label: 'Analytics',   roles: ['OWNER','MANAGER'] },
-  { href: '/staff/team',      icon: Users,          label: 'Team',        roles: ['OWNER','MANAGER'] },
-  { href: '/staff/settings',  icon: Settings,       label: 'Settings',    roles: ['OWNER','MANAGER'] },
+  { href: '/staff',           icon: LayoutGrid,     label: 'Dashboard',  permission: 'dashboard', exact: true },
+  { href: '/staff/orders',    icon: ClipboardList,  label: 'Orders',     permission: 'orders' },
+  { href: '/staff/kitchen',   icon: UtensilsCrossed, label: 'Kitchen',  permission: 'kitchen' },
+  { href: '/staff/tables',    icon: Table2,         label: 'Tables',     permission: 'tables' },
+  { href: '/staff/bookings',  icon: CalendarDays,   label: 'Bookings',   permission: 'bookings' },
+  { href: '/staff/bills',     icon: Receipt,        label: 'Bills',      permission: 'bills' },
+  { href: '/staff/menu',      icon: BookOpen,       label: 'Menu',       permission: 'menu' },
+  { href: '/staff/analytics', icon: BarChart2,      label: 'Analytics',  permission: 'analytics' },
+  { href: '/staff/team',      icon: Users,          label: 'Team',       permission: 'team' },
+  { href: '/staff/settings',  icon: Settings,       label: 'Settings',   permission: 'settings' },
 ]
 
 export default function StaffLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router   = useRouter()
-  const { user, token, init, logout } = useAuthStore()
+  const { user, token, permissions, init, logout } = useAuthStore()
   const { dark, toggle }              = useThemeStore()
   const logoUrl    = useBrandStore(s => s.logoUrl)
   const brandName  = useBrandStore(s => s.restaurantName)
   const [collapsed, setCollapsed]     = useState(false)
   const [mobileOpen, setMobileOpen]   = useState(false)
   const [ready, setReady]             = useState(false)
-  const loggingOut                    = useRef(false)
+  const [clockedIn, setClockedIn]       = useState(false)
+  const [clockBusy, setClockBusy]       = useState(false)
+  const [shiftStart, setShiftStart]     = useState<Date | null>(null)
+  const [showClockBanner, setShowClockBanner] = useState(false)
+  const loggingOut                      = useRef(false)
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+
+  const loadShift = useCallback(async () => {
+    try {
+      const { data } = await api.get('/shifts/my')
+      setClockedIn(!!data)
+      setShiftStart(data ? new Date(data.clockIn) : null)
+    } catch { /* not clocked in */ }
+  }, [])
 
   useEffect(() => {
     init()
@@ -44,10 +62,32 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   }, [])
 
   useEffect(() => {
+    if (token) loadShift().then(() => setShowClockBanner(true))
+  }, [token, loadShift])
+
+  const toggleClock = async () => {
+    setClockBusy(true)
+    try {
+      if (clockedIn) {
+        await api.patch('/shifts/clock-out')
+        setClockedIn(false)
+        setShiftStart(null)
+      } else {
+        const { data } = await api.post('/shifts/clock-in')
+        setClockedIn(true)
+        setShiftStart(new Date(data.clockIn))
+      }
+    } finally { setClockBusy(false) }
+  }
+
+  useEffect(() => {
     if (loggingOut.current) return
     if (ready && pathname.startsWith('/staff') && pathname !== '/staff/login' && !token)
       router.replace('/staff/login')
-  }, [ready, token, pathname])
+    // CHEF only has access to orders — redirect any other staff page back to orders
+    if (ready && token && user?.role === 'CHEF' && pathname !== '/staff/orders')
+      router.replace('/staff/orders')
+  }, [ready, token, user, pathname])
 
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
@@ -55,7 +95,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   if (!ready || !token) return null
 
   const handleLogout = () => { loggingOut.current = true; logout(); router.push('/') }
-  const visibleNav = NAV.filter(n => n.roles.includes(user?.role ?? ''))
+  const visibleNav = NAV.filter(n => permissions.includes(n.permission as any))
 
   const SidebarContent = ({ mobile = false }: { mobile?: boolean }) => (
     <>
@@ -63,7 +103,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         {visibleNav.map(({ href, icon: Icon, label, exact }) => {
           const active = exact ? pathname === href : pathname.startsWith(href)
           return (
-            <Link key={href} href={href}
+            <Link key={label} href={href}
               title={!mobile && collapsed ? label : undefined}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
                 active
@@ -90,6 +130,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
           {dark ? <Sun size={15} /> : <Moon size={15} />}
           {(mobile || !collapsed) && <span className="text-xs">{dark ? 'Light mode' : 'Dark mode'}</span>}
         </button>
+        <button onClick={toggleClock} disabled={clockBusy}
+          className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm w-full transition-colors disabled:opacity-50 ${!mobile && collapsed ? 'justify-center px-0' : ''} ${clockedIn ? 'text-green-400 hover:bg-green-500/10' : 'text-white/40 hover:bg-white/10 hover:text-white/80'}`}
+          title={clockedIn ? `Clocked in ${shiftStart ? shiftStart.toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' }) : ''}` : 'Clock in'}>
+          {clockedIn ? <Timer size={15} /> : <TimerOff size={15} />}
+          {(mobile || !collapsed) && (
+            <span className="text-xs">{clockedIn ? `On shift · ${shiftStart ? shiftStart.toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' }) : ''}` : 'Clock in'}</span>
+          )}
+        </button>
         <button onClick={handleLogout}
           className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm text-white/30 hover:bg-red-500/20 hover:text-red-300 w-full transition-colors ${!mobile && collapsed ? 'justify-center px-0' : ''}`}>
           <LogOut size={15} />
@@ -108,7 +156,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         style={{ backgroundColor: 'var(--brand-sidebar, #1a1816)' }}>
         <div className="h-14 flex items-center justify-between px-3 border-b border-white/10">
           {!collapsed && (
-            <div className="flex items-center gap-2.5 min-w-0">
+            <Link href="/staff" className="flex items-center gap-2.5 min-w-0">
               {logoUrl
                 ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
                 : <div className="w-7 h-7 rounded-lg flex items-center justify-center shadow-sm flex-shrink-0 bg-white/20">
@@ -119,14 +167,17 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
                 <div className="font-black text-sm truncate text-white">{brandName}</div>
                 <div className="text-[10px] text-white/40 truncate">Staff Portal</div>
               </div>
-            </div>
+            </Link>
           )}
           {collapsed && (
-            logoUrl
+            <Link href="/staff" className="mx-auto">
+            {logoUrl
               ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover mx-auto" />
               : <div className="w-7 h-7 rounded-lg flex items-center justify-center mx-auto bg-white/20">
                   <UtensilsCrossed size={13} className="text-white" />
                 </div>
+            }
+            </Link>
           )}
           {!collapsed && (
             <button onClick={() => setCollapsed(v => !v)}
@@ -195,6 +246,28 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
             </button>
           </div>
         </div>
+        {/* Clock-in reminder banner — shown for non-owners not yet clocked in */}
+        {showClockBanner && !clockedIn && user?.role !== 'OWNER' && (
+          <div className="flex items-center gap-3 px-4 py-2.5 border-b flex-shrink-0"
+            style={{ backgroundColor: 'rgba(251,191,36,0.08)', borderColor: 'rgba(251,191,36,0.2)' }}>
+            <Timer size={15} className="text-amber-400 flex-shrink-0" />
+            <p className="text-xs flex-1" style={{ color: 'var(--text-primary)' }}>
+              <span className="font-semibold">{greeting}, {user?.name?.split(' ')[0]}.</span>
+              {' '}You haven't clocked in yet — your shift won't be tracked.
+            </p>
+            <button onClick={() => { toggleClock(); setShowClockBanner(false) }}
+              disabled={clockBusy}
+              className="text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0"
+              style={{ backgroundColor: 'rgba(251,191,36,0.2)', color: '#fbbf24' }}>
+              Clock in now
+            </button>
+            <button onClick={() => setShowClockBanner(false)}
+              className="text-xs px-2 py-1 rounded flex-shrink-0"
+              style={{ color: 'var(--text-muted)' }}>
+              Dismiss
+            </button>
+          </div>
+        )}
         <div className="flex-1 overflow-auto flex flex-col">
           {children}
         </div>

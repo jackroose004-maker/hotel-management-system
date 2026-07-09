@@ -1,8 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { OrdersGateway } from '../websocket/orders.gateway'
 import { PaymentsService } from '../payments/payments.service'
-import { CreateOrderDto, UpdateOrderStatusDto } from './dto/create-order.dto'
+import { KitchenPrintService } from './kitchen-print.service'
+import { SettingsService } from '../settings/settings.service'
+import { MailService } from '../mail/mail.service'
+import { CreateOrderDto, UpdateOrderStatusDto, AddOrderItemsDto } from './dto/create-order.dto'
 import { OrderStatus } from '@prisma/client'
 import { randomUUID } from 'crypto'
 
@@ -10,10 +13,15 @@ const VAT_RATE = 0.05
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name)
+
   constructor(
     private prisma: PrismaService,
     private gateway: OrdersGateway,
     private payments: PaymentsService,
+    private kitchenPrint: KitchenPrintService,
+    private settings: SettingsService,
+    private mail: MailService,
   ) {}
 
   async create(dto: CreateOrderDto, userId?: string, clientIp?: string) {
@@ -31,7 +39,8 @@ export class OrdersService {
 
     const subtotal = dto.items.reduce((sum, item) => {
       const price = Number(menuMap.get(item.menuItemId)!.price)
-      return sum + price * item.quantity
+      const modExtra = (item.modifiers ?? []).reduce((ms, m) => ms + Number(m.priceAdd ?? 0), 0)
+      return sum + (price + modExtra) * item.quantity
     }, 0)
 
     const vatAmount = Math.round(subtotal * VAT_RATE * 100) / 100
@@ -57,14 +66,20 @@ export class OrdersService {
     //
     //   Staff order → joins the latest active session for the table (no personal token)
     let tableSessionId: string | undefined
+    let isNewTableSession = false  // track whether this order starts a brand-new seating
     if (dto.type === 'DINE_IN' && dto.tableId) {
       if (dto.guestTabToken) {
-        // Guest: device token IS their tab — use directly
+        // Guest scanning QR: device token IS their tab.
+        // Check if this token already has active orders — if not, it's a new seating.
         tableSessionId = dto.guestTabToken
+        const existingInSession = await this.prisma.order.findFirst({
+          where: { tableSessionId: dto.guestTabToken, paymentStatus: 'UNPAID', status: { not: 'CANCELLED' } },
+          select: { id: true },
+        })
+        isNewTableSession = !existingInSession
       } else if (userId) {
         // Logged-in customer: find their open (unsettled) tab at this table today
         const today = new Date(); today.setHours(0, 0, 0, 0)
-        // Only reuse a session if it has at least one unpaid order — once fully settled start fresh
         const existing = await this.prisma.order.findFirst({
           where: {
             tableId: dto.tableId,
@@ -76,48 +91,83 @@ export class OrdersService {
           orderBy: { createdAt: 'desc' },
           select: { tableSessionId: true },
         })
+        isNewTableSession = !existing
         tableSessionId = existing?.tableSessionId ?? randomUUID()
       } else {
-        // Staff placing an order without a guest token — attach to latest active session
+        // Staff placing an order — attach to latest active session
         const existing = await this.prisma.order.findFirst({
           where: { tableId: dto.tableId, tableSessionId: { not: null } },
           orderBy: { createdAt: 'desc' },
           select: { tableSessionId: true },
         })
+        isNewTableSession = !existing
         tableSessionId = existing?.tableSessionId ?? randomUUID()
       }
     }
 
-    const order = await this.prisma.order.create({
-      data: {
-        type: dto.type,
-        tableId: dto.tableId,
-        tableSessionId,
-        userId,
-        tokenNumber,
-        subtotal,
-        vatAmount,
-        total,
-        notes: dto.notes,
-        clientIp,
-        contactPhone: dto.contactPhone,
-        items: {
-          create: dto.items.map(item => ({
-            menuItemId: item.menuItemId,
-            quantity: item.quantity,
-            unitPrice: menuMap.get(item.menuItemId)!.price,
-            notes: item.notes,
-          })),
-        },
-        statusHistory: { create: { fromStatus: null, toStatus: 'PENDING', changedById: userId } },
-      },
-      include: { items: { include: { menuItem: true } }, table: true },
-    })
-
-    // Auto-mark table as OCCUPIED when a dine-in order is placed
-    if (dto.type === 'DINE_IN' && dto.tableId) {
-      await this.prisma.restaurantTable.update({ where: { id: dto.tableId }, data: { status: 'OCCUPIED' } })
+    // Pre-check table protection window before opening the transaction
+    if (dto.type === 'DINE_IN' && dto.tableId && isNewTableSession) {
+      const cfg = await this.settings.get()
+      if (cfg.tableReleaseWindowMins > 0) {
+        const now = new Date()
+        const todayDate = new Date(now); todayDate.setHours(0, 0, 0, 0)
+        const windowEnd = new Date(now.getTime() + cfg.tableReleaseWindowMins * 60_000)
+        const upcomingBooking = await this.prisma.booking.findFirst({
+          where: { tableId: dto.tableId, status: { in: ['PENDING', 'CONFIRMED'] }, slotDate: todayDate },
+        })
+        if (upcomingBooking) {
+          const [h, m] = upcomingBooking.slotTime.split(':').map(Number)
+          const slotDt = new Date(todayDate); slotDt.setHours(h, m, 0, 0)
+          if (slotDt > now && slotDt <= windowEnd) {
+            throw new BadRequestException(
+              `This table is reserved for a booking at ${upcomingBooking.slotTime}. It cannot be seated within the ${cfg.tableReleaseWindowMins}-minute protection window.`
+            )
+          }
+        }
+      }
     }
+
+    const order = await this.prisma.$transaction(async tx => {
+      const created = await tx.order.create({
+        data: {
+          type: dto.type,
+          tableId: dto.tableId,
+          tableSessionId,
+          userId,
+          tokenNumber,
+          subtotal,
+          vatAmount,
+          total,
+          notes: dto.notes,
+          clientIp,
+          contactPhone: dto.contactPhone,
+          items: {
+            create: dto.items.map(item => ({
+              menuItemId: item.menuItemId,
+              quantity: item.quantity,
+              unitPrice: menuMap.get(item.menuItemId)!.price,
+              notes: item.notes,
+              modifiers: item.modifiers?.length ? {
+                create: item.modifiers.map(m => ({
+                  optionId: m.optionId,
+                  name: m.name,
+                  priceAdd: m.priceAdd,
+                }))
+              } : undefined,
+            })),
+          },
+          statusHistory: { create: { fromStatus: null, toStatus: 'PENDING', changedById: userId } },
+        },
+        include: { items: { include: { menuItem: true, modifiers: true } }, table: true },
+      })
+
+      // Auto-mark table OCCUPIED atomically with the order creation
+      if (dto.type === 'DINE_IN' && dto.tableId) {
+        await tx.restaurantTable.update({ where: { id: dto.tableId }, data: { status: 'OCCUPIED' } })
+      }
+
+      return created
+    })
 
     this.gateway.emitNewOrder(order)
 
@@ -125,6 +175,56 @@ export class OrdersService {
       return this.payments.registerCashOrder(order.id)
     }
     return order
+  }
+
+  async addItems(orderId: string, dto: AddOrderItemsDto, userId?: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } })
+    if (!order) throw new NotFoundException('Order not found')
+    if (['DELIVERED', 'CANCELLED'].includes(order.status))
+      throw new BadRequestException('Cannot add items to a completed or cancelled order')
+
+    const itemIds = dto.items.map(i => i.menuItemId)
+    const menuItems = await this.prisma.menuItem.findMany({ where: { id: { in: itemIds } } })
+    if (menuItems.length !== itemIds.length) throw new BadRequestException('One or more menu items not found')
+    const menuMap = new Map(menuItems.map(m => [m.id, m]))
+
+    const addedSubtotal = dto.items.reduce((sum, item) => {
+      const price = Number(menuMap.get(item.menuItemId)!.price)
+      const modExtra = (item.modifiers ?? []).reduce((ms, m) => ms + Number(m.priceAdd ?? 0), 0)
+      return sum + (price + modExtra) * item.quantity
+    }, 0)
+
+    const newSubtotal  = Math.round((Number(order.subtotal) + addedSubtotal) * 100) / 100
+    const newVat       = Math.round(newSubtotal * VAT_RATE * 100) / 100
+    const newTotal     = Math.round((newSubtotal + newVat) * 100) / 100
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        subtotal: newSubtotal,
+        vatAmount: newVat,
+        total: newTotal,
+        items: {
+          create: dto.items.map(item => ({
+            menuItemId: item.menuItemId,
+            quantity: item.quantity,
+            unitPrice: menuMap.get(item.menuItemId)!.price,
+            notes: item.notes,
+            modifiers: item.modifiers?.length ? {
+              create: item.modifiers.map(m => ({ optionId: m.optionId, name: m.name, priceAdd: m.priceAdd }))
+            } : undefined,
+          })),
+        },
+      },
+      include: {
+        items: { include: { menuItem: true, modifiers: true } },
+        table: true,
+        approvedBy: { select: { id: true, name: true, role: true } },
+      },
+    })
+
+    this.gateway.emitOrderUpdated(updated)
+    return updated
   }
 
   getAll(filter?: { status?: OrderStatus }) {
@@ -191,22 +291,86 @@ export class OrdersService {
 
     // When order is delivered, update table status based on payment situation
     if (dto.status === 'DELIVERED' && order.tableId) {
-      const remaining = await this.prisma.order.count({
-        where: { tableId: order.tableId, status: { notIn: ['DELIVERED', 'CANCELLED'] }, id: { not: id } },
-      })
-      if (remaining === 0) {
-        // If any delivered orders still unpaid, guest is seated waiting for bill
-        const unpaid = await this.prisma.order.count({
-          where: { tableId: order.tableId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
-        })
-        const tableStatus = unpaid > 0 ? 'BILL_PENDING' : 'DIRTY'
-        await this.prisma.restaurantTable.update({ where: { id: order.tableId }, data: { status: tableStatus } })
-      }
+      await this.recalculateTableStatus(order.tableId)
     }
 
     if (dto.status === 'READY') this.gateway.emitOrderReady(updated)
     else this.gateway.emitOrderUpdated(updated)
 
+    if (dto.status === 'ACCEPTED') {
+      this.kitchenPrint.printKOT(updated).catch(() => {})
+    }
+
+    // Email customer when staff cancels their order
+    if (dto.status === 'CANCELLED' && order.userId) {
+      const customer = await this.prisma.user.findUnique({ where: { id: order.userId }, select: { email: true, name: true } })
+      if (customer?.email) {
+        this.mail.sendOrderCancellation(customer.email, customer.name, updated, true)
+      }
+    }
+
+    return updated
+  }
+
+  // Re-derives a table's status from its actual orders. Called whenever an order that
+  // could have driven a table into BILL_PENDING/DIRTY changes state after the fact
+  // (e.g. voided) — without this, a table can get stuck showing "awaiting bill" with
+  // zero real unpaid orders behind it, and there / was no way to clear it from the UI.
+  private async recalculateTableStatus(tableId: string) {
+    const remaining = await this.prisma.order.count({
+      where: { tableId, status: { notIn: ['DELIVERED', 'CANCELLED'] } },
+    })
+    if (remaining > 0) return // guests still actively ordering — leave status alone
+
+    const unpaid = await this.prisma.order.count({
+      where: { tableId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
+    })
+    const tableStatus = unpaid > 0 ? 'BILL_PENDING' : 'DIRTY'
+    await this.prisma.restaurantTable.update({ where: { id: tableId }, data: { status: tableStatus } })
+  }
+
+  async voidOrder(id: string, reason: string, actingUserId?: string) {
+    const order = await this.getById(id)
+    if (!['READY', 'DELIVERED'].includes(order.status)) {
+      throw new BadRequestException('Only READY or DELIVERED orders can be voided — cancel PENDING/ACCEPTED/PREPARING orders instead')
+    }
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: {
+        isVoided: true,
+        voidReason: reason,
+        voidedById: actingUserId ?? null,
+        voidedAt: new Date(),
+        paymentStatus: 'VOID',
+      },
+      include: { items: { include: { menuItem: true } }, table: true },
+    })
+    if (order.tableId) await this.recalculateTableStatus(order.tableId)
+    this.gateway.emitOrderUpdated(updated)
+    return updated
+  }
+
+  async guestHelp(id: string, message?: string) {
+    const order = await this.getById(id)
+    const label = order.type === 'DINE_IN'
+      ? (order.table ? `Table ${(order.table as any).tableNumber}` : 'Dine-in')
+      : `Takeaway #${order.tokenNumber}`
+    this.gateway.emitOrderHelp({ orderId: id, message: message || `${label} needs help` })
+    return { ok: true }
+  }
+
+  async staffMessage(id: string, message: string, staffName: string) {
+    this.gateway.emitOrderMessage({ orderId: id, message, staffName })
+    return { ok: true }
+  }
+
+  async setRush(id: string, isRush: boolean) {
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: { isRush },
+      include: { items: { include: { menuItem: true } }, table: true },
+    })
+    this.gateway.emitOrderUpdated(updated)
     return updated
   }
 
@@ -219,6 +383,15 @@ export class OrdersService {
       include: { items: { include: { menuItem: true } }, table: true },
     })
     this.gateway.emitOrderUpdated(updated)
+
+    // Email the customer who placed the order
+    if (order.userId) {
+      const customer = await this.prisma.user.findUnique({ where: { id: order.userId }, select: { email: true, name: true } })
+      if (customer?.email) {
+        this.mail.sendOrderCancellation(customer.email, customer.name, updated, false)
+      }
+    }
+
     return updated
   }
 
@@ -296,6 +469,83 @@ export class OrdersService {
     return { totalRevenue, totalOrders, paidOrders, cashOrders, dineIn, takeaway, avgOrderValue, byDay, hourly, topItems, period }
   }
 
+  // End-of-day / shift-close report — cash vs card breakdown for till reconciliation
+  async getEodReport(date?: string) {
+    const d = date ? new Date(date) : new Date()
+    const from = new Date(d); from.setHours(0, 0, 0, 0)
+    const to   = new Date(d); to.setHours(23, 59, 59, 999)
+
+    const orders = await this.prisma.order.findMany({
+      where: { createdAt: { gte: from, lte: to }, status: { not: 'CANCELLED' } },
+      select: {
+        id: true, type: true, status: true, paymentStatus: true, paymentMethod: true,
+        subtotal: true, vatAmount: true, discountAmount: true, splitCashAmount: true,
+        tipAmount: true,
+        total: true, isVoided: true, createdAt: true,
+      },
+    })
+
+    const paid = orders.filter(o => o.paymentStatus === 'PAID' && !o.isVoided)
+    const voided = orders.filter(o => o.isVoided)
+
+    // Cash in till = all CASH orders + split cash portions
+    const cashOrders   = paid.filter(o => o.paymentMethod === 'CASH')
+    const cardOrders   = paid.filter(o => o.paymentMethod === 'CARD')
+    const splitOrders  = paid.filter(o => o.paymentMethod === 'SPLIT')
+
+    const cashTotal       = cashOrders.reduce((s, o) => s + Number(o.total), 0)
+    const cardTotal       = cardOrders.reduce((s, o) => s + Number(o.total), 0)
+    const splitCashTotal  = splitOrders.reduce((s, o) => s + Number(o.splitCashAmount ?? 0), 0)
+    const splitCardTotal  = splitOrders.reduce((s, o) => s + (Number(o.total) - Number(o.splitCashAmount ?? 0)), 0)
+
+    const totalCashInTill    = cashTotal + splitCashTotal
+    const totalCardTerminal  = cardTotal + splitCardTotal
+    const netRevenue         = paid.reduce((s, o) => s + Number(o.total), 0)
+    const discountsGiven     = paid.reduce((s, o) => s + Number(o.discountAmount ?? 0), 0)
+    const grossRevenue       = netRevenue + discountsGiven
+    const vatCollected       = paid.reduce((s, o) => s + Number(o.vatAmount), 0)
+    const voidsTotal         = voided.reduce((s, o) => s + Number(o.total), 0)
+    const tipTotal           = paid.reduce((s, o) => s + Number(o.tipAmount ?? 0), 0)
+
+    // Hourly breakdown (for the bar chart)
+    const hourlyMap: Record<number, { orders: number; cash: number; card: number }> = {}
+    for (let h = 0; h < 24; h++) hourlyMap[h] = { orders: 0, cash: 0, card: 0 }
+    for (const o of paid) {
+      const h = o.createdAt.getHours()
+      hourlyMap[h].orders++
+      if (o.paymentMethod === 'CASH') hourlyMap[h].cash += Number(o.total)
+      else if (o.paymentMethod === 'CARD') hourlyMap[h].card += Number(o.total)
+      else if (o.paymentMethod === 'SPLIT') {
+        hourlyMap[h].cash += Number(o.splitCashAmount ?? 0)
+        hourlyMap[h].card += Number(o.total) - Number(o.splitCashAmount ?? 0)
+      }
+    }
+    const hourly = Object.entries(hourlyMap)
+      .filter(([, v]) => v.orders > 0)
+      .map(([h, v]) => ({ hour: Number(h), ...v }))
+
+    return {
+      date: from.toISOString().split('T')[0],
+      orderCount:       paid.length,
+      dineInCount:      paid.filter(o => o.type === 'DINE_IN').length,
+      takeawayCount:    paid.filter(o => o.type === 'TAKEAWAY').length,
+      cashTotal,
+      cardTotal,
+      splitCashTotal,
+      splitCardTotal,
+      totalCashInTill,
+      totalCardTerminal,
+      netRevenue,
+      grossRevenue,
+      discountsGiven,
+      vatCollected,
+      voidsTotal,
+      voidCount:        voided.length,
+      tipTotal,
+      avgOrderValue:    paid.length > 0 ? netRevenue / paid.length : 0,
+      hourly,
+    }
+  }
 
   async getBySessionToken(token: string) {
     const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -323,11 +573,12 @@ export class OrdersService {
   }
 
   getActiveOrders() {
-    // Include DELIVERED+UNPAID so counter staff can collect cash payment
+    // Include DELIVERED+UNPAID so counter staff can collect cash payment.
+    // Exclude PRE_ORDER — those are held and only fire to kitchen on guest arrival.
     return this.prisma.order.findMany({
       where: {
         OR: [
-          { status: { notIn: ['DELIVERED', 'CANCELLED'] } },
+          { status: { notIn: ['PRE_ORDER', 'DELIVERED', 'CANCELLED'] } },
           { status: 'DELIVERED', paymentStatus: 'UNPAID' },
         ],
       },
@@ -358,23 +609,30 @@ export class OrdersService {
   }
 
   private buildSessionSummary(orders: any[]) {
-    const subtotal  = orders.reduce((s, o) => s + Number(o.subtotal), 0)
-    const vatAmount = orders.reduce((s, o) => s + Number(o.vatAmount), 0)
-    const total     = orders.reduce((s, o) => s + Number(o.total), 0)
+    const subtotal    = orders.reduce((s, o) => s + Number(o.subtotal), 0)
+    const vatAmount   = orders.reduce((s, o) => s + Number(o.vatAmount), 0)
+    const discount    = orders.reduce((s, o) => s + Number(o.discountAmount ?? 0), 0)
+    const tipAmount   = orders.reduce((s, o) => s + Number(o.tipAmount ?? 0), 0)
+    const total       = orders.reduce((s, o) => s + Number(o.total), 0)
+    // Who closed the bill — pick the first settled order's settledBy
+    const settledByOrder = orders.find(o => o.settledBy)
+    const settledBy = settledByOrder?.settledBy ?? null
+    const settledAt = settledByOrder?.settledAt ?? null
     return {
-      subtotal, vatAmount, total,
+      subtotal, vatAmount, discount, tipAmount, total,
       orderCount: orders.length,
       allPaid:   orders.length > 0 && orders.every(o => o.paymentStatus === 'PAID'),
       anyUnpaid: orders.some(o => o.paymentStatus === 'UNPAID'),
+      settledBy,
+      settledAt,
     }
   }
 
   // Active sessions at a specific table — used by staff to pick "who am I ordering for?"
   async getTableSessions(tableId: string) {
-    const today = new Date(); today.setHours(0, 0, 0, 0)
     const sessionRows = await this.prisma.order.groupBy({
       by: ['tableSessionId'],
-      where: { tableId, tableSessionId: { not: null }, createdAt: { gte: today }, status: { not: 'CANCELLED' } },
+      where: { tableId, tableSessionId: { not: null }, status: { not: 'CANCELLED' }, paymentStatus: 'UNPAID' },
       orderBy: { _min: { createdAt: 'asc' } },
     })
     const tabs = await Promise.all(sessionRows.map(async ({ tableSessionId }, idx) => {
@@ -411,18 +669,16 @@ export class OrdersService {
 
   // Active bills: one entry per table, containing ALL personal tabs (sessions) at that table
   async getActiveBills() {
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-
     const tables = await this.prisma.restaurantTable.findMany({
       where: { status: { in: ['OCCUPIED', 'BILL_PENDING'] } },
       orderBy: { tableNumber: 'asc' },
     })
 
     const results = await Promise.all(tables.map(async table => {
-      // All distinct sessions (personal tabs) active at this table today
+      // All distinct unpaid sessions at this table (no date filter — active means unpaid, not "today")
       const sessionRows = await this.prisma.order.groupBy({
         by: ['tableSessionId'],
-        where: { tableId: table.id, tableSessionId: { not: null }, createdAt: { gte: today }, status: { not: 'CANCELLED' }, paymentStatus: 'UNPAID' },
+        where: { tableId: table.id, tableSessionId: { not: null }, status: { not: 'CANCELLED' }, paymentStatus: 'UNPAID' },
       })
 
       const tabs = await Promise.all(sessionRows.map(async ({ tableSessionId }) => {
@@ -490,6 +746,7 @@ export class OrdersService {
         items: { include: { menuItem: true } },
         user: { select: { id: true, name: true } },
         approvedBy: { select: { name: true, role: true } },
+        settledBy: { select: { id: true, name: true, role: true } },
         table: true,
       },
       orderBy: { createdAt: 'asc' },
@@ -509,6 +766,55 @@ export class OrdersService {
       where: { id: orderId },
       data: { tableSessionId: sessionId, tableId: target.tableId },
     })
+  }
+
+  // Transfer all orders in a session from one table to another
+  async transferSession(sessionId: string, toTableId: string) {
+    // Verify session has unpaid orders
+    const sessionOrders = await this.prisma.order.findMany({
+      where: { tableSessionId: sessionId, paymentStatus: 'UNPAID', status: { not: 'CANCELLED' } },
+      select: { id: true, tableId: true },
+    })
+    if (!sessionOrders.length) throw new NotFoundException('No active orders found for this session')
+
+    const fromTableId = sessionOrders[0].tableId
+    if (!fromTableId) throw new BadRequestException('Session is not linked to a table')
+    if (fromTableId === toTableId) throw new BadRequestException('Source and destination tables are the same')
+
+    // Verify destination table exists
+    const toTable = await this.prisma.restaurantTable.findUnique({ where: { id: toTableId } })
+    if (!toTable) throw new NotFoundException('Destination table not found')
+    if (toTable.status === 'DIRTY') throw new BadRequestException('Destination table is dirty — clean it first')
+
+    await this.prisma.$transaction(async (tx) => {
+      // Move all orders in this session to the new table
+      await tx.order.updateMany({
+        where: { tableSessionId: sessionId },
+        data: { tableId: toTableId },
+      })
+
+      // Check if source table still has other active sessions
+      const remaining = await tx.order.count({
+        where: { tableId: fromTableId, tableSessionId: { not: null }, paymentStatus: 'UNPAID', status: { not: 'CANCELLED' } },
+      })
+      await tx.restaurantTable.update({
+        where: { id: fromTableId },
+        data: { status: remaining > 0 ? 'OCCUPIED' : 'DIRTY' },
+      })
+
+      // Mark destination table occupied
+      await tx.restaurantTable.update({
+        where: { id: toTableId },
+        data: { status: 'OCCUPIED' },
+      })
+    })
+
+    return {
+      sessionId,
+      fromTableId,
+      toTableId,
+      ordersMoved: sessionOrders.length,
+    }
   }
 
   // Legacy: bill for a table's current session (used by tables page modal)
@@ -648,5 +954,160 @@ export class OrdersService {
       },
       orderBy: { updatedAt: 'desc' },
     })
+  }
+
+  // ── Pre-order: save items against a booking, held until guest arrives ──────
+
+  async createPreOrder(bookingId: string, dto: CreateOrderDto, staffId: string, tempPassword?: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { table: true },
+    })
+    if (!booking) throw new NotFoundException('Booking not found')
+    if (['CANCELLED', 'NO_SHOW'].includes(booking.status))
+      throw new BadRequestException('Cannot add pre-order to a cancelled/no-show booking')
+
+    const itemIds = dto.items.map(i => i.menuItemId)
+    const menuItems = await this.prisma.menuItem.findMany({ where: { id: { in: itemIds } } })
+    if (menuItems.length !== itemIds.length) throw new BadRequestException('One or more menu items not found')
+    const menuMap = new Map(menuItems.map(m => [m.id, m]))
+
+    // Prefetch all modifier options so we can snapshot name + priceAdd at order time
+    const allOptionIds = dto.items.flatMap(i => (i.modifiers ?? []).map(m => m.optionId))
+    const optionRows = allOptionIds.length
+      ? await this.prisma.menuModifierOption.findMany({ where: { id: { in: allOptionIds } } })
+      : []
+    const optionMap = new Map(optionRows.map(o => [o.id, o]))
+
+    const subtotal = dto.items.reduce((sum, item) => {
+      const price = Number(menuMap.get(item.menuItemId)!.price)
+      const modExtra = (item.modifiers ?? []).reduce((ms, m) => ms + Number(optionMap.get(m.optionId)?.priceAdd ?? 0), 0)
+      return sum + (price + modExtra) * item.quantity
+    }, 0)
+    const vatAmount = Math.round(subtotal * VAT_RATE * 100) / 100
+    const total = Math.round((subtotal + vatAmount) * 100) / 100
+
+    // Cancel existing pre-order + create new one atomically.
+    // If tempPassword is set, this is a brand-new booking — roll back the booking and
+    // optionally the customer on failure so staff can start fresh.
+    let order: any
+    try {
+      order = await this.prisma.$transaction(async tx => {
+        await tx.order.updateMany({ where: { bookingId, status: 'PRE_ORDER' }, data: { status: 'CANCELLED' } })
+        return tx.order.create({
+          data: {
+            type: 'DINE_IN',
+            tableId: booking.tableId,
+            bookingId,
+            userId: booking.customerId ?? undefined,
+            status: 'PRE_ORDER',
+            subtotal,
+            vatAmount,
+            total,
+            notes: dto.notes,
+            items: {
+              create: dto.items.map(item => ({
+                menuItemId: item.menuItemId,
+                quantity: item.quantity,
+                unitPrice: menuMap.get(item.menuItemId)!.price,
+                notes: item.notes,
+                modifiers: item.modifiers?.length ? {
+                  create: item.modifiers.map(m => {
+                    const opt = optionMap.get(m.optionId)
+                    if (!opt) throw new BadRequestException(`Modifier option ${m.optionId} not found`)
+                    return { optionId: m.optionId, name: opt.name, priceAdd: opt.priceAdd }
+                  })
+                } : undefined,
+              })),
+            },
+            statusHistory: { create: { fromStatus: null, toStatus: 'PRE_ORDER', changedById: staffId } },
+          },
+          include: { items: { include: { menuItem: true, modifiers: true } } },
+        })
+      })
+    } catch (err) {
+      // If email was deferred (new booking flow), cancel the booking so staff can retry cleanly.
+      if (tempPassword !== undefined) {
+        this.logger.warn(`Pre-order failed for booking ${bookingId} — cancelling booking for retry`)
+        await this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'CANCELLED' } })
+          .catch(e => this.logger.error(`Failed to cancel booking ${bookingId} during rollback: ${e?.message}`))
+        if (booking.customerId) {
+          const others = await this.prisma.booking.count({ where: { customerId: booking.customerId, id: { not: bookingId } } }).catch(() => 1)
+          if (others === 0) {
+            await this.prisma.user.delete({ where: { id: booking.customerId } })
+              .catch(e => this.logger.error(`Failed to delete new customer ${booking.customerId} during rollback: ${e?.message}`))
+          }
+        }
+      }
+      throw err
+    }
+
+    // Send ONE combined email: booking details + food items + temp password if new customer.
+    // Email is only sent here (never at booking creation) when staff deferred it.
+    this.mail.sendCombinedBookingConfirmation(bookingId, tempPassword)
+
+    return order
+  }
+
+  async getPreOrder(bookingId: string) {
+    return this.prisma.order.findFirst({
+      where: { bookingId, status: 'PRE_ORDER' },
+      include: { items: { include: { menuItem: true, modifiers: true } } },
+    })
+  }
+
+  // Called by bookings.service.markArrived — fires held pre-order to kitchen
+  async firePreOrderToKitchen(bookingId: string) {
+    this.logger.log(`firePreOrderToKitchen called for booking ${bookingId}`)
+    const preOrder = await this.prisma.order.findFirst({
+      where: { bookingId, status: 'PRE_ORDER' },
+      include: { items: { include: { menuItem: true, modifiers: true } }, table: true },
+    })
+    if (!preOrder) {
+      this.logger.log(`No PRE_ORDER found for booking ${bookingId}`)
+      return null
+    }
+    this.logger.log(`Found pre-order ${preOrder.id} with ${preOrder.items.length} items — firing to kitchen`)
+
+    const lastOrder = await this.prisma.order.findFirst({
+      where: { createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) }, status: { not: 'PRE_ORDER' } },
+      orderBy: { tokenNumber: 'desc' },
+      select: { tokenNumber: true },
+    })
+    const tokenNumber = (lastOrder?.tokenNumber ?? 0) + 1
+
+    // Find or create a table session for this arrival
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const existingSession = await this.prisma.order.findFirst({
+      where: { tableId: preOrder.tableId!, tableSessionId: { not: null }, createdAt: { gte: today }, paymentStatus: 'UNPAID' },
+      orderBy: { createdAt: 'desc' },
+      select: { tableSessionId: true },
+    })
+    const tableSessionId = existingSession?.tableSessionId ?? randomUUID()
+
+    const fired = await this.prisma.$transaction(async tx => {
+      const updated = await tx.order.update({
+        where: { id: preOrder.id },
+        data: {
+          // Skip PENDING — guest already confirmed pre-order, fire straight to kitchen as ACCEPTED
+          status: 'ACCEPTED',
+          tokenNumber,
+          tableSessionId,
+          statusHistory: { create: { fromStatus: 'PRE_ORDER', toStatus: 'ACCEPTED', changedById: null } },
+        },
+        include: { items: { include: { menuItem: true, modifiers: true } }, table: true },
+      })
+
+      if (preOrder.tableId) {
+        await tx.restaurantTable.update({ where: { id: preOrder.tableId }, data: { status: 'OCCUPIED' } })
+      }
+
+      return updated
+    })
+
+    this.logger.log(`Pre-order ${fired.id} → ACCEPTED (token #${tokenNumber}) | table ${fired.table?.tableNumber ?? 'N/A'} | ${fired.items.length} item(s)`)
+
+    this.gateway.emitNewOrder(fired)
+    return fired
   }
 }

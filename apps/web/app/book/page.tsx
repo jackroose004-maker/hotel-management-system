@@ -2,12 +2,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
-import { useLangStore, applyLangDir } from '@/store/lang'
-import { initBrand } from '@/store/brand'
+import { useLangStore, applyLangDir, syncLangToServer, type Lang } from '@/store/lang'
+import { useBrandStore, initBrand } from '@/store/brand'
 import {
   CalendarDays, Clock, Users,
   AlertTriangle, CheckCircle2, ArrowLeft, MapPin, UtensilsCrossed,
-  Download, Printer,
+  Download, Printer, Sofa, Trees, Eye, Lock,
 } from 'lucide-react'
 import Link from 'next/link'
 import { QRCodeCanvas } from 'qrcode.react'
@@ -34,6 +34,7 @@ export default function BookPage() {
   const { user, token } = useAuthStore()
   const { lang, setLang } = useLangStore()
   const ar = lang === 'ar'
+  const showLangToggle = useBrandStore(s => s.showLanguageToggle)
   useEffect(() => { applyLangDir(lang); initBrand() }, [lang])
 
   useEffect(() => {
@@ -48,10 +49,12 @@ export default function BookPage() {
 
   const [date, setDate] = useState(new Date())
   const [slots, setSlots] = useState<Slot[]>([])
+  const [bookingsEnabled, setBookingsEnabled] = useState(true)
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const [partySize, setPartySize] = useState(2)
   const [notes, setNotes] = useState('')
+  const [seatingPreference, setSeatingPreference] = useState<string>('Indoor')
   const [step, setStep] = useState<'pick' | 'confirm' | 'done'>('pick')
   const [booking, setBooking] = useState<any>(null)
   const [error, setError] = useState('')
@@ -74,6 +77,7 @@ export default function BookPage() {
       const json = await r.json()
       const payload = json?.data ?? json
       setSlots(payload?.slots ?? [])
+      setBookingsEnabled(payload?.bookingsEnabled !== false)
     } finally { setLoading(false) }
   }
 
@@ -91,7 +95,7 @@ export default function BookPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          partySize, slotDate: formatDate(date), slotTime: selected, notes,
+          partySize, slotDate: formatDate(date), slotTime: selected, notes, seatingPreference,
           idempotencyKey: `${user?.id}-${formatDate(date)}-${selected}-${Date.now()}`,
         }),
       })
@@ -134,61 +138,122 @@ export default function BookPage() {
     const ref = booking.id.slice(-8).toUpperCase()
     const dateStr = new Date(booking.slotDate).toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
     const timeStr = slotLabel(booking.slotTime)
+    const guestName = user?.name ?? 'Guest'
+    const tableNo = booking.table?.tableNumber ? `Table ${booking.table.tableNumber}` : 'TBD'
+    const zone = seatingPreference || booking.table?.zone || 'Indoor'
 
-    const orderSection = preOrder ? `
-    <hr class="divider"/>
-    <div class="section-title">Pre-Order</div>
-    ${preOrder.items.map((i: any) => `
-      <div class="row">
-        <span class="label">${i.quantity}× ${i.menuItem.name}</span>
-        <span class="value">AED ${(Number(i.unitPrice) * i.quantity).toFixed(2)}</span>
-      </div>`).join('')}
-    <hr class="divider"/>
-    <div class="row"><span class="label">Subtotal</span><span class="value">AED ${Number(preOrder.subtotal).toFixed(2)}</span></div>
-    <div class="row"><span class="label">VAT (5%)</span><span class="value">AED ${Number(preOrder.vatAmount).toFixed(2)}</span></div>
-    <div class="row total"><span class="label">Total Paid</span><span class="value orange">AED ${Number(preOrder.total).toFixed(2)}</span></div>
-    <div class="paid-badge">${preOrder.paymentStatus === 'PAID' ? '✓ Paid by Card' : '💵 Pay at Table'}</div>
-    ` : ''
+    const preOrderRows = preOrder
+      ? preOrder.items.map((i: any) => `
+          <tr>
+            <td style="padding:6px 0;color:#444;font-size:12.5px;">${i.quantity}× ${i.menuItem.name}</td>
+            <td style="padding:6px 0;color:#111;font-size:12.5px;font-weight:600;text-align:right;">AED ${(Number(i.unitPrice) * i.quantity).toFixed(2)}</td>
+          </tr>`).join('')
+      : ''
 
-    w.document.write(`<!DOCTYPE html><html><head><title>Al Manzil Invoice ${ref}</title>
+    const preOrderSection = preOrder ? `
+      <div style="height:1px;background:repeating-linear-gradient(90deg,#ddd 0,#ddd 6px,transparent 6px,transparent 12px);margin:20px 0;"></div>
+      <div style="font-size:10px;font-weight:800;color:#999;letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;">Pre-Order Summary</div>
+      <table width="100%" cellpadding="0" cellspacing="0">${preOrderRows}</table>
+      <div style="height:1px;background:#eee;margin:14px 0;"></div>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr><td style="color:#888;font-size:12px;padding:3px 0;">Subtotal</td><td style="text-align:right;font-size:12px;color:#444;">AED ${Number(preOrder.subtotal).toFixed(2)}</td></tr>
+        <tr><td style="color:#888;font-size:12px;padding:3px 0;">VAT (5%)</td><td style="text-align:right;font-size:12px;color:#444;">AED ${Number(preOrder.vatAmount).toFixed(2)}</td></tr>
+        <tr><td style="color:#111;font-size:14px;font-weight:800;padding:8px 0 3px;">Total</td><td style="text-align:right;font-size:16px;font-weight:900;color:#c2410c;">AED ${Number(preOrder.total).toFixed(2)}</td></tr>
+      </table>
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 14px;margin-top:10px;font-size:11px;font-weight:700;color:#15803d;text-align:center;">
+        ${preOrder.paymentStatus === 'PAID' ? '✓ Pre-order Paid by Card' : '💵 Pay at Table'}
+      </div>` : ''
+
+    w.document.write(`<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8"/>
+<title>Al Manzil — Booking ${ref}</title>
 <style>
-  body { font-family: 'Segoe UI', sans-serif; background:#fff; display:flex; justify-content:center; padding:40px; }
-  .ticket { width:360px; border:2px solid #f97316; border-radius:16px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.1); }
-  .header { background:#f97316; color:#fff; padding:16px 20px; }
-  .header h1 { margin:0 0 2px; font-size:18px; font-weight:800; }
-  .header p { margin:0; font-size:12px; opacity:.85; }
-  .body { padding:20px; }
-  .row { display:flex; justify-content:space-between; margin-bottom:10px; align-items:center; }
-  .row.total { margin-top:4px; }
-  .row .label { color:#6b7280; font-size:13px; }
-  .row .value { font-weight:700; font-size:13px; color:#111; }
-  .row .value.orange { color:#f97316; font-size:15px; }
-  .row .ref { font-family:monospace; font-size:12px; letter-spacing:2px; color:#374151; }
-  .section-title { font-size:11px; font-weight:700; color:#9ca3af; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; }
-  .divider { border:none; border-top:1px dashed #e5e7eb; margin:14px 0; }
-  .qr { text-align:center; margin-top:14px; }
-  .qr img { width:140px; height:140px; border-radius:8px; }
-  .qr p { font-size:10px; color:#9ca3af; margin-top:6px; }
-  .notice { background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; padding:10px 12px; font-size:11px; color:#92400e; margin-top:14px; line-height:1.5; }
-  .paid-badge { background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; font-size:11px; font-weight:700; padding:6px 12px; border-radius:8px; text-align:center; margin-top:10px; }
-  @media print { body { padding:0; } .ticket { box-shadow:none; border-radius:0; } }
-</style></head><body>
-<div class="ticket">
-  <div class="header">
-    <h1>🍽 Al Manzil Hotel</h1>
-    <p>${preOrder ? 'Booking + Pre-Order Invoice' : 'Booking Confirmation'}</p>
-  </div>
-  <div class="body">
-    <div class="section-title">Reservation</div>
-    <div class="row"><span class="label">Guest</span><span class="value">${user?.name ?? ''}</span></div>
-    <div class="row"><span class="label">Date</span><span class="value">${dateStr}</span></div>
-    <div class="row"><span class="label">Time</span><span class="value">${timeStr}</span></div>
-    <div class="row"><span class="label">Table</span><span class="value">Table ${booking.table?.tableNumber ?? '—'}</span></div>
-    <div class="row"><span class="label">Guests</span><span class="value">${booking.partySize} ${booking.partySize === 1 ? 'person' : 'people'}</span></div>
-    <div class="row"><span class="label">Ref</span><span class="value ref">${ref}</span></div>
-    ${orderSection}
-    ${qrDataUrl ? `<div class="qr"><img src="${qrDataUrl}" alt="QR"/><p>Scan to verify at the restaurant</p></div>` : ''}
-    <div class="notice">⚠ Please arrive within 15 minutes of your slot time. Table may be released after that.</div>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',Helvetica,Arial,sans-serif;background:#f2f2f2;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:40px 16px;}
+  .page{width:400px;}
+  .card{background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.12);}
+  .stripe{height:6px;background:linear-gradient(90deg,#f97316,#ea580c,#c2410c);}
+  .head{background:#111;padding:28px 28px 24px;position:relative;}
+  .head-logo{font-size:22px;font-weight:900;color:#fff;letter-spacing:-0.5px;margin-bottom:2px;}
+  .head-sub{font-size:11px;color:rgba(255,255,255,0.45);letter-spacing:1px;text-transform:uppercase;}
+  .head-badge{position:absolute;top:28px;right:28px;background:rgba(249,115,22,0.15);border:1px solid rgba(249,115,22,0.5);border-radius:20px;padding:5px 12px;font-size:10px;font-weight:700;color:#f97316;letter-spacing:1px;text-transform:uppercase;}
+  .body{padding:24px 28px;}
+  .ref-row{display:flex;align-items:center;justify-content:space-between;background:#f9f9f9;border:1px solid #eee;border-radius:10px;padding:10px 14px;margin-bottom:20px;}
+  .ref-label{font-size:10px;font-weight:700;color:#aaa;letter-spacing:2px;text-transform:uppercase;}
+  .ref-value{font-family:monospace;font-size:13px;font-weight:900;color:#111;letter-spacing:3px;}
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
+  .detail-item .dl{font-size:10px;font-weight:700;color:#bbb;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;}
+  .detail-item .dv{font-size:15px;font-weight:700;color:#111;}
+  .detail-item .dv.accent{color:#f97316;font-size:18px;font-weight:900;}
+  .guest-row{background:#f9f9f9;border-radius:10px;padding:12px 14px;margin-bottom:20px;display:flex;align-items:center;gap:10px;}
+  .guest-avatar{width:36px;height:36px;border-radius:50%;background:#111;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900;color:#fff;flex-shrink:0;}
+  .guest-name{font-size:14px;font-weight:700;color:#111;}
+  .guest-meta{font-size:11px;color:#999;margin-top:1px;}
+  .qr-box{border:1px solid #eee;border-radius:14px;padding:20px;text-align:center;margin-bottom:16px;}
+  .qr-box img{width:160px;height:160px;border-radius:10px;display:block;margin:0 auto 10px;}
+  .qr-label{font-size:11px;color:#999;line-height:1.5;}
+  .notice{background:#fff8ee;border:1px solid #fed7aa;border-radius:10px;padding:12px 14px;font-size:11.5px;color:#92400e;line-height:1.6;}
+  .footer{background:#f9f9f9;border-top:1px solid #f0f0f0;padding:14px 28px;display:flex;justify-content:space-between;align-items:center;}
+  .footer-left{font-size:10px;color:#bbb;}
+  .footer-right{font-size:10px;color:#bbb;font-family:monospace;letter-spacing:1px;}
+  @media print{body{padding:0;background:#fff;}.page{width:100%;}.card{box-shadow:none;border-radius:0;}}
+</style>
+</head><body>
+<div class="page">
+  <div class="card">
+    <div class="stripe"></div>
+    <div class="head">
+      <div class="head-badge">Confirmed</div>
+      <div class="head-logo">Al Manzil Hotel</div>
+      <div class="head-sub">${preOrder ? 'Booking + Pre-Order' : 'Reservation'}</div>
+    </div>
+    <div class="body">
+      <div class="ref-row">
+        <span class="ref-label">Booking Ref</span>
+        <span class="ref-value">${ref}</span>
+      </div>
+      <div class="guest-row">
+        <div class="guest-avatar">${guestName.charAt(0).toUpperCase()}</div>
+        <div>
+          <div class="guest-name">${guestName}</div>
+          <div class="guest-meta">${booking.partySize} ${booking.partySize === 1 ? 'guest' : 'guests'} · ${zone} seating</div>
+        </div>
+      </div>
+      <div class="detail-grid">
+        <div class="detail-item">
+          <div class="dl">Date</div>
+          <div class="dv">${dateStr}</div>
+        </div>
+        <div class="detail-item">
+          <div class="dl">Time</div>
+          <div class="dv accent">${timeStr}</div>
+        </div>
+        <div class="detail-item">
+          <div class="dl">Table</div>
+          <div class="dv">${tableNo}</div>
+        </div>
+        <div class="detail-item">
+          <div class="dl">Party Size</div>
+          <div class="dv">${booking.partySize} people</div>
+        </div>
+      </div>
+      ${qrDataUrl ? `
+      <div class="qr-box">
+        <img src="${qrDataUrl}" alt="Booking QR Code"/>
+        <div class="qr-label">Scan this QR at the hotel entrance<br/>to confirm your arrival instantly</div>
+      </div>` : ''}
+      ${preOrderSection}
+      <div class="notice" style="margin-top:${preOrder ? '16px' : '0'};">
+        ⏱ &nbsp;Please arrive within <strong>15 minutes</strong> of your slot time.
+        After that, your table may be released to walk-in guests.
+        ${preOrder ? '<br/>🍽 Your pre-ordered food will be sent to the kitchen the moment you scan in.' : ''}
+      </div>
+    </div>
+    <div class="footer">
+      <span class="footer-left">© Al Manzil Hotel · Dubai, UAE</span>
+      <span class="footer-right">${ref}</span>
+    </div>
   </div>
 </div>
 <script>window.onload=()=>{window.print()}</script>
@@ -339,13 +404,36 @@ export default function BookPage() {
             </div>
           </div>
 
+          {/* Seating preference */}
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Seating Preference</div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: 'Indoor',  label: 'Indoor',   icon: <Sofa size={14} /> },
+                { key: 'Outdoor', label: 'Outdoor',  icon: <Trees size={14} /> },
+                { key: 'Window',  label: 'Window',   icon: <Eye size={14} /> },
+                { key: 'Private', label: 'Private',  icon: <Lock size={14} /> },
+              ].map(z => (
+                <button key={z.key} onClick={() => setSeatingPreference(z.key)}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                    seatingPreference === z.key
+                      ? 'bg-amber-500/15 border-amber-500 text-amber-400'
+                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500'
+                  }`}>
+                  {z.icon} {z.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-gray-600 mt-2">We'll do our best to match your preference.</p>
+          </div>
+
           {/* Special requests */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
               Special Requests <span className="font-normal text-gray-600 normal-case">(optional)</span>
             </div>
             <textarea value={notes} onChange={e => setNotes(e.target.value)}
-              placeholder="Window seat, birthday celebration, high chair, dietary needs..."
+              placeholder="Birthday celebration, high chair, dietary needs..."
               className="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-orange-500 transition-colors"
               rows={3} />
           </div>
@@ -387,11 +475,18 @@ export default function BookPage() {
             <Link href="/" className="w-9 h-9 rounded-full bg-black/40 backdrop-blur flex items-center justify-center">
               <ArrowLeft size={16} className="text-white" />
             </Link>
-            <button onClick={() => setLang(ar ? 'en' : 'ar')}
-              className="text-[10px] font-bold px-2.5 py-1 rounded-full"
-              style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: ar ? 'var(--brand)' : '#aaa', border: '1px solid rgba(255,255,255,0.12)' }}>
-              {ar ? 'EN' : 'ع'}
-            </button>
+            {showLangToggle && (
+              <button onClick={() => {
+                const next: Lang = ar ? 'en' : 'ar'
+                setLang(next)
+                const tk = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+                syncLangToServer(next, tk)
+              }}
+                className="text-[10px] font-bold px-2.5 py-1 rounded-full"
+                style={{ backgroundColor: 'rgba(0,0,0,0.4)', color: ar ? 'var(--brand)' : '#aaa', border: '1px solid rgba(255,255,255,0.12)' }}>
+                {ar ? 'EN' : 'ع'}
+              </button>
+            )}
           </div>
           <h1 className="text-2xl font-bold text-white mb-1">{ar ? 'احجز طاولة' : 'Reserve a Table'}</h1>
           <p className="text-gray-400 text-sm flex items-center gap-1.5">
@@ -445,33 +540,62 @@ export default function BookPage() {
               <div key={i} className="h-16 bg-gray-900 rounded-xl animate-pulse" />
             ))}
           </div>
+        ) : !bookingsEnabled ? (
+          <div className="text-center py-16">
+            <div className="text-4xl mb-3">🚶</div>
+            <p className="text-white font-semibold mb-1">Walk-in only right now</p>
+            <p className="text-gray-400 text-sm">Online bookings are paused. Come in and we'll seat you directly.</p>
+          </div>
         ) : futureSlots.length === 0 ? (
           <div className="text-center py-16">
             <div className="text-4xl mb-3">😴</div>
             <div className="text-gray-400 text-sm">No slots for this date</div>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-2">
-            {futureSlots.map(slot => (
-              <button key={slot.time}
-                onClick={() => !slot.isFull && selectSlot(slot.time)}
-                disabled={slot.isFull}
-                className={`rounded-xl p-3 text-left transition-all border ${
-                  slot.isFull
-                    ? 'bg-gray-900/50 border-gray-800 opacity-40 cursor-not-allowed'
-                    : slot.available <= 2
-                    ? 'bg-amber-500/10 border-amber-500/30 hover:border-amber-400 hover:bg-amber-500/20 cursor-pointer'
-                    : 'bg-green-500/10 border-green-500/20 hover:border-green-400 hover:bg-green-500/20 cursor-pointer'
-                }`}>
-                <div className={`text-sm font-bold ${slot.isFull ? 'text-gray-600' : slot.available <= 2 ? 'text-amber-300' : 'text-green-300'}`}>
-                  {slotLabel(slot.time)}
+          <>
+            {/* Peak hours banner — shown if any visible slot is peak */}
+            {futureSlots.some(s => (s as any).isPeak) && (
+              <div className="mb-3 flex gap-2.5 items-start bg-purple-500/10 border border-purple-500/25 rounded-xl px-3.5 py-3">
+                <span className="text-purple-400 text-base leading-none mt-0.5">🔥</span>
+                <div>
+                  <p className="text-purple-300 text-xs font-semibold leading-snug">Peak hours — walk-in only</p>
+                  <p className="text-purple-400/70 text-[11px] mt-0.5 leading-snug">
+                    Online booking is paused during 7–10 PM. Come in and we'll seat you directly.
+                  </p>
                 </div>
-                <div className={`text-[10px] mt-0.5 font-medium ${slot.isFull ? 'text-gray-700' : slot.available <= 2 ? 'text-amber-500' : 'text-green-500'}`}>
-                  {slot.isFull ? 'Full' : slot.available <= 2 ? `${slot.available} left!` : `${slot.available} free`}
-                </div>
-              </button>
-            ))}
-          </div>
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-2">
+              {futureSlots.map(slot => {
+                const isPeak = (slot as any).isPeak
+                return (
+                  <button key={slot.time}
+                    onClick={() => !slot.isFull && !isPeak && selectSlot(slot.time)}
+                    disabled={slot.isFull || isPeak}
+                    className={`rounded-xl p-3 text-left transition-all border ${
+                      isPeak
+                        ? 'bg-purple-500/8 border-purple-500/20 opacity-60 cursor-not-allowed'
+                        : slot.isFull
+                        ? 'bg-gray-900/50 border-gray-800 opacity-40 cursor-not-allowed'
+                        : slot.available <= 2
+                        ? 'bg-amber-500/10 border-amber-500/30 hover:border-amber-400 hover:bg-amber-500/20 cursor-pointer'
+                        : 'bg-green-500/10 border-green-500/20 hover:border-green-400 hover:bg-green-500/20 cursor-pointer'
+                    }`}>
+                    <div className={`text-sm font-bold ${
+                      isPeak ? 'text-purple-400' : slot.isFull ? 'text-gray-600' : slot.available <= 2 ? 'text-amber-300' : 'text-green-300'
+                    }`}>
+                      {slotLabel(slot.time)}
+                    </div>
+                    <div className={`text-[10px] mt-0.5 font-medium ${
+                      isPeak ? 'text-purple-500' : slot.isFull ? 'text-gray-700' : slot.available <= 2 ? 'text-amber-500' : 'text-green-500'
+                    }`}>
+                      {isPeak ? 'Walk-in only' : slot.isFull ? 'Full' : slot.available <= 2 ? `${slot.available} left!` : `${slot.available} free`}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </>
         )}
 
         {/* Info cards below slots */}

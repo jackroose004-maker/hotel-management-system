@@ -33,13 +33,25 @@ export async function apiFetch<T = any>(
 
 export const API_BASE = BASE
 
+// In-flight deduplication for GET requests.
+// React StrictMode (always on in Next.js dev) double-invokes effects, triggering the
+// same endpoint twice in the same tick. We cache the Promise until it resolves so any
+// concurrent call for the same URL shares the single network request.
+const inFlight = new Map<string, Promise<{ data: any }>>()
+
 // Backwards-compat shim for files that still use the old axios default import
 // These pages use: api.get('/path').then(r => r.data)
 // The shim wraps apiFetch to mimic that shape
 const api = {
   get: (path: string, config?: { headers?: Record<string, string> }) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') ?? undefined : undefined
-    return apiFetch(path, { token, headers: config?.headers }).then(data => ({ data }))
+    const key = path
+    if (inFlight.has(key)) return inFlight.get(key)!
+    const p = apiFetch(path, { token, headers: config?.headers })
+      .then(data => ({ data }))
+      .finally(() => inFlight.delete(key))
+    inFlight.set(key, p)
+    return p
   },
   post: (path: string, body?: any, config?: { headers?: Record<string, string> }) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') ?? undefined : undefined

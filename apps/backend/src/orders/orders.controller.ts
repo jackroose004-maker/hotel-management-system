@@ -1,6 +1,6 @@
-import { Controller, Post, Get, Patch, Body, Param, UseGuards, Request, Query, HttpCode } from '@nestjs/common'
+import { Controller, Post, Get, Patch, Body, Param, UseGuards, Request, Query, HttpCode, ForbiddenException } from '@nestjs/common'
 import { OrdersService } from './orders.service'
-import { CreateOrderDto, UpdateOrderStatusDto } from './dto/create-order.dto'
+import { CreateOrderDto, UpdateOrderStatusDto, AddOrderItemsDto } from './dto/create-order.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt.guard'
 import { RolesGuard } from '../common/guards/roles.guard'
@@ -17,7 +17,7 @@ export class OrdersController {
   @Post()
   create(@Body() dto: CreateOrderDto, @Request() req) {
     const user = req.user
-    const isStaff = user?.role && ['STAFF', 'MANAGER', 'OWNER'].includes(user.role)
+    const isStaff = user?.role && ['STAFF', 'OWNER'].includes(user.role)
     const clientIp: string | undefined =
       (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
       req.socket?.remoteAddress ??
@@ -42,42 +42,49 @@ export class OrdersController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER')
+  @Roles('OWNER')
   @Get('analytics')
   getAnalytics(@Query('period') period: string = '7d') {
     return this.orders.getAnalytics(period)
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER')
+  @Get('eod-report')
+  getEodReport(@Query('date') date?: string) {
+    return this.orders.getEodReport(date)
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
   @Get()
   getAll(@Query('status') status?: string) {
     return this.orders.getAll(status ? { status: status as any } : undefined)
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Get('active')
   getActive() {
     return this.orders.getActiveOrders()
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Get('active-bills')
   getActiveBills() {
     return this.orders.getActiveBills()
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Get('closed-bills-today')
   getClosedBillsToday() {
     return this.orders.getClosedBillsToday()
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Get('takeaway-today')
   getTakeawayBillsToday() {
     return this.orders.getTakeawayBillsToday()
@@ -100,14 +107,14 @@ export class OrdersController {
 
   // Active guest sessions at a table — staff uses this to pick who they're ordering for
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Get('table/:tableId/sessions')
   getTableSessions(@Param('tableId') tableId: string) {
     return this.orders.getTableSessions(tableId)
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Get('session/:sessionId/bill')
   getSessionBill(@Param('sessionId') sessionId: string) {
     return this.orders.getSessionBill(sessionId)
@@ -120,7 +127,7 @@ export class OrdersController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Get('table/:tableId/bill')
   getTableBill(@Param('tableId') tableId: string) {
     return this.orders.getTableBill(tableId)
@@ -128,7 +135,7 @@ export class OrdersController {
 
   // Staff places an order on behalf of a guest — never assign to staff userId
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
   @Post('table/:tableId/staff-order')
   staffOrder(@Param('tableId') tableId: string, @Body() dto: CreateOrderDto) {
     // Pass undefined userId so the order joins the table's existing customer session,
@@ -136,9 +143,38 @@ export class OrdersController {
     return this.orders.create({ ...dto, type: 'DINE_IN', tableId }, undefined)
   }
 
+  // Save a pre-order against a booking (held, not sent to kitchen until guest arrives)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post('booking/:bookingId/pre-order')
+  createPreOrder(
+    @Param('bookingId') bookingId: string,
+    @Body() body: CreateOrderDto & { tempPassword?: string },
+    @Request() req,
+  ) {
+    const { tempPassword, ...dto } = body
+    return this.orders.createPreOrder(bookingId, dto, req.user.id, tempPassword)
+  }
+
+  // Get current pre-order for a booking
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Get('booking/:bookingId/pre-order')
+  getPreOrder(@Param('bookingId') bookingId: string) {
+    return this.orders.getPreOrder(bookingId)
+  }
+
+  // Transfer an entire session to a different table
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post('session/:sessionId/transfer')
+  transferSession(@Param('sessionId') sessionId: string, @Body('toTableId') toTableId: string) {
+    return this.orders.transferSession(sessionId, toTableId)
+  }
+
   // Reassign an order to a different session (manager/owner only)
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER')
+  @Roles('OWNER')
   @Patch(':id/reassign-session')
   reassignSession(@Param('id') id: string, @Body('sessionId') sessionId: string) {
     return this.orders.reassignOrderSession(id, sessionId)
@@ -159,7 +195,7 @@ export class OrdersController {
 
   // Manager/owner: list all pending refund requests (must be before :id wildcard)
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER')
+  @Roles('OWNER')
   @Get('pending-refunds')
   getPendingRefunds() {
     return this.orders.getPendingRefunds()
@@ -171,10 +207,32 @@ export class OrdersController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER', 'STAFF')
+  @Roles('OWNER', 'STAFF')
+  @Patch(':id/rush')
+  setRush(@Param('id') id: string, @Body('isRush') isRush: boolean) {
+    return this.orders.setRush(id, isRush)
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
   @Patch(':id/status')
   updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto, @Request() req) {
     return this.orders.updateStatus(id, dto, req.user?.id)
+  }
+
+  // Guest "Need help?" — fires order:help WebSocket event to all staff screens
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post(':id/help')
+  guestHelp(@Param('id') id: string, @Body('message') message?: string) {
+    return this.orders.guestHelp(id, message)
+  }
+
+  // Staff reply to guest — fires order:message WebSocket event visible on tracking page
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post(':id/message')
+  staffMessage(@Param('id') id: string, @Body('message') message: string, @Request() req) {
+    return this.orders.staffMessage(id, message, req.user?.name ?? 'Staff')
   }
 
   // Guest self-cancel — only allowed while order is still PENDING
@@ -182,6 +240,21 @@ export class OrdersController {
   @Post(':id/cancel')
   guestCancel(@Param('id') id: string, @Body('cancelReason') cancelReason?: string) {
     return this.orders.guestCancel(id, cancelReason)
+  }
+
+  // Void READY or DELIVERED order — removes it from the bill (MANAGER/OWNER only)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post(':id/items')
+  addItems(@Param('id') id: string, @Body() dto: AddOrderItemsDto, @Request() req) {
+    return this.orders.addItems(id, dto, req.user?.id)
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER')
+  @Post(':id/void')
+  voidOrder(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
+    return this.orders.voidOrder(id, reason, req.user?.id)
   }
 
   // Any staff can request a refund — goes to manager for approval
@@ -197,7 +270,7 @@ export class OrdersController {
 
   // Manager/owner: approve a pending refund request
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('OWNER', 'MANAGER')
+  @Roles('OWNER')
   @Post(':id/approve-refund')
   approveRefund(@Param('id') id: string, @Request() req) {
     return this.orders.approveRefund(id, req.user.id)

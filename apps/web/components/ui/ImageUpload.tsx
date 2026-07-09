@@ -295,8 +295,10 @@ export default function ImageUpload({
           {!hasImage && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: 'var(--card-border)' }}>
-                {mediaType === 'video' ? <Film size={18} style={{ color: 'var(--text-muted)' }} />
-                  : mediaType === 'both' ? <><ImageIcon size={14} style={{ color: 'var(--text-muted)' }} /><Film size={14} style={{ color: 'var(--text-muted)' }} /></>
+                {mediaType === 'video'
+                  ? <Film size={18} style={{ color: 'var(--text-muted)' }} />
+                  : mediaType === 'both'
+                  ? <div className="flex items-center gap-0.5"><ImageIcon size={13} style={{ color: 'var(--text-muted)' }} /><span style={{ color: 'var(--text-muted)', fontSize: 10 }}>/</span><Film size={13} style={{ color: 'var(--text-muted)' }} /></div>
                   : <ImageIcon size={18} style={{ color: 'var(--text-muted)' }} />}
               </div>
               <div className="text-center">

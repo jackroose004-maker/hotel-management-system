@@ -18,7 +18,7 @@ import { useCartStore } from '@/store/cart'
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { useBrandStore } from '@/store/brand'
-import { useLangStore, applyLangDir, t, type Lang } from '@/store/lang'
+import { useLangStore, applyLangDir, t, syncLangToServer, type Lang } from '@/store/lang'
 import StripePaymentForm from '@/components/StripePaymentForm'
 import ForceDark from '@/components/ForceDark'
 import { getStripe, isStripeConfigured } from '@/lib/stripe'
@@ -375,7 +375,7 @@ function MenuPageInner() {
     try { return JSON.parse(localStorage.getItem('almanzil_order_ids') || '[]').length > 0 } catch { return false }
   })()
   const [checkingOrders, setCheckingOrders] = useState(!urlQr && !urlNew && hasStoredOrders)
-  const [contactPhone, setContactPhone] = useState('')
+  const [contactPhone, setContactPhone] = useState('+971 ')
   const [guestOrderCount, setGuestOrderCount] = useState(() => {
     if (typeof window === 'undefined') return 0
     return parseInt(localStorage.getItem('almanzil_guest_order_count') || '0')
@@ -413,6 +413,7 @@ function MenuPageInner() {
   const brandTagline    = useBrandStore(s => s.tagline)
   const brandTaglineAr  = useBrandStore(s => s.taglineAr)
   const brandColor      = useBrandStore(s => s.brandColor)
+  const showLangToggle  = useBrandStore(s => s.showLanguageToggle)
   const isStaff = !!(authUser && ['STAFF', 'MANAGER', 'OWNER'].includes(authUser.role))
 
   // When staff selects a table, load existing guest sessions so they can pick who they're ordering for
@@ -750,15 +751,15 @@ function MenuPageInner() {
         ...(isStaff && selectedSessionId && selectedSessionId !== '__new__'
           ? { guestTabToken: selectedSessionId }
           : (!isStaff && !token && cart.orderType === 'DINE_IN' ? { guestTabToken } : {})),
-        ...(cart.orderType === 'TAKEAWAY' && contactPhone ? { contactPhone } : {}),
+        ...(cart.orderType === 'TAKEAWAY' && contactPhone.trim().length > 5 ? { contactPhone: contactPhone.trim() } : {}),
         ...(!payWithCard ? { paymentMethod: 'CASH' } : {}),
         items: cart.items.map(i => ({
           menuItemId: i.menuItemId,
           quantity: i.quantity,
-          notes: [
-            (i.modifiers ?? []).length > 0 ? `[${(i.modifiers ?? []).map(m => `${m.groupName}: ${m.name}`).join(', ')}]` : '',
-            i.notes || '',
-          ].filter(Boolean).join(' ') || undefined,
+          notes: i.notes || undefined,
+          modifiers: (i.modifiers ?? []).length > 0
+            ? i.modifiers.map(m => ({ optionId: m.optionId, name: m.name, groupName: m.groupName, priceAdd: m.priceAdd }))
+            : undefined,
         })),
       })
       setOrder(newOrder)
@@ -1613,13 +1614,18 @@ function MenuPageInner() {
                 </div>
               </Link>
             )
-            const langBtn = (
-              <button onClick={() => setLang(ar ? 'en' : 'ar')}
+            const langBtn = showLangToggle ? (
+              <button onClick={() => {
+                const next: Lang = ar ? 'en' : 'ar'
+                setLang(next)
+                const tk = typeof window !== 'undefined' ? localStorage.getItem('token') : null
+                syncLangToServer(next, tk)
+              }}
                 className="flex-shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
                 style={{ backgroundColor: '#0d0d0d', color: ar ? 'var(--brand)' : '#555', border: '1px solid #1e1e1e' }}>
                 {ar ? 'EN' : 'ع'}
               </button>
-            )
+            ) : null
             const cartBtn = (
               <button onClick={() => setView('cart')} className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
                 style={totalQty > 0

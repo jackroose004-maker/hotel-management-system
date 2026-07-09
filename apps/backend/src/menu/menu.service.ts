@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateCategoryDto } from './dto/create-category.dto'
 import { CreateMenuItemDto, UpdateMenuItemDto } from './dto/create-menu-item.dto'
@@ -89,6 +89,14 @@ export class MenuService {
   }
 
   async deleteModifierGroup(id: string) {
+    // Block if any order has used an option from this group
+    const group = await this.prisma.menuModifierGroup.findUnique({ where: { id }, include: { options: { select: { id: true } } } })
+    if (!group) throw new NotFoundException('Modifier group not found')
+    const optionIds = group.options.map(o => o.id)
+    if (optionIds.length) {
+      const used = await this.prisma.orderItemModifier.count({ where: { optionId: { in: optionIds } } })
+      if (used > 0) throw new BadRequestException('This modifier group has been used in past orders and cannot be deleted.')
+    }
     return this.prisma.menuModifierGroup.delete({ where: { id } })
   }
 
@@ -105,6 +113,8 @@ export class MenuService {
   }
 
   async deleteModifierOption(id: string) {
+    const used = await this.prisma.orderItemModifier.count({ where: { optionId: id } })
+    if (used > 0) throw new BadRequestException('This modifier option has been used in past orders and cannot be deleted.')
     return this.prisma.menuModifierOption.delete({ where: { id } })
   }
 
@@ -138,6 +148,11 @@ export class MenuService {
 
   async deleteItem(id: string) {
     await this.findItemOrThrow(id)
+    // Soft-delete if this item has appeared in any order — keep the record for historical reports.
+    const usedInOrders = await this.prisma.orderItem.count({ where: { menuItemId: id } })
+    if (usedInOrders > 0) {
+      return this.prisma.menuItem.update({ where: { id }, data: { isAvailable: false } })
+    }
     return this.prisma.menuItem.delete({ where: { id } })
   }
 

@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import Stripe from 'stripe'
 import { PrismaService } from '../prisma/prisma.service'
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name)
   private stripe: Stripe
 
   constructor(private prisma: PrismaService, private config: ConfigService) {
@@ -31,12 +32,14 @@ export class PaymentsService {
       data: { stripeIntentId: intent.id },
     })
 
+    this.logger.log(`PaymentIntent created: ${intent.id} — orderId=${orderId} amount=${amountInFils}fils`)
     return { clientSecret: intent.client_secret, paymentIntentId: intent.id }
   }
 
   async confirmPayment(orderId: string, paymentIntentId: string) {
     const intent = await this.stripe.paymentIntents.retrieve(paymentIntentId)
     if (intent.status !== 'succeeded') {
+      this.logger.warn(`Payment confirmation failed — orderId=${orderId} intentId=${paymentIntentId} status=${intent.status}`)
       throw new BadRequestException(`Payment not confirmed. Status: ${intent.status}`)
     }
 
@@ -45,6 +48,7 @@ export class PaymentsService {
       data: { paymentStatus: 'PAID', paymentMethod: 'CARD', status: 'ACCEPTED' },
       include: { items: { include: { menuItem: true } }, table: true },
     })
+    this.logger.log(`Payment confirmed: orderId=${orderId} intentId=${paymentIntentId} total=${order.total}`)
     return { order }
   }
 
@@ -56,6 +60,7 @@ export class PaymentsService {
     try {
       event = this.stripe.webhooks.constructEvent(rawBody, signature, webhookSecret)
     } catch {
+      this.logger.warn('Invalid Stripe webhook signature')
       throw new BadRequestException('Invalid webhook signature')
     }
 
@@ -67,6 +72,7 @@ export class PaymentsService {
           where: { id: orderId },
           data: { paymentStatus: 'PAID', paymentMethod: 'CARD', status: 'ACCEPTED' },
         })
+        this.logger.log(`Webhook: payment_intent.succeeded — orderId=${orderId} intentId=${intent.id}`)
       }
     }
 
@@ -84,17 +90,18 @@ export class PaymentsService {
   }
 
   // Settle all unpaid orders at a table — staff picks CASH or CARD
-  async settleAllCashForTable(tableId: string, method: 'CASH' | 'CARD' = 'CASH') {
+  async settleAllCashForTable(tableId: string, method: 'CASH' | 'CARD' = 'CASH', settledById?: string) {
     const unpaid = await this.prisma.order.findMany({
       where: { tableId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
       select: { id: true, total: true },
     })
     if (!unpaid.length) return { settled: 0, total: 0 }
 
+    const now = new Date()
     await this.prisma.$transaction([
       ...unpaid.map(o => this.prisma.order.update({
         where: { id: o.id },
-        data: { paymentStatus: 'PAID', paymentMethod: method },
+        data: { paymentStatus: 'PAID', paymentMethod: method, settledById: settledById ?? null, settledAt: now },
       })),
       this.prisma.restaurantTable.update({
         where: { id: tableId },
@@ -105,50 +112,105 @@ export class PaymentsService {
     return { settled: unpaid.length, total: unpaid.reduce((s, o) => s + Number(o.total), 0) }
   }
 
-  // Settle a specific guest session (personal tab) — staff picks CASH or CARD
-  async settleSession(sessionId: string, method: 'CASH' | 'CARD' = 'CASH') {
+  // Settle a specific guest session — supports discount, split payment, and tip
+  async settleSession(sessionId: string, opts: {
+    method: 'CASH' | 'CARD' | 'SPLIT'
+    discountAmount?: number
+    discountReason?: string
+    splitCashAmount?: number
+    tipAmount?: number
+    settledById?: string
+  }) {
+    const { method, discountAmount = 0, discountReason, splitCashAmount, tipAmount = 0, settledById } = opts
+
     const unpaid = await this.prisma.order.findMany({
       where: { tableSessionId: sessionId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
       select: { id: true, total: true, tableId: true },
     })
     if (!unpaid.length) return { settled: 0, total: 0 }
 
-    await this.prisma.$transaction(
-      unpaid.map(o => this.prisma.order.update({
-        where: { id: o.id },
-        data: { paymentStatus: 'PAID', paymentMethod: method },
-      }))
-    )
+    const sessionTotal = unpaid.reduce((s, o) => s + Number(o.total), 0)
 
-    const tableId = unpaid[0].tableId
-    if (tableId) {
-      const remaining = await this.prisma.order.count({
-        where: { tableId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
-      })
-      if (remaining === 0) {
-        await this.prisma.restaurantTable.update({ where: { id: tableId }, data: { status: 'DIRTY' } })
+    // Distribute discount proportionally across orders (last order absorbs rounding)
+    const discountShares = unpaid.map((o, i) => {
+      if (discountAmount <= 0 || sessionTotal === 0) return 0
+      if (i === unpaid.length - 1) {
+        const alreadyAllocated = unpaid.slice(0, i).reduce((s, _, j) => {
+          return s + Math.round((Number(unpaid[j].total) / sessionTotal) * discountAmount * 100) / 100
+        }, 0)
+        return Math.max(0, Math.round((discountAmount - alreadyAllocated) * 100) / 100)
       }
-    }
+      return Math.round((Number(o.total) / sessionTotal) * discountAmount * 100) / 100
+    })
 
-    return { settled: unpaid.length, total: unpaid.reduce((s, o) => s + Number(o.total), 0) }
+    // Distribute split cash amount proportionally too
+    const cashShares = unpaid.map((o, i) => {
+      if (method !== 'SPLIT' || !splitCashAmount || sessionTotal === 0) return null
+      if (i === unpaid.length - 1) {
+        const alreadyAllocated = unpaid.slice(0, i).reduce((s, _, j) => {
+          return s + Math.round((Number(unpaid[j].total) / sessionTotal) * splitCashAmount * 100) / 100
+        }, 0)
+        return Math.max(0, Math.round((splitCashAmount - alreadyAllocated) * 100) / 100)
+      }
+      return Math.round((Number(o.total) / sessionTotal) * splitCashAmount * 100) / 100
+    })
+
+    const settleNow = new Date()
+    const tableId = unpaid[0].tableId
+
+    await this.prisma.$transaction(async tx => {
+      await Promise.all(unpaid.map((o, i) => tx.order.update({
+        where: { id: o.id },
+        data: {
+          paymentStatus: 'PAID',
+          paymentMethod: method as any,
+          settledById: settledById ?? null,
+          settledAt: settleNow,
+          ...(discountShares[i] > 0 ? {
+            discountAmount: discountShares[i],
+            discountReason: discountReason ?? null,
+            total: Math.max(0, Number(o.total) - discountShares[i]),
+          } : {}),
+          ...(cashShares[i] !== null ? { splitCashAmount: cashShares[i] } : {}),
+          // Tip stored on first order only (represents the whole session tip)
+          ...(i === 0 && tipAmount > 0 ? { tipAmount } : {}),
+        },
+      })))
+
+      if (tableId) {
+        const remaining = await tx.order.count({
+          where: { tableId, status: 'DELIVERED', paymentStatus: 'UNPAID', tableSessionId: { not: sessionId } },
+        })
+        if (remaining === 0) {
+          await tx.restaurantTable.update({ where: { id: tableId }, data: { status: 'DIRTY' } })
+        }
+      }
+    })
+
+    const finalTotal = sessionTotal - discountAmount
+    return { settled: unpaid.length, total: finalTotal, tipAmount }
   }
 
   // Settle a single order (legacy endpoint, kept for compatibility)
-  async settleCashPayment(orderId: string) {
-    const order = await this.prisma.order.update({
-      where: { id: orderId },
-      data: { paymentStatus: 'PAID' },
-      include: { items: { include: { menuItem: true } }, table: true },
-    })
-
-    if (order.tableId) {
-      const stillUnpaid = await this.prisma.order.count({
-        where: { tableId: order.tableId, id: { not: orderId }, status: 'DELIVERED', paymentStatus: 'UNPAID' },
+  async settleCashPayment(orderId: string, settledById?: string) {
+    const order = await this.prisma.$transaction(async tx => {
+      const updated = await tx.order.update({
+        where: { id: orderId },
+        data: { paymentStatus: 'PAID', settledById: settledById ?? null, settledAt: new Date() },
+        include: { items: { include: { menuItem: true } }, table: true },
       })
-      if (stillUnpaid === 0) {
-        await this.prisma.restaurantTable.update({ where: { id: order.tableId }, data: { status: 'DIRTY' } })
+
+      if (updated.tableId) {
+        const stillUnpaid = await tx.order.count({
+          where: { tableId: updated.tableId, id: { not: orderId }, status: 'DELIVERED', paymentStatus: 'UNPAID' },
+        })
+        if (stillUnpaid === 0) {
+          await tx.restaurantTable.update({ where: { id: updated.tableId }, data: { status: 'DIRTY' } })
+        }
       }
-    }
+
+      return updated
+    })
 
     return { order }
   }

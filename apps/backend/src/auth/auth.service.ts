@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException, InternalServerErrorException } from '@nestjs/common'
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcryptjs'
@@ -9,6 +9,8 @@ import { MailService } from '../mail/mail.service'
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name)
+
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
@@ -32,7 +34,7 @@ export class AuthService {
 
     if (!user) {
       user = await this.prisma.user.create({
-        data: { name: profile.name, email: profile.email, googleId: profile.googleId, avatarUrl: profile.avatar, role: 'USER' },
+        data: { name: profile.name, email: profile.email, googleId: profile.googleId, avatarUrl: profile.avatar, role: 'CUSTOMER' },
       })
     }
 
@@ -53,7 +55,7 @@ export class AuthService {
       await this.prisma.user.update({ where: { email }, data: { otpCode: code, otpExpiry, name } })
     } else {
       await this.prisma.user.create({
-        data: { name, email, isVerified: false, otpCode: code, otpExpiry, role: 'GUEST' },
+        data: { name, email, isVerified: false, otpCode: code, otpExpiry, role: 'CUSTOMER' },
       })
     }
 
@@ -81,7 +83,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(dto.password, 10)
     const updated = await this.prisma.user.update({
       where: { email: dto.email },
-      data: { isVerified: true, passwordHash, otpCode: null, otpExpiry: null, name: dto.name, phone: dto.phone },
+      data: { isVerified: true, passwordHash, otpCode: null, otpExpiry: null, name: dto.name, phone: dto.phone, role: 'CUSTOMER' },
     })
 
     this.mail.sendWelcome(updated.email, updated.name).catch(() => {})
@@ -91,39 +93,57 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
+    const user = await this.prisma.user.findUnique({ where: { email: dto.email }, include: { staffRole: true } })
     if (!user) throw new UnauthorizedException('Invalid credentials')
 
     if (!user.passwordHash) throw new UnauthorizedException('This account uses Google sign-in. Please continue with Google.')
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash)
-    if (!valid) throw new UnauthorizedException('Invalid credentials')
+    if (!valid) {
+      this.logger.warn(`Failed login attempt for ${dto.email}`)
+      throw new UnauthorizedException('Invalid credentials')
+    }
 
     if (!user.isVerified) throw new UnauthorizedException('Please verify your email first')
 
-    const STAFF_ROLES = ['OWNER', 'MANAGER', 'KITCHEN', 'WAITER']
+    const STAFF_ROLES = ['OWNER', 'STAFF']
     if (STAFF_ROLES.includes(user.role)) throw new UnauthorizedException('STAFF_PORTAL')
 
     if (!user.isActive) throw new UnauthorizedException('This account has been deactivated. Contact your manager.')
 
+    this.logger.log(`Customer login: ${user.email} (${user.id})`)
     const { passwordHash: _, ...result } = user
     return { user: result, token: this.signToken(user.id, user.email, user.role) }
   }
 
   async staffLogin(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } })
+    const user = await this.prisma.user.findUnique({ where: { email: dto.email }, include: { staffRole: true } })
     if (!user) throw new UnauthorizedException('Invalid credentials')
     if (!user.passwordHash) throw new UnauthorizedException('This account uses Google sign-in.')
     const valid = await bcrypt.compare(dto.password, user.passwordHash)
-    if (!valid) throw new UnauthorizedException('Invalid credentials')
-    const STAFF_ROLES = ['OWNER', 'MANAGER', 'KITCHEN', 'WAITER']
+    if (!valid) {
+      this.logger.warn(`Failed staff login attempt for ${dto.email}`)
+      throw new UnauthorizedException('Invalid credentials')
+    }
+    const STAFF_ROLES = ['OWNER', 'STAFF']
     if (!STAFF_ROLES.includes(user.role)) throw new UnauthorizedException('No staff account found with this email.')
     if (!user.isActive) throw new UnauthorizedException('This account has been deactivated.')
+    this.logger.log(`Staff login: ${user.email} role=${user.role} (${user.id})`)
     const { passwordHash: _, ...result } = user
     return { user: result, token: this.signToken(user.id, user.email, user.role) }
   }
 
-  async updateMe(userId: string, dto: { name?: string; phone?: string; dietaryTags?: string; notifOrderUpdates?: boolean; notifBookingReminders?: boolean }) {
+  async getMe(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } })
+    if (!user) return null
+    const { passwordHash: _, ...result } = user
+    return result
+  }
+
+  async updateMe(userId: string, dto: { name?: string; phone?: string; dietaryTags?: string; notifOrderUpdates?: boolean; notifBookingReminders?: boolean; language?: string }) {
+    if (dto.language !== undefined && !['en', 'ar'].includes(dto.language)) {
+      throw new Error('Unsupported language')
+    }
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: dto,

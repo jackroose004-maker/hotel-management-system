@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Eye, EyeOff, Loader2, UtensilsCrossed } from 'lucide-react'
@@ -7,8 +7,6 @@ import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
 import { useBrandStore } from '@/store/brand'
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
 export default function StaffLogin() {
   const router = useRouter()
@@ -24,7 +22,7 @@ export default function StaffLogin() {
     setLoading(true)
     try {
       const { data } = await api.post('/auth/staff-login', form)
-      if (!['OWNER', 'MANAGER', 'STAFF'].includes(data.user.role)) {
+      if (!['OWNER', 'MANAGER', 'STAFF', 'CHEF'].includes(data.user.role)) {
         toast.error('Access denied')
         return
       }
@@ -39,163 +37,165 @@ export default function StaffLogin() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] flex overflow-hidden">
+    <div className="min-h-screen bg-[#080808] flex overflow-hidden">
 
-      {/* ── Left panel — decorative ───────────────────────── */}
-      <div className="hidden lg:flex flex-col flex-1 relative overflow-hidden bg-[#0f0f0f]">
+      {/* ── Left panel ── */}
+      <div className="hidden lg:flex flex-col flex-1 relative overflow-hidden">
 
-        {/* Ambient glow */}
-        <div className="absolute -top-32 -left-32 w-[520px] h-[520px] rounded-full bg-[var(--brand)]/10 blur-[120px] pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-[var(--brand)]/8 blur-[100px] pointer-events-none" />
+        {/* Ambient glows */}
+        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-[var(--brand)]/10 blur-[140px] pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-[var(--brand)]/6 blur-[120px] pointer-events-none" />
 
-        {/* Grid overlay */}
-        <div className="absolute inset-0 opacity-[0.03]"
-          style={{ backgroundImage: 'linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px)', backgroundSize: '48px 48px' }} />
+        {/* Subtle grid */}
+        <div className="absolute inset-0 opacity-[0.025]"
+          style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.8) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.8) 1px,transparent 1px)', backgroundSize: '52px 52px' }} />
 
-        {/* Content */}
-        <div className="relative z-10 flex flex-col h-full px-12 py-12">
+        <div className="relative z-10 flex flex-col h-full px-14 py-12">
           {/* Logo */}
-          <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3 w-fit">
             {logoUrl
               ? <img src={logoUrl} alt={brandName} className="w-9 h-9 rounded-xl object-cover" />
               : <div className="w-9 h-9 rounded-xl bg-[var(--brand)] flex items-center justify-center">
                   <UtensilsCrossed size={18} className="text-black" />
                 </div>
             }
-            <span className="text-white font-bold text-lg tracking-tight">{brandName}</span>
-          </div>
+            <span className="text-white font-bold text-lg">{brandName}</span>
+          </Link>
 
           {/* Centre copy */}
           <div className="flex-1 flex flex-col justify-center max-w-sm">
-            <div className="inline-flex items-center gap-2 bg-[var(--brand)]/10 border border-[var(--brand)]/20 rounded-full px-3 py-1 mb-6 w-fit">
+            <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 mb-8 w-fit"
+              style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand)] animate-pulse" />
-              <span className="text-[var(--brand)] text-xs font-medium">Staff Portal</span>
+              <span className="text-[var(--brand)] text-xs font-semibold tracking-wide">Staff Portal</span>
             </div>
-            <h2 className="text-4xl font-extrabold text-white leading-tight mb-4">
+            <h2 className="text-5xl font-black text-white leading-[1.05] mb-5">
               Run the floor<br />
-              <span className="text-[var(--brand)]">seamlessly.</span>
+              <span style={{ color: 'var(--brand)' }}>seamlessly.</span>
             </h2>
-            <p className="text-gray-500 text-sm leading-relaxed">
+            <p className="text-white/40 text-sm leading-relaxed">
               Manage orders, tables, and bookings in real time — built for the pace of Dubai hospitality.
             </p>
           </div>
 
-          {/* Feature list */}
-          <div className="grid grid-cols-2 gap-3 pb-2">
+          {/* Feature tiles */}
+          <div className="grid grid-cols-2 gap-2.5 pb-2">
             {[
               ['Live Orders', 'Real-time kitchen updates'],
               ['Table Control', 'Status at a glance'],
               ['Bookings', 'Reservation management'],
               ['Analytics', 'Revenue & insights'],
             ].map(([title, desc]) => (
-              <div key={title} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3.5">
-                <div className="text-white text-sm font-semibold mb-0.5">{title}</div>
-                <div className="text-gray-600 text-xs">{desc}</div>
+              <div key={title} className="rounded-xl p-3.5 transition-colors"
+                style={{ backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div className="text-white/80 text-sm font-semibold mb-0.5">{title}</div>
+                <div className="text-white/30 text-xs">{desc}</div>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      {/* ── Right panel — form ────────────────────────────── */}
-      <div className="flex flex-col items-center justify-center w-full lg:w-[440px] px-6 py-12 relative min-h-screen">
+      {/* ── Right panel ── */}
+      <div className="flex flex-col w-full lg:w-[480px] min-h-screen relative"
+        style={{ backgroundColor: '#0d0d0d', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
 
-        {/* Back to home */}
-        <div className="absolute top-6 left-6 right-6 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-400 transition-colors">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-            Back to home
-          </Link>
+        {/* Mobile-only ambient glows */}
+        <div className="lg:hidden absolute -top-40 -right-40 w-[500px] h-[500px] rounded-full pointer-events-none bg-[var(--brand)]/20 blur-[100px]" />
+        <div className="lg:hidden absolute -bottom-20 -left-20 w-[350px] h-[350px] rounded-full pointer-events-none bg-[var(--brand)]/10 blur-[80px]" />
+
+        {/* Top nav */}
+        <div className="flex items-center justify-end px-8 pt-8 pb-4">
+          <div className="flex items-center gap-2 lg:hidden">
+            {logoUrl
+              ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover" />
+              : <div className="w-7 h-7 rounded-lg bg-[var(--brand)] flex items-center justify-center">
+                  <UtensilsCrossed size={14} className="text-black" />
+                </div>
+            }
+            <span className="text-white text-sm font-bold">{brandName}</span>
+          </div>
         </div>
 
-        {/* Mobile logo */}
-        <div className="flex items-center gap-2 mb-10 lg:hidden">
-          {logoUrl
-            ? <img src={logoUrl} alt={brandName} className="w-8 h-8 rounded-lg object-cover" />
-            : <div className="w-8 h-8 rounded-lg bg-[var(--brand)] flex items-center justify-center">
-                <UtensilsCrossed size={16} className="text-black" />
-              </div>
-          }
-          <span className="text-white font-bold">{brandName}</span>
-        </div>
+        {/* Form */}
+        <div className="flex-1 flex flex-col justify-center px-8 pb-8">
 
-        <div className="w-full max-w-sm">
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-white mb-1">Welcome back</h1>
-            <p className="text-gray-500 text-sm">Sign in to your staff account</p>
+          <div className="mb-10">
+            <div className="text-[var(--brand)] text-xs font-semibold tracking-widest uppercase mb-3">Staff Access</div>
+            <h1 className="text-3xl font-black text-white mb-2">Welcome back</h1>
+            <p className="text-white/35 text-sm">Sign in to your staff account</p>
           </div>
 
           <form onSubmit={submit} className="space-y-4">
-            {/* Email */}
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-2">Email address</label>
+              <label className="block text-xs font-medium text-white/40 mb-2 tracking-wide">Email address</label>
               <input
                 type="email" required autoComplete="email"
                 value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                 placeholder="staff@almanzil.ae"
-                className="w-full bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.14] focus:border-[var(--brand)] text-white rounded-xl px-4 py-3 text-sm outline-none transition-colors placeholder-gray-600"
+                className="w-full rounded-xl px-4 py-3.5 text-sm outline-none transition-all text-white placeholder-white/20 [color-scheme:dark]"
+                style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+                onFocus={e => e.currentTarget.style.border = '1px solid rgba(var(--brand-rgb),0.6)'}
+                onBlur={e => e.currentTarget.style.border = '1px solid rgba(255,255,255,0.08)'}
               />
             </div>
 
-            {/* Password */}
             <div>
-              <label className="block text-xs font-medium text-gray-400 mb-2">Password</label>
+              <label className="block text-xs font-medium text-white/40 mb-2 tracking-wide">Password</label>
               <div className="relative">
                 <input
                   type={showPw ? 'text' : 'password'} required autoComplete="current-password"
                   value={form.password}
                   onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
                   placeholder="••••••••"
-                  className="w-full bg-white/[0.04] border border-white/[0.08] hover:border-white/[0.14] focus:border-[var(--brand)] text-white rounded-xl px-4 py-3 pr-11 text-sm outline-none transition-colors placeholder-gray-600"
+                  className="w-full rounded-xl px-4 py-3.5 pr-12 text-sm outline-none transition-all text-white placeholder-white/20 [color-scheme:dark]"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+                  onFocus={e => e.currentTarget.style.border = '1px solid rgba(var(--brand-rgb),0.6)'}
+                  onBlur={e => e.currentTarget.style.border = '1px solid rgba(255,255,255,0.08)'}
                 />
                 <button type="button" onClick={() => setShowPw(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors">
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/25 hover:text-white/60 transition-colors">
                   {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
 
-            {/* Submit */}
             <button
               type="submit" disabled={loading}
-              className="w-full mt-2 relative overflow-hidden bg-[var(--brand)] hover:bg-[var(--brand-dark)] disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl text-sm transition-colors flex items-center justify-center gap-2 shadow-lg shadow-black/20"
+              className="w-full mt-2 font-bold py-3.5 rounded-xl text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ backgroundColor: 'var(--brand)', color: '#000', boxShadow: '0 0 32px rgba(var(--brand-rgb),0.25)' }}
             >
-              {loading ? (
-                <><Loader2 size={16} className="animate-spin" /> Signing in…</>
-              ) : (
-                'Sign In'
-              )}
+              {loading ? <><Loader2 size={16} className="animate-spin" /> Signing in…</> : 'Sign In'}
             </button>
           </form>
 
-          {/* Demo creds */}
-          <div className="mt-8 bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
-            <p className="text-xs font-medium text-gray-500 mb-2.5">Demo credentials</p>
-            <div className="space-y-1.5">
+          {/* Demo credentials */}
+          <div className="mt-8 rounded-xl p-4"
+            style={{ backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <p className="text-[10px] font-semibold text-white/25 uppercase tracking-widest mb-3">Demo credentials</p>
+            <div className="space-y-1">
               {[
                 ['Owner', 'owner@hotel.com', 'owner123'],
                 ['Manager', 'manager@hotel.com', 'manager123'],
+                ['Staff', 'staff@hotel.com', 'staff123'],
+                ['Chef', 'chef@hotel.com', 'chef123'],
               ].map(([role, email, pw]) => (
-                <button
-                  key={role}
-                  type="button"
-                  onClick={() => setForm({ email, password: pw })}
-                  className="w-full flex items-center justify-between text-left px-3 py-2 rounded-lg hover:bg-white/[0.05] transition-colors group"
-                >
-                  <span className="text-xs text-gray-400 group-hover:text-gray-200 transition-colors">{email}</span>
-                  <span className="text-[10px] font-medium text-[var(--brand)]/70 bg-[var(--brand)]/10 px-2 py-0.5 rounded-full">{role}</span>
+                <button key={role} type="button" onClick={() => setForm({ email, password: pw })}
+                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-colors hover:bg-white/5 group text-left">
+                  <span className="text-xs text-white/35 group-hover:text-white/60 transition-colors font-mono">{email}</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                    style={{ color: 'var(--brand)', backgroundColor: 'rgba(var(--brand-rgb),0.12)' }}>{role}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          <p className="text-center text-xs text-gray-700 mt-6">
-            © 2024 Al Manzil · Dubai
-          </p>
-          <div className="mt-4 text-center">
-            <Link href="/" className="text-xs text-gray-700 hover:text-[var(--brand)] transition-colors">
-              ← Return to Al Manzil
+          {/* Footer */}
+          <div className="mt-10 pt-6 border-t border-white/[0.04] text-center space-y-2">
+            <p className="text-xs text-white/20">© 2024 {brandName} · Dubai</p>
+            <Link href="/" className="text-xs text-white/25 hover:text-[var(--brand)] transition-colors">
+              ← Return to {brandName}
             </Link>
           </div>
         </div>

@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { useConfirm } from '@/lib/confirm'
 import {
   Plus, Search, X, FolderPlus, Clock, Tag,
   UtensilsCrossed, Pencil, Trash2, ToggleLeft, ToggleRight, Check, Loader2,
@@ -247,7 +248,11 @@ function ItemModal({ item, categories, onClose, onSave }: {
     finally { setAddingGroup(false) }
   }
 
+  const { confirm: confirmDel, dialog: confirmDelDialog } = useConfirm()
+
   const deleteGroup = async (groupId: string) => {
+    const ok = await confirmDel({ title: 'Delete this modifier group?', message: 'All options in this group will be removed.', confirmLabel: 'Delete', danger: true })
+    if (!ok) return
     try {
       await api.delete(`/menu/modifier-groups/${groupId}`)
       setGroups(prev => prev.filter(g => g.id !== groupId))
@@ -268,6 +273,8 @@ function ItemModal({ item, categories, onClose, onSave }: {
   }
 
   const deleteOption = async (groupId: string, optionId: string) => {
+    const ok = await confirmDel({ title: 'Remove this option?', confirmLabel: 'Remove', danger: true })
+    if (!ok) return
     try {
       await api.delete(`/menu/modifier-options/${optionId}`)
       setGroups(prev => prev.map(g => g.id === groupId ? { ...g, options: g.options.filter(o => o.id !== optionId) } : g))
@@ -310,6 +317,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
   const ic = 'w-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:border-[var(--brand)] focus:bg-white dark:focus:bg-gray-900 transition-all placeholder-gray-400 dark:placeholder-gray-600'
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4" onClick={onClose}>
       <div className="bg-white dark:bg-gray-900 w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
@@ -330,7 +338,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
 
         {/* Form */}
         <form id="item-form" onSubmit={submit} className="overflow-y-auto flex-1 p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Item Name (EN) *</label>
               <input required value={form.name} onChange={e => f('name', e.target.value)}
@@ -568,6 +576,8 @@ function ItemModal({ item, categories, onClose, onSave }: {
         </div>
       </div>
     </div>
+    {confirmDelDialog}
+    </>
   )
 }
 
@@ -971,6 +981,7 @@ export default function MenuManagementPage() {
   const [search, setSearch]         = useState('')
   const [modal, setModal]           = useState<{ item: Partial<MenuItem> | null } | null>(null)
   const [delItem, setDelItem]       = useState<MenuItem | null>(null)
+  const { confirm: confirmDel, dialog: confirmDelDialog } = useConfirm()
   const [showCatForm, setShowCatForm]   = useState(false)
   const [catName, setCatName]           = useState('')
   const [catNameAr, setCatNameAr]       = useState('')
@@ -1006,12 +1017,12 @@ export default function MenuManagementPage() {
     toast.success(`"${saved.name}" saved`)
   }
 
-  const handleDelete = async () => {
-    if (!delItem) return
-    await api.delete(`/menu/items/${delItem.id}`)
+  const handleDelete = async (item: MenuItem) => {
+    const ok = await confirmDel({ title: `Delete "${item.name}"?`, message: 'This item will be permanently removed from the menu.', confirmLabel: 'Delete', danger: true })
+    if (!ok) return
+    await api.delete(`/menu/items/${item.id}`)
     toast.success('Item deleted')
-    setCategories(prev => prev.map(c => ({ ...c, items: c.items.filter(i => i.id !== delItem.id) })))
-    setDelItem(null)
+    setCategories(prev => prev.map(c => ({ ...c, items: c.items.filter(i => i.id !== item.id) })))
   }
 
   const addCategory = async (e: React.FormEvent) => {
@@ -1043,13 +1054,13 @@ const allItems: SearchItem[] = categories.flatMap(c => c.items.map(i => ({ ...i,
   return (
     <>
       {modal && <ItemModal item={modal.item} categories={categories} onClose={() => setModal(null)} onSave={handleSave} />}
-      {delItem && <DeleteConfirm item={delItem} onConfirm={handleDelete} onCancel={() => setDelItem(null)} />}
+      {confirmDelDialog}
       {importOpen && <ImportMenuModal onClose={() => setImportOpen(false)} onDone={() => { load() }} />}
 
       <div className="flex flex-col flex-1">
 
         {/* ── Page header: title + stat pills + search + add ── */}
-        <div className="flex flex-col lg:flex-row lg:items-center gap-3 px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3 px-4 sm:px-6 py-3 lg:py-0 lg:h-14 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-bold text-gray-900 dark:text-white">Menu Management</h1>
             <div className="flex items-center gap-2 mt-1.5">
@@ -1063,18 +1074,18 @@ const allItems: SearchItem[] = categories.flatMap(c => c.items.map(i => ({ ...i,
             <div className="relative flex-1 lg:w-64">
               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items…"
-                className="w-full pl-8 pr-8 py-2.5 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-xl text-sm focus:outline-none focus:border-[var(--brand)] focus:bg-white dark:focus:bg-gray-900 transition-all placeholder-gray-400" />
+                className="w-full pl-8 pr-8 py-1.5 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg text-xs focus:outline-none focus:border-[var(--brand)] focus:bg-white dark:focus:bg-gray-900 transition-all placeholder-gray-400" />
               {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={12} /></button>}
             </div>
             <button onClick={() => setImportOpen(true)}
-              className="flex items-center justify-center gap-1.5 w-10 sm:w-auto sm:px-3 py-2.5 rounded-xl text-sm font-semibold border border-[var(--card-border)] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex-shrink-0"
+              className="flex items-center justify-center gap-1.5 w-8 sm:w-auto sm:px-3 py-1.5 rounded-lg text-xs font-semibold border border-[var(--card-border)] text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors flex-shrink-0"
               title="Import menu">
               <span className="text-base leading-none sm:hidden">↑</span>
               <span className="hidden sm:inline">↑ Import</span>
             </button>
             {!search && currentCat && (
               <button onClick={() => setModal({ item: { categoryId: currentCat.id } })}
-                className="flex items-center justify-center gap-1.5 w-10 sm:w-auto sm:px-4 py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm flex-shrink-0"
+                className="flex items-center justify-center gap-1.5 w-8 sm:w-auto sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-colors shadow-sm flex-shrink-0"
                 style={{ backgroundColor: 'var(--brand)', color: '#000' }}
                 title="Add item">
                 <Plus size={14} />
@@ -1133,7 +1144,7 @@ const allItems: SearchItem[] = categories.flatMap(c => c.items.map(i => ({ ...i,
                   style={{ cursor: 'grab' }}
                 >
                   <button onClick={() => setActive(c.id)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors
                       ${isActive
                         ? ''
                         : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
@@ -1197,7 +1208,7 @@ const allItems: SearchItem[] = categories.flatMap(c => c.items.map(i => ({ ...i,
               {gridItems.map(item => (
                 <ItemCard key={item.id} item={item} catName={search ? item.categoryName : undefined} onToggle={toggle}
                   onEdit={i => setModal({ item: { ...i, categoryId: search ? item.categoryId : currentCat?.id } })}
-                  onDelete={setDelItem} />
+                  onDelete={handleDelete} />
               ))}
             </div>
           )}

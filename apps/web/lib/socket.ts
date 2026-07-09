@@ -13,6 +13,11 @@ export function getSocket(): Socket {
     socket = io(WS_URL, {
       transports: ['websocket', 'polling'],
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 2000,
+      reconnectionDelayMax: 30000,
+      timeout: 10000,
     })
     connectedUrl = WS_URL
   }

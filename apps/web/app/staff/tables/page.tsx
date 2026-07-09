@@ -1,11 +1,13 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
-import { Table2, Pencil, Check, X, QrCode, Printer, Users, RefreshCw, Clock, Receipt, CreditCard, Banknote, CheckCircle2, Plus, Minus, ShoppingBag } from 'lucide-react'
+import { Table2, Check, X, QrCode, Printer, Users, RefreshCw, Clock, Receipt, CreditCard, Banknote, CheckCircle2, Plus, Minus, ShoppingBag } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
+import { useAuthStore } from '@/store/auth'
 
-interface Table { id: string; tableNumber: number; name: string | null; capacity: number; status: string; qrCode?: string; updatedAt?: string }
+interface UpcomingBooking { id: string; slotTime: string; status: string; partySize: number; customer: { name: string } | null }
+interface Table { id: string; tableNumber: number; name: string | null; capacity: number; zone: string; status: string; isActive: boolean; qrCode?: string; updatedAt?: string; upcomingBooking?: UpcomingBooking | null }
 
 interface BillOrder {
   id: string; status: string; paymentStatus: string; paymentMethod?: string
@@ -45,20 +47,21 @@ function clearingCountdown(updatedAt: string | undefined, nowMs: number, autoMin
 }
 
 const S = {
-  EMPTY:        { label: 'Available',     dot: '#4ade80', card: 'bg-emerald-500', cardDark: 'dark:bg-emerald-600', text: 'text-white', sub: 'text-emerald-100', filter: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400',    btn: 'bg-white/20 hover:bg-white/30 text-white border-white/20' },
-  OCCUPIED:     { label: 'Seated',        dot: '#f87171', card: 'bg-red-500',     cardDark: 'dark:bg-red-600',     text: 'text-white', sub: 'text-red-100',   filter: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400',            btn: 'bg-white/20 hover:bg-white/30 text-white border-white/20' },
-  BILL_PENDING: { label: 'Awaiting Bill', dot: '#fbbf24', card: 'bg-yellow-400',  cardDark: 'dark:bg-yellow-500',  text: 'text-gray-900', sub: 'text-yellow-800', filter: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400', btn: 'bg-black/10 hover:bg-black/20 text-gray-900 border-black/10' },
-  DIRTY:        { label: 'Clearing',      dot: '#9ca3af', card: 'bg-gray-400',    cardDark: 'dark:bg-gray-500',    text: 'text-white', sub: 'text-gray-100',  filter: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400',          btn: 'bg-white/20 hover:bg-white/30 text-white border-white/20' },
+  EMPTY:        { label: 'Available', labelShort: 'Free',    color: '#4ade80', filter: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' },
+  OCCUPIED:     { label: 'Seated',    labelShort: 'Seated',  color: '#f87171', filter: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' },
+  BILL_PENDING: { label: 'Awaiting Bill', labelShort: 'Bill', color: '#fbbf24', filter: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400' },
+  DIRTY:        { label: 'Clearing',  labelShort: 'Dirty',   color: '#9ca3af', filter: 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400' },
 }
 const STATUSES = ['EMPTY', 'OCCUPIED', 'BILL_PENDING', 'DIRTY'] as const
 type Status = typeof STATUSES[number]
 
 export default function TablesPage() {
+  const { user } = useAuthStore()
+  const isOwner = user?.role === 'OWNER'
   const [tables, setTables]       = useState<Table[]>([])
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [nameInput, setNameInput] = useState('')
   const [qrModal, setQrModal]         = useState<Table | null>(null)
   const [qrRegenConfirm, setQrRegenConfirm] = useState(false)
+  const [forceAvailableConfirm, setForceAvailableConfirm] = useState<string | null>(null)
   const [qrRegening, setQrRegening]   = useState(false)
   const [billModal, setBillModal]     = useState<{ table: Table; bill: TableBill } | null>(null)
   const [billLoading, setBillLoading] = useState(false)
@@ -193,17 +196,10 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
   const updateStatus = async (id: string, status: string) => {
     await api.patch(`/tables/${id}/status`, { status })
     setTables(p => p.map(t => t.id === id ? { ...t, status } : t))
-    notify.success('Table marked clean')
+    notify.success(status === 'EMPTY' ? 'Table marked available' : 'Table status updated')
   }
 
-  const saveName = async (id: string) => {
-    const name = nameInput.trim(); if (!name) return
-    await api.patch(`/tables/${id}/name`, { name })
-    setTables(p => p.map(t => t.id === id ? { ...t, name } : t))
-    setEditingId(null); notify.success('Renamed')
-  }
-
-  const countBy = (s: string) => tables.filter(t => t.status === s).length
+const countBy = (s: string) => tables.filter(t => t.status === s).length
   const visible = filter === 'ALL' ? tables : tables.filter(t => t.status === filter)
 
   return (
@@ -547,36 +543,35 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-lg font-bold text-gray-900 dark:text-white">Tables</h1>
-          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">{tables.length} total</span>
-            {STATUSES.map(s => countBy(s) > 0 && (
-              <span key={s} className={`flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${S[s].filter}`}>
-                <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: S[s].dot }} />
-                {countBy(s)} {S[s].label}
-              </span>
-            ))}
-          </div>
-        </div>
-        <button onClick={load} className="p-2.5 rounded-xl transition-colors flex-shrink-0"
-          style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)', border: '1px solid rgba(var(--brand-rgb),0.15)', color: 'var(--text-muted)' }}>
-          <RefreshCw size={14} />
+      <div className="h-14 flex items-center gap-2 px-4 sm:px-6 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
+        <h1 className="text-base font-bold text-gray-900 dark:text-white whitespace-nowrap">Tables</h1>
+        <button onClick={load} className="p-1 rounded-lg flex-shrink-0" style={{ color: 'var(--text-muted)' }} title="Refresh">
+          <RefreshCw size={12} />
         </button>
+        {/* Filter tabs inline */}
+        <div className="hidden sm:flex items-center gap-1 ml-2 overflow-x-auto">
+          {([['ALL', 'All', 'All', tables.length], ...STATUSES.map(s => [s, S[s as Status].label, S[s as Status].labelShort, countBy(s)])] as [string, string, string, number][]).map(([key, label, labelShort, count]) => (
+            <button key={key} onClick={() => setFilter(key as Status | 'ALL')}
+              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all"
+              style={filter === key
+                ? { backgroundColor: 'var(--brand)', color: '#000' }
+                : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
+              {label}
+              <span className="text-[10px] font-bold opacity-70">{count}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto px-4 sm:px-6 py-3 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
-        {([['ALL', 'All Tables', tables.length], ...STATUSES.map(s => [s, S[s as Status].label, countBy(s)])] as [string, string, number][]).map(([key, label, count]) => (
+      {/* Mobile filter tabs */}
+      <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto px-4 py-2 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
+        {([['ALL', 'All', tables.length], ...STATUSES.map(s => [s, S[s as Status].labelShort, countBy(s)])] as [string, string, number][]).map(([key, label, count]) => (
           <button key={key} onClick={() => setFilter(key as Status | 'ALL')}
-            className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold whitespace-nowrap transition-colors
-              ${filter === key
-                ? ''
-                : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'}`}
-            style={filter === key ? { backgroundColor: 'var(--brand)', color: '#000' } : {}}>
-            {label}
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${filter === key ? 'bg-white/20' : 'bg-white dark:bg-gray-900 text-gray-400'}`}>{count}</span>
+            className="flex-shrink-0 flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
+            style={filter === key
+              ? { backgroundColor: 'var(--brand)', color: '#000' }
+              : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
+            {label} <span className="opacity-60">{count}</span>
           </button>
         ))}
       </div>
@@ -603,101 +598,129 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
           </div>
         )}
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {visible.map(table => {
+            const isReserved = table.status === 'EMPTY' && !!table.upcomingBooking
             const cfg = S[table.status as Status] ?? S.EMPTY
             const displayName = table.name ?? `Table ${table.tableNumber}`
-            const isEditing = editingId === table.id
             const isOccupied = table.status === 'OCCUPIED' || table.status === 'BILL_PENDING'
 
             return (
-              <div key={table.id} className={`group rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition-all flex flex-col ${cfg.card} ${cfg.cardDark}`}>
+              <div key={table.id}
+                className="rounded-2xl border overflow-hidden flex flex-col transition-all hover:shadow-md"
+                style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-bg)' }}>
 
-                {/* ── Top section: name + status ── */}
-                <div className="px-4 pt-4 pb-3 flex flex-col gap-1 flex-1">
+                {/* Colour bar */}
+                <div className="h-1 flex-shrink-0" style={{ backgroundColor: isReserved ? '#f59e0b' : cfg.color }} />
 
-                  {/* Name row */}
-                  {isEditing ? (
-                    <div className="flex items-center gap-1">
-                      <input autoFocus value={nameInput} onChange={e => setNameInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') saveName(table.id); if (e.key === 'Escape') setEditingId(null) }}
-                        className="flex-1 text-sm font-bold bg-white/20 border border-white/30 rounded-lg px-2 py-1 focus:outline-none text-white placeholder-white/50 min-w-0" />
-                      <button onClick={() => saveName(table.id)} className="text-white/80 hover:text-white flex-shrink-0 p-1"><Check size={14} /></button>
-                      <button onClick={() => setEditingId(null)} className="text-white/60 hover:text-white flex-shrink-0 p-1"><X size={14} /></button>
+                {/* Body */}
+                <div className="p-3 flex flex-col flex-1 gap-2">
+
+                  {/* Number + status */}
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black text-white flex-shrink-0"
+                      style={{ backgroundColor: isReserved ? '#f59e0b' : cfg.color }}>
+                      {table.tableNumber}
                     </div>
-                  ) : (
-                    <div className="flex items-start justify-between gap-1">
-                      <p className={`font-extrabold text-lg leading-tight truncate flex-1 ${cfg.text}`}>{displayName}</p>
-                      <button onClick={() => { setEditingId(table.id); setNameInput(displayName) }}
-                        className={`${cfg.text} opacity-40 hover:opacity-100 transition-opacity flex-shrink-0 mt-0.5 p-1`}>
-                        <Pencil size={13} />
-                      </button>
-                    </div>
-                  )}
-
-                  <p className={`text-sm font-semibold ${cfg.sub}`}>{cfg.label}</p>
-
-                  {/* Clearing timer */}
-                  {table.status === 'DIRTY' && table.updatedAt && (
-                    <div className={`flex items-center gap-1 text-xs mt-1 ${cfg.sub}`}>
-                      <Clock size={11} />
-                      <span>Cleaning {clearingElapsed(table.updatedAt, now)}</span>
-                      {(clearingCountdown(table.updatedAt, now) ?? 0) > 0 && (
-                        <span className="opacity-60">· {clearingCountdown(table.updatedAt, now)}m left</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none flex-shrink-0 truncate"
+                      style={{ backgroundColor: isReserved ? '#f59e0b22' : `${cfg.color}22`, color: isReserved ? '#f59e0b' : cfg.color }}>
+                      {isReserved ? 'Reserved' : (
+                        <><span className="hidden sm:inline">{cfg.label}</span><span className="sm:hidden">{cfg.labelShort}</span></>
                       )}
-                    </div>
-                  )}
-
-                  {/* Capacity */}
-                  <div className={`flex items-center gap-1 text-xs mt-1 ${cfg.sub}`}>
-                    <Users size={12} /> {table.capacity} seats
+                    </span>
                   </div>
-                </div>
 
-                {/* ── Action buttons ── */}
-                <div className="px-3 pb-3 flex flex-col gap-2">
-
-                  {/* Occupied: Add items + View bill + QR — all big tap targets */}
-                  {isOccupied && (
-                    <>
-                      <button onClick={() => openAddOrder(table)}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm bg-white/20 hover:bg-white/30 active:scale-[0.98] text-white transition-all">
-                        <Plus size={16} /> Add Items
-                      </button>
-                      <div className="flex gap-2">
-                        <button onClick={() => openBill(table)}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-white/15 hover:bg-white/25 text-white transition-all">
-                          <Receipt size={15} /> Bill
-                        </button>
-                        {table.qrCode && (
-                          <button onClick={() => { setQrModal(table); setQrRegenConfirm(false) }}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-white/15 hover:bg-white/25 text-white transition-all">
-                            <QrCode size={15} /> QR
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-
-                  {/* Clearing: Mark Clean */}
-                  {table.status === 'DIRTY' && (
-                    <button onClick={() => updateStatus(table.id, 'EMPTY')}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-black bg-white text-emerald-600 hover:bg-emerald-50 active:scale-[0.98] transition-all shadow-sm">
-                      <Check size={16} /> Mark Clean
-                    </button>
-                  )}
-
-                  {/* Empty: just QR */}
-                  {table.status === 'EMPTY' && (
-                    <div className="flex gap-2">
-                      {table.qrCode && (
-                        <button onClick={() => { setQrModal(table); setQrRegenConfirm(false) }}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold bg-white/20 hover:bg-white/30 text-white transition-all">
-                          <QrCode size={16} /> View QR
-                        </button>
-                      )}
+                  {/* Name + seats + zone */}
+                  <div>
+                    <p className="font-bold text-sm truncate leading-tight" style={{ color: 'var(--text-primary)' }}>{displayName}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[11px] flex items-center gap-0.5" style={{ color: 'var(--text-muted)' }}>
+                        <Users size={9} />{table.capacity} seats
+                      </span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                        style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
+                        {table.zone ?? 'Indoor'}
+                      </span>
+                    </div>
+                  </div>
+                  {isReserved && table.upcomingBooking && (
+                    <div className="flex flex-col gap-0.5 px-2 py-1.5 rounded-lg text-[11px]"
+                      style={{ backgroundColor: '#f59e0b18', border: '1px solid #f59e0b44' }}>
+                      <span className="font-bold" style={{ color: '#f59e0b' }}>
+                        {table.upcomingBooking.slotTime}
+                      </span>
+                      <span className="truncate" style={{ color: 'var(--text-muted)' }}>
+                        {table.upcomingBooking.customer?.name ?? 'Guest'} · {table.upcomingBooking.partySize} pax
+                      </span>
                     </div>
                   )}
+                  {table.status === 'DIRTY' && table.updatedAt && (
+                    <div className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      <Clock size={9} />{clearingElapsed(table.updatedAt, now)}
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex flex-col gap-1.5 mt-auto">
+                    {isOccupied && (
+                      <>
+                        <button onClick={() => openAddOrder(table)}
+                          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-colors text-white active:scale-[0.98]"
+                          style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                          <Plus size={13} /> Add Items
+                        </button>
+                        <div className="flex gap-1.5">
+                          <button onClick={() => openBill(table)}
+                            className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl text-xs font-semibold border transition-colors hover:bg-[var(--muted-bg)]"
+                            style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+                            <Receipt size={12} /><span className="hidden sm:inline">Bill</span>
+                          </button>
+                          {table.qrCode && (
+                            <button onClick={() => { setQrModal(table); setQrRegenConfirm(false) }}
+                              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl text-xs font-semibold border transition-colors hover:bg-[var(--muted-bg)]"
+                              style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+                              <QrCode size={12} /><span className="hidden sm:inline">QR</span>
+                            </button>
+                          )}
+                        </div>
+                        {isOwner && (forceAvailableConfirm === table.id ? (
+                          <div className="flex gap-1.5">
+                            <button onClick={() => { updateStatus(table.id, 'EMPTY'); setForceAvailableConfirm(null) }}
+                              className="flex-1 py-1.5 rounded-lg text-[11px] font-bold border border-red-300 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-1">
+                              <Check size={10} /> Confirm
+                            </button>
+                            <button onClick={() => setForceAvailableConfirm(null)}
+                              className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors hover:bg-[var(--muted-bg)]"
+                              style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setForceAvailableConfirm(table.id)}
+                            className="text-[11px] text-center py-1 transition-colors hover:underline"
+                            style={{ color: 'var(--text-muted)' }}>
+                            Force available
+                          </button>
+                        ))}
+                      </>
+                    )}
+
+                    {table.status === 'DIRTY' && (
+                      <button onClick={() => updateStatus(table.id, 'EMPTY')}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-colors active:scale-[0.98]"
+                        style={{ backgroundColor: '#4ade8022', color: '#4ade80', border: '1px solid #4ade8044' }}>
+                        <Check size={13} /> Mark Clean
+                      </button>
+                    )}
+
+                    {table.status === 'EMPTY' && table.qrCode && (
+                      <button onClick={() => { setQrModal(table); setQrRegenConfirm(false) }}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-colors hover:bg-[var(--muted-bg)]"
+                        style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+                        <QrCode size={12} /> View QR
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )

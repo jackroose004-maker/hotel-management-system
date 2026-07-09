@@ -1,28 +1,39 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Request } from '@nestjs/common'
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards, Request } from '@nestjs/common'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../common/guards/roles.guard'
 import { Roles } from '../common/decorators/roles.decorator'
 import { UsersService } from './users.service'
 
 @Controller('users')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(private users: UsersService) {}
 
+  // Staff — look up a customer by email to check if they exist
+  @UseGuards(RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Get('lookup')
+  lookupByEmail(@Query('email') email: string) {
+    return this.users.lookupByEmail(email)
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles('OWNER')
   @Get('staff')
-  @Roles('OWNER', 'MANAGER')
   listStaff() {
     return this.users.listStaff()
   }
 
-  @Post('staff')
+  @UseGuards(RolesGuard)
   @Roles('OWNER')
+  @Post('staff')
   createStaff(@Body() body: { name: string; email: string; password: string; role: string }) {
     return this.users.createStaff(body)
   }
 
-  @Patch('staff/:id')
+  @UseGuards(RolesGuard)
   @Roles('OWNER')
+  @Patch('staff/:id')
   updateStaff(
     @Param('id') id: string,
     @Body() body: { name?: string; role?: string; isActive?: boolean; password?: string },

@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Booking Confirmed</title>
+</head>
+<body style="margin:0;padding:0;background:{{bgColor}};font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:{{bgColor}};padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+
+          <!-- ── HEADER ── -->
+          <tr>
+            <td style="background:linear-gradient(150deg,{{brandColor}} 0%,{{brandColorDark}} 100%);border-radius:20px 20px 0 0;padding:36px 40px 28px;text-align:center;">
+              {{#if logoUrl}}
+                <img src="{{logoUrl}}" alt="{{restaurantName}}" width="56" height="56"
+                  style="border-radius:14px;object-fit:cover;display:block;margin:0 auto 14px;box-shadow:0 6px 20px rgba(0,0,0,0.3);" />
+              {{/if}}
+              <p style="margin:0 0 4px;color:rgba(255,255,255,0.75);font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;">
+                Reservation Confirmed
+              </p>
+              <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:800;letter-spacing:-0.5px;">
+                {{restaurantName}}
+              </h1>
+            </td>
+          </tr>
+
+          <!-- ── GREETING BAND ── -->
+          <tr>
+            <td style="background:#1a1a1a;padding:18px 40px;">
+              <p style="margin:0;color:rgba(255,255,255,0.55);font-size:14px;">
+                Hi <strong style="color:#fff;">{{name}}</strong> — your table is locked in. We look forward to seeing you.
+              </p>
+            </td>
+          </tr>
+
+          <!-- ── BOOKING DETAILS CARD ── -->
+          <tr>
+            <td style="background:#ffffff;padding:32px 40px 0;">
+
+              <!-- Ref pill -->
+              <div style="display:inline-block;background:#f5f5f5;border:1px solid #e8e8e8;border-radius:30px;padding:5px 14px;margin-bottom:24px;">
+                <span style="color:#999;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Booking Ref &nbsp;</span>
+                <span style="color:#222;font-size:11px;font-weight:900;letter-spacing:3px;font-family:monospace;">{{ref}}</span>
+              </div>
+
+              <!-- Detail rows -->
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding-bottom:16px;border-bottom:1px solid #f0f0f0;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="width:50%;padding-right:8px;vertical-align:top;">
+                          <p style="margin:0 0 3px;color:#aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Date</p>
+                          <p style="margin:0;color:#111;font-size:15px;font-weight:700;">{{slotDate}}</p>
+                        </td>
+                        <td style="width:50%;padding-left:8px;vertical-align:top;">
+                          <p style="margin:0 0 3px;color:#aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Time</p>
+                          <p style="margin:0;color:{{brandColor}};font-size:20px;font-weight:900;">{{slotTime}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-top:16px;padding-bottom:16px;border-bottom:1px solid #f0f0f0;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="width:50%;padding-right:8px;vertical-align:top;">
+                          <p style="margin:0 0 3px;color:#aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Table</p>
+                          <p style="margin:0;color:#111;font-size:15px;font-weight:700;">{{tableNumber}}</p>
+                        </td>
+                        <td style="width:50%;padding-left:8px;vertical-align:top;">
+                          <p style="margin:0 0 3px;color:#aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Guests</p>
+                          <p style="margin:0;color:#111;font-size:15px;font-weight:700;">{{partySize}} guest{{#if partySizePlural}}s{{/if}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-top:16px;padding-bottom:16px;">
+                    <p style="margin:0 0 3px;color:#aaa;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Seating</p>
+                    <p style="margin:0;color:#111;font-size:14px;font-weight:600;">{{zone}} seating</p>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- ── TICKET ATTACHMENT NOTICE ── -->
+          <tr>
+            <td style="background:#ffffff;padding:0 40px 32px;">
+              <table width="100%" cellpadding="0" cellspacing="0"
+                style="background:#fafafa;border:1px solid #ebebeb;border-radius:16px;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="width:40px;vertical-align:middle;">
+                          <div style="width:36px;height:36px;border-radius:10px;background:{{brandColor}}18;display:inline-flex;align-items:center;justify-content:center;font-size:18px;">🎟</div>
+                        </td>
+                        <td style="padding-left:12px;vertical-align:middle;">
+                          <p style="margin:0 0 2px;color:#111;font-size:13px;font-weight:700;">Your booking ticket is attached</p>
+                          <p style="margin:0;color:#aaa;font-size:11px;line-height:1.5;">Open the image — scan the QR code at the entrance to check in instantly.</p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ── PRE-ORDER NOTE ── -->
+          {{#if hasPreOrder}}
+          <tr>
+            <td style="background:#ffffff;padding:0 40px 28px;">
+              <table width="100%" cellpadding="0" cellspacing="0"
+                style="background:linear-gradient(135deg,{{brandColor}}18 0%,{{brandColor}}08 100%);border:1px solid {{brandColor}}40;border-radius:14px;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <p style="margin:0 0 12px;color:{{brandColor}};font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase;">
+                      Pre-Order · Fires on Arrival
+                    </p>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      {{#each preOrderItems}}
+                      <tr>
+                        <td style="padding:5px 0;font-size:13px;color:#222;">{{qty}}× {{name}}</td>
+                        <td style="padding:5px 0;font-size:13px;font-weight:600;color:#111;text-align:right;white-space:nowrap;">AED {{amount}}</td>
+                      </tr>
+                      {{#each modifiers}}
+                      <tr>
+                        <td style="padding:2px 0 2px 14px;font-size:11px;color:#888;">+ {{name}}</td>
+                        <td style="padding:2px 0;font-size:11px;color:#888;text-align:right;white-space:nowrap;">AED {{priceAdd}}</td>
+                      </tr>
+                      {{/each}}
+                      {{/each}}
+                    </table>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;border-top:1px solid {{brandColor}}20;">
+                      <tr>
+                        <td style="padding-top:10px;font-size:12px;color:#888;">Pre-order total</td>
+                        <td style="padding-top:10px;font-size:16px;font-weight:900;color:{{brandColor}};text-align:right;">AED {{preOrderTotal}}</td>
+                      </tr>
+                    </table>
+                    <p style="margin:10px 0 0;color:#999;font-size:11px;line-height:1.5;">
+                      Your food goes to the kitchen the moment you scan in — expect it within minutes of arrival.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          {{/if}}
+
+          <!-- ── NEW ACCOUNT CREDENTIALS (staff-created bookings only) ── -->
+          {{#if newAccount}}
+          <tr>
+            <td style="background:#ffffff;padding:0 40px 28px;">
+              <table width="100%" cellpadding="0" cellspacing="0"
+                style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border-radius:16px;overflow:hidden;">
+                <tr>
+                  <td style="padding:24px 28px;">
+                    <p style="margin:0 0 4px;color:rgba(255,255,255,0.5);font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">
+                      Your Account
+                    </p>
+                    <p style="margin:0 0 16px;color:#fff;font-size:14px;font-weight:700;line-height:1.5;">
+                      We've created an account for you so you can manage your booking online.
+                    </p>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+                      <tr>
+                        <td style="padding-bottom:8px;">
+                          <p style="margin:0 0 2px;color:rgba(255,255,255,0.4);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Email</p>
+                          <p style="margin:0;color:#fff;font-size:13px;font-weight:600;font-family:monospace;">{{email}}</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p style="margin:0 0 2px;color:rgba(255,255,255,0.4);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Temporary Password</p>
+                          <p style="margin:0;color:{{brandColor}};font-size:18px;font-weight:900;font-family:monospace;letter-spacing:3px;">{{tempPassword}}</p>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin:0;color:rgba(255,255,255,0.4);font-size:11px;line-height:1.6;">
+                      Please change your password after logging in for the first time.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          {{/if}}
+
+          <!-- ── NOTICE BOX ── -->
+          <tr>
+            <td style="background:#ffffff;padding:0 40px 32px;">
+              <table width="100%" cellpadding="0" cellspacing="0"
+                style="background:#fffbf0;border:1px solid #fde68a;border-radius:12px;">
+                <tr>
+                  <td style="padding:14px 18px;">
+                    <p style="margin:0;color:#92400e;font-size:12px;line-height:1.7;">
+                      ⏱ &nbsp;Please arrive within <strong>{{graceMin}} minutes</strong> of your slot time.
+                      After that, your table may be released to walk-in guests.<br/>
+                      To cancel or reschedule, log in to your account before your slot.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ── CONTACT ── -->
+          <tr>
+            <td style="background:#ffffff;padding:0 40px 28px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="border-top:1px dashed #e8e8e8;padding-top:24px;text-align:center;">
+                    <p style="margin:0 0 6px;color:#bbb;font-size:11px;letter-spacing:1px;text-transform:uppercase;">
+                      Questions? We're happy to help.
+                    </p>
+                    {{#if supportEmail}}
+                    <p style="margin:0 0 4px;color:#bbb;font-size:12px;">
+                      Email: <a href="mailto:{{supportEmail}}" style="color:{{brandColor}};text-decoration:none;">{{supportEmail}}</a>
+                    </p>
+                    {{/if}}
+                    {{#if supportPhone}}
+                    <p style="margin:0;color:#bbb;font-size:12px;">Phone: <strong style="color:#555;">{{supportPhone}}</strong></p>
+                    {{/if}}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ── SOCIAL ── -->
+          {{#if hasSocial}}
+          <tr>
+            <td style="background:#fafafa;padding:14px 40px;text-align:center;border-top:1px solid #f0f0f0;">
+              <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                <tr>
+                  {{#if socialInstagram}}<td style="padding:0 6px;"><a href="{{socialInstagram}}" style="color:#999;text-decoration:none;font-size:11px;">Instagram</a></td>{{/if}}
+                  {{#if socialWhatsapp}}<td style="padding:0 6px;"><a href="{{socialWhatsapp}}" style="color:#999;text-decoration:none;font-size:11px;">WhatsApp</a></td>{{/if}}
+                  {{#if socialTelegram}}<td style="padding:0 6px;"><a href="{{socialTelegram}}" style="color:#999;text-decoration:none;font-size:11px;">Telegram</a></td>{{/if}}
+                  {{#if socialTiktok}}<td style="padding:0 6px;"><a href="{{socialTiktok}}" style="color:#999;text-decoration:none;font-size:11px;">TikTok</a></td>{{/if}}
+                  {{#if socialFacebook}}<td style="padding:0 6px;"><a href="{{socialFacebook}}" style="color:#999;text-decoration:none;font-size:11px;">Facebook</a></td>{{/if}}
+                  {{#if socialTwitter}}<td style="padding:0 6px;"><a href="{{socialTwitter}}" style="color:#999;text-decoration:none;font-size:11px;">Twitter</a></td>{{/if}}
+                </tr>
+              </table>
+            </td>
+          </tr>
+          {{/if}}
+
+          <!-- ── FOOTER ── -->
+          <tr>
+            <td style="background:#1a1a1a;border-radius:0 0 20px 20px;padding:20px 40px;text-align:center;">
+              <p style="margin:0 0 4px;color:rgba(255,255,255,0.4);font-size:11px;">
+                © {{year}} {{restaurantName}}. All rights reserved.
+              </p>
+              <p style="margin:0;color:rgba(255,255,255,0.2);font-size:10px;">
+                {{footerNoReplyText}}
+                {{#if supportEmail}}&nbsp;·&nbsp;{{supportEmail}}{{/if}}
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>

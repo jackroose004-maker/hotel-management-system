@@ -1,35 +1,90 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   NotFoundException,
   ForbiddenException,
+  Inject,
+  forwardRef,
+  Logger,
 } from '@nestjs/common'
 import { Cron, CronExpression } from '@nestjs/schedule'
+import * as bcrypt from 'bcryptjs'
 import { PrismaService } from '../prisma/prisma.service'
 import { SettingsService } from '../settings/settings.service'
+import { MailService } from '../mail/mail.service'
+import { OrdersService } from '../orders/orders.service'
 
 const BLOCK_AFTER_STRIKES = 3
 const BLOCK_DAYS = 14
 
-function generateSlots(openTime: string, closeTime: string, slotDurationMins: number): string[] {
+const DAY_KEYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+
+type Shift = { openTime: string; closeTime: string }
+type DaySchedule = { open: boolean; shifts: Shift[] }
+
+const DEFAULT_SHIFT: Shift = { openTime: '00:00', closeTime: '00:00' }
+const DEFAULT_DAY: DaySchedule = { open: true, shifts: [DEFAULT_SHIFT] }
+
+function getDaySchedule(dateStr: string, weeklySchedule: unknown): DaySchedule {
+  const sched = (weeklySchedule && typeof weeklySchedule === 'object' ? weeklySchedule : {}) as Record<string, any>
+  const dayKey = DAY_KEYS[new Date(dateStr + 'T12:00:00Z').getUTCDay()]
+  const day = sched[dayKey]
+  if (!day) return DEFAULT_DAY
+  // backwards compat: old format had openTime/closeTime directly on day
+  if (!day.shifts && day.openTime !== undefined) {
+    return { open: !!day.open, shifts: [{ openTime: day.openTime ?? '00:00', closeTime: day.closeTime ?? '00:00' }] }
+  }
+  return { open: !!day.open, shifts: Array.isArray(day.shifts) && day.shifts.length ? day.shifts : [DEFAULT_SHIFT] }
+}
+
+function generateSlotsForShift(openTime: string, closeTime: string, slotDurationMins: number): string[] {
   const slots: string[] = []
-  const [openH] = openTime.split(':').map(Number)
-  const [closeH] = closeTime.split(':').map(Number)
-  for (let h = openH; h < closeH; h++) {
-    for (let m = 0; m < 60; m += slotDurationMins) {
-      slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
-    }
+  const [openH, openM = 0] = openTime.split(':').map(Number)
+  const [closeH, closeM = 0] = closeTime.split(':').map(Number)
+  const is24Hr = openH === 0 && openM === 0 && closeH === 0 && closeM === 0
+  const endMinutes = is24Hr ? 24 * 60 : closeH * 60 + closeM
+  for (let mins = openH * 60 + openM; mins < endMinutes; mins += slotDurationMins) {
+    const h = Math.floor(mins / 60) % 24
+    const m = mins % 60
+    slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
   }
   return slots
 }
 
-function isPeakSlot(time: string, peakStart: string, peakEnd: string): boolean {
-  return time >= peakStart && time < peakEnd
+function generateSlots(daySchedule: DaySchedule, slotDurationMins: number): string[] {
+  if (!daySchedule.open || !daySchedule.shifts?.length) return []
+  const seen = new Set<string>()
+  const all: string[] = []
+  for (const shift of daySchedule.shifts) {
+    for (const slot of generateSlotsForShift(shift.openTime, shift.closeTime, slotDurationMins)) {
+      if (!seen.has(slot)) { seen.add(slot); all.push(slot) }
+    }
+  }
+  return all.sort()
+}
+
+type PeakRange = { start: string; end: string }
+
+function getPeakRanges(cfg: { peakRanges: unknown }): PeakRange[] {
+  return Array.isArray(cfg.peakRanges) ? (cfg.peakRanges as PeakRange[]) : []
+}
+
+function isPeakSlot(time: string, cfg: { peakRanges: unknown }): boolean {
+  return getPeakRanges(cfg).some(r => time >= r.start && time < r.end)
 }
 
 @Injectable()
 export class BookingsService {
-  constructor(private prisma: PrismaService, private settingsService: SettingsService) {}
+  private readonly logger = new Logger(BookingsService.name)
+
+  constructor(
+    private prisma: PrismaService,
+    private settingsService: SettingsService,
+    private mail: MailService,
+    @Inject(forwardRef(() => OrdersService)) private ordersService: OrdersService,
+  ) {}
 
   async getAvailability(dateStr: string) {
     const cfg = await this.settingsService.get()
@@ -46,8 +101,7 @@ export class BookingsService {
     maxDate.setDate(maxDate.getDate() + cfg.maxBookingDaysAhead)
     if (date > maxDate) throw new BadRequestException(`Date too far ahead (max ${cfg.maxBookingDaysAhead} days)`)
 
-    const totalTables = await this.prisma.restaurantTable.count()
-    const bookableTables = Math.max(0, totalTables - cfg.walkInBuffer)
+    const bookableTables = await this.prisma.restaurantTable.count({ where: { isReservable: true, isActive: true } })
 
     const bookedBySlot = await this.prisma.booking.groupBy({
       by: ['slotTime'],
@@ -58,13 +112,14 @@ export class BookingsService {
     const bookedMap: Record<string, number> = {}
     for (const b of bookedBySlot) bookedMap[b.slotTime] = b._count.id
 
-    const slots = generateSlots(cfg.openTime, cfg.closeTime, cfg.slotDurationMins).map((time) => {
+    const dayScheduleForAvail = getDaySchedule(dateStr, cfg.weeklySchedule)
+    const slots = generateSlots(dayScheduleForAvail, cfg.slotDurationMins).map((time) => {
       const [h, m] = time.split(':').map(Number)
       const slotDatetime = new Date(date)
       slotDatetime.setHours(h, m, 0, 0)
 
-      const isPast = slotDatetime <= new Date(now.getTime() + 30 * 60_000)
-      const peak = cfg.peakHoursEnabled && isPeakSlot(time, cfg.peakStart, cfg.peakEnd)
+      const isPast = slotDatetime <= new Date(now.getTime() + cfg.sameDayCutoffMins * 60_000)
+      const peak = cfg.peakHoursEnabled && isPeakSlot(time, cfg)
       const booked = bookedMap[time] ?? 0
       const available = Math.max(0, bookableTables - booked)
 
@@ -72,7 +127,6 @@ export class BookingsService {
         time,
         available,
         bookableTables,
-        totalTables,
         isPast,
         isPeak: peak,
         isWalkInOnly: peak,
@@ -80,12 +134,13 @@ export class BookingsService {
       }
     })
 
-    return { date: dateStr, slots, bookingsEnabled: true, walkInBuffer: cfg.walkInBuffer }
+    const reservableTables = bookableTables  // isReservable count — walk-in split is now per-table
+    return { date: dateStr, slots, bookingsEnabled: true, reservableTables, sameDayCutoffMins: cfg.sameDayCutoffMins }
   }
 
   async createBooking(
     customerId: string,
-    dto: { partySize: number; slotDate: string; slotTime: string; notes?: string; idempotencyKey: string },
+    dto: { partySize: number; slotDate: string; slotTime: string; notes?: string; seatingPreference?: string; idempotencyKey: string },
   ) {
     // Idempotency check
     const existing = await this.prisma.booking.findUnique({ where: { idempotencyKey: dto.idempotencyKey } })
@@ -114,13 +169,21 @@ export class BookingsService {
 
     // Check peak hour block
     const cfg = await this.settingsService.get()
-    if (cfg.peakHoursEnabled && isPeakSlot(dto.slotTime, cfg.peakStart, cfg.peakEnd)) {
+    if (cfg.peakHoursEnabled && isPeakSlot(dto.slotTime, cfg)) {
       throw new BadRequestException('Online bookings are not available during peak hours. Please walk in.')
     }
 
-    // Check slot availability
-    const totalTables = await this.prisma.restaurantTable.count()
-    const bookableTables = Math.max(0, totalTables - cfg.walkInBuffer)
+    // Same-day cutoff: reject if slot is less than sameDayCutoffMins from now
+    const [slotH, slotM] = dto.slotTime.split(':').map(Number)
+    const slotDatetimeCheck = new Date(dto.slotDate)
+    slotDatetimeCheck.setHours(slotH, slotM, 0, 0)
+    const minsUntilSlot = (slotDatetimeCheck.getTime() - Date.now()) / 60_000
+    if (minsUntilSlot < cfg.sameDayCutoffMins) {
+      throw new BadRequestException(`Bookings must be made at least ${cfg.sameDayCutoffMins} minutes before the slot time.`)
+    }
+
+    // Check slot availability — only tables marked isReservable count
+    const bookableTables = await this.prisma.restaurantTable.count({ where: { isReservable: true, isActive: true } })
     const booked = await this.prisma.booking.count({
       where: {
         slotDate,
@@ -130,16 +193,28 @@ export class BookingsService {
     })
     if (booked >= bookableTables) throw new BadRequestException('This time slot is fully booked.')
 
-    // Assign a free table
+    // Assign a free table — prefer seating preference zone if specified
     const bookedTableIds = await this.prisma.booking.findMany({
       where: { slotDate, slotTime: dto.slotTime, status: { in: ['PENDING', 'CONFIRMED', 'ARRIVED'] } },
       select: { tableId: true },
     })
     const taken = bookedTableIds.map((b) => b.tableId).filter(Boolean) as string[]
-    const freeTable = await this.prisma.restaurantTable.findFirst({
-      where: { id: { notIn: taken }, capacity: { gte: dto.partySize } },
-      orderBy: { capacity: 'asc' },
-    })
+    // Only assign from isReservable tables — walk-in-only tables must never receive bookings
+    const baseWhere = { id: { notIn: taken }, capacity: { gte: dto.partySize }, isActive: { not: false }, isReservable: true }
+
+    // Try preferred zone first, fall back to any zone
+    let freeTable = dto.seatingPreference
+      ? await this.prisma.restaurantTable.findFirst({
+          where: { ...baseWhere, zone: dto.seatingPreference },
+          orderBy: { capacity: 'asc' },
+        })
+      : null
+    if (!freeTable) {
+      freeTable = await this.prisma.restaurantTable.findFirst({
+        where: baseWhere,
+        orderBy: { capacity: 'asc' },
+      })
+    }
     if (!freeTable) throw new BadRequestException('No suitable table available for your party size.')
 
     const booking = await this.prisma.booking.create({
@@ -151,10 +226,16 @@ export class BookingsService {
         slotTime: dto.slotTime,
         idempotencyKey: dto.idempotencyKey,
         notes: dto.notes,
+        seatingPreference: dto.seatingPreference,
         status: 'PENDING',
       },
-      include: { table: true },
+      include: { table: true, customer: { select: { name: true, email: true } } },
     })
+
+    // Send confirmation email (non-blocking — don't fail the booking if email fails)
+    if (booking.customer?.email && !booking.customer.email.includes('@walkin.')) {
+      this.mail.sendCombinedBookingConfirmation(booking.id)
+    }
 
     return booking
   }
@@ -173,21 +254,52 @@ export class BookingsService {
     slotDatetime.setHours(h, m, 0, 0)
     const minsToSlot = (slotDatetime.getTime() - Date.now()) / 60_000
 
-    if (!isStaff && minsToSlot < 30 && minsToSlot > 0) {
-      await this.upsertStrike(booking.customerId, false, true)
+    const updated = await this.prisma.$transaction(async tx => {
+      if (!isStaff && booking.customerId && minsToSlot < 30 && minsToSlot > 0) {
+        const current = await tx.customerStrike.findUnique({ where: { customerId: booking.customerId } })
+        const cancelCount = (current?.cancelCount24h ?? 0) + 1
+        await tx.customerStrike.upsert({
+          where: { customerId: booking.customerId },
+          update: { cancelCount24h: cancelCount, isFlagged: cancelCount >= 3 },
+          create: { customerId: booking.customerId, cancelCount24h: cancelCount, isFlagged: cancelCount >= 3 },
+        })
+      }
+
+      return tx.booking.update({
+        where: { id: bookingId },
+        // Clear tableId so the unique index (tableId, slotDate, slotTime) releases the slot
+        // for new bookings. Without this, cancelled bookings silently block the slot.
+        data: { status: 'CANCELLED', tableId: null },
+        include: { customer: { select: { id: true, name: true, email: true } }, table: true },
+      })
+    })
+
+    // Send cancellation email — fire-and-forget
+    if (updated.customer?.email) {
+      const ref = bookingId.slice(-8).toUpperCase()
+      const [h, m2] = booking.slotTime.split(':').map(Number)
+      const slotTime = `${h % 12 || 12}:${String(m2).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
+      const slotDateStr = new Date(booking.slotDate).toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      this.mail.sendBookingCancellation(updated.customer.email, updated.customer.name, { ref, slotDate: slotDateStr, slotTime, isStaff })
     }
 
-    return this.prisma.booking.update({
-      where: { id: bookingId },
-      data: { status: 'CANCELLED' },
-    })
+    return updated
   }
 
   async markArrived(bookingId: string) {
     const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } })
     if (!booking) throw new NotFoundException('Booking not found')
     if (booking.status === 'CANCELLED') throw new BadRequestException('Booking is cancelled.')
-    return this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'ARRIVED' } })
+    const updated = await this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'ARRIVED' } })
+    this.logger.log(`Booking ${bookingId} marked ARRIVED — firing pre-order to kitchen`)
+    try {
+      const fired = await this.ordersService.firePreOrderToKitchen(bookingId)
+      if (fired) this.logger.log(`Pre-order ${fired.id} fired to kitchen (token #${fired.tokenNumber})`)
+      else this.logger.log(`No pre-order found for booking ${bookingId}`)
+    } catch (err: any) {
+      this.logger.error(`Failed to fire pre-order for booking ${bookingId}: ${err?.message}`, err?.stack)
+    }
+    return updated
   }
 
   async getMyBookings(customerId: string) {
@@ -198,17 +310,295 @@ export class BookingsService {
     })
   }
 
-  async getTodayBookings() {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
+  async getTodayBookings(dateStr?: string) {
+    // Use noon UTC anchor to match the @db.Date column regardless of server timezone.
+    // slotDate is stored as a date-only value (midnight UTC), so comparing with
+    // noon ± 12h always lands within the correct calendar day.
+    const anchor = dateStr
+      ? new Date(dateStr + 'T12:00:00.000Z')
+      : (() => { const d = new Date(); d.setUTCHours(12, 0, 0, 0); return d })()
+    const start = new Date(anchor); start.setUTCHours(0, 0, 0, 0)
+    const end   = new Date(anchor); end.setUTCHours(23, 59, 59, 999)
 
     return this.prisma.booking.findMany({
-      where: { slotDate: { gte: today, lt: tomorrow } },
+      where: { slotDate: { gte: start, lte: end } },
       orderBy: { slotTime: 'asc' },
+      include: {
+        customer: { select: { id: true, name: true, phone: true } },
+        table: true,
+        preOrders: {
+          where: { status: 'PRE_ORDER' },
+          include: {
+            items: {
+              include: {
+                menuItem: { select: { name: true } },
+                modifiers: true,
+              },
+            },
+          },
+        },
+      },
+    })
+  }
+
+  async staffConfirmBooking(bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } })
+    if (!booking) throw new NotFoundException('Booking not found')
+    return this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { status: 'CONFIRMED' },
       include: { customer: { select: { id: true, name: true, phone: true } }, table: true },
     })
+  }
+
+  async staffCreateBooking(dto: {
+    guestName: string
+    guestEmail: string          // required — guest must have an account
+    guestPhone?: string
+    partySize: number
+    slotDate: string
+    slotTime: string
+    tableId?: string
+    notes?: string
+    skipEmail?: boolean         // true when staff will add pre-order next — email sent after that step
+  }) {
+    if (!dto.guestEmail) throw new BadRequestException('Guest email is required')
+    const slotDate = new Date(dto.slotDate)
+    if (isNaN(slotDate.getTime())) throw new BadRequestException('Invalid date')
+
+    // ── Validate against restaurant settings (bookingsEnabled is the only bypass) ──
+    const cfg = await this.settingsService.get()
+
+    // Check day schedule
+    const daySchedule = getDaySchedule(dto.slotDate, cfg.weeklySchedule)
+    const dayName = DAY_NAMES[new Date(dto.slotDate + 'T12:00:00Z').getUTCDay()]
+    if (!daySchedule.open) {
+      throw new BadRequestException(`Restaurant is closed on ${dayName}s.`)
+    }
+
+    // Must be a valid slot on this day's operating-hours grid
+    const validSlots = generateSlots(daySchedule, cfg.slotDurationMins)
+    if (!validSlots.includes(dto.slotTime)) {
+      throw new BadRequestException(`Slot ${dto.slotTime} is outside ${dayName} operating hours.`)
+    }
+
+    // Peak hours block applies to all channels
+    if (cfg.peakHoursEnabled && isPeakSlot(dto.slotTime, cfg)) {
+      throw new BadRequestException('This slot falls in peak hours — walk-in only during peak times.')
+    }
+
+    // Same-day cutoff applies to all channels
+    const [slotH, slotM] = dto.slotTime.split(':').map(Number)
+    const slotDatetime = new Date(slotDate)
+    slotDatetime.setHours(slotH, slotM, 0, 0)
+    const minsUntilSlot = (slotDatetime.getTime() - Date.now()) / 60_000
+    if (minsUntilSlot < cfg.sameDayCutoffMins) {
+      throw new BadRequestException(`Bookings must be made at least ${cfg.sameDayCutoffMins} minutes before the slot.`)
+    }
+
+    // Max days ahead applies to all channels
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const maxDate = new Date(today); maxDate.setDate(maxDate.getDate() + cfg.maxBookingDaysAhead)
+    if (slotDate > maxDate) {
+      throw new BadRequestException(`Cannot book more than ${cfg.maxBookingDaysAhead} days in advance.`)
+    }
+
+    // ── Resolve or create customer (outside tx — bcrypt is CPU-bound) ──────────
+    let tempPassword: string | null = null
+    let isNewCustomer = false
+
+    const existing = await this.prisma.user.findUnique({ where: { email: dto.guestEmail } })
+    let customerId: string
+    let customerEmail: string
+    let customerName: string
+
+    if (existing) {
+      customerId    = existing.id
+      customerEmail = existing.email
+      customerName  = dto.guestName  // use the name staff entered (may differ)
+    } else {
+      tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase()
+      isNewCustomer = true
+      customerEmail = dto.guestEmail
+      customerName  = dto.guestName
+    }
+
+    // Hash outside the transaction — bcrypt is slow and must not hold a tx open
+    const newPasswordHash = isNewCustomer ? await bcrypt.hash(tempPassword!, 10) : null
+
+    // ── Assign table (outside tx — read-only, no need to lock) ──────────────
+    let tableId = dto.tableId
+    if (!tableId) {
+      const bookedTableIds = await this.prisma.booking.findMany({
+        where: { slotDate, slotTime: dto.slotTime, status: { in: ['PENDING', 'CONFIRMED', 'ARRIVED'] } },
+        select: { tableId: true },
+      })
+      const taken = bookedTableIds.map(b => b.tableId).filter(Boolean) as string[]
+      const freeTable = await this.prisma.restaurantTable.findFirst({
+        where: { id: { notIn: taken }, capacity: { gte: dto.partySize }, isActive: { not: false }, isReservable: true },
+        orderBy: { capacity: 'asc' },
+      })
+      tableId = freeTable?.id
+    }
+
+    // ── Atomic: upsert customer + create booking together ───────────────────
+    let booking: Awaited<ReturnType<typeof this.prisma.booking.create>>
+    try { booking = await this.prisma.$transaction(async tx => {
+      let resolvedCustomerId = customerId!
+
+      if (isNewCustomer) {
+        const created = await tx.user.create({
+          data: { name: customerName, email: customerEmail, phone: dto.guestPhone ?? null, passwordHash: newPasswordHash!, role: 'CUSTOMER', isVerified: true },
+        })
+        resolvedCustomerId = created.id
+        customerId = created.id
+      } else if (existing && (existing.name !== dto.guestName || (dto.guestPhone && existing.phone !== dto.guestPhone))) {
+        await tx.user.update({ where: { id: existing.id }, data: { name: dto.guestName, phone: dto.guestPhone ?? existing.phone } })
+      }
+
+      return tx.booking.create({
+        data: {
+          customerId: resolvedCustomerId,
+          tableId: tableId ?? null,
+          partySize: dto.partySize,
+          slotDate,
+          slotTime: dto.slotTime,
+          notes: dto.notes,
+          status: 'CONFIRMED',
+          idempotencyKey: `staff-${Date.now()}-${resolvedCustomerId}-${dto.slotTime}`,
+        },
+        include: { customer: { select: { id: true, name: true, email: true, phone: true } }, table: true },
+      })
+    }) } catch (err: any) {
+      // P2002 = unique constraint — table already has a booking at that slot
+      if (err?.code === 'P2002') throw new ConflictException('This table is already booked for that time slot. Please choose a different table or time.')
+      throw err
+    }
+
+    // ── Notify customer (fire-and-forget, after tx commits) ──────────────────
+    // skipEmail=true → staff is adding pre-order next; combined email fires from createPreOrder.
+    // skipEmail=false (or absent) → send now. Always use sendCombinedBookingConfirmation
+    // so new-customer credentials and booking details arrive in one email.
+    if (!dto.skipEmail) {
+      // tempPassword only set for new customers — combined email handles both cases
+      this.mail.sendCombinedBookingConfirmation(booking.id, isNewCustomer && tempPassword ? tempPassword : undefined)
+    }
+
+    return {
+      ...booking,
+      isNewCustomer,
+      customerCreated: true,
+      // Return plaintext temp password ONLY when email is being deferred so
+      // the caller can pass it through to the combined email step.
+      ...(dto.skipEmail && isNewCustomer && tempPassword ? { tempPassword } : {}),
+    }
+  }
+
+  async getAvailableTablesForSlot(dateStr: string, slotTime: string, partySize: number) {
+    const slotDate = new Date(dateStr)
+    if (isNaN(slotDate.getTime())) throw new BadRequestException('Invalid date')
+
+    const bookedTableIds = await this.prisma.booking.findMany({
+      where: { slotDate, slotTime, status: { in: ['PENDING', 'CONFIRMED', 'ARRIVED'] } },
+      select: { tableId: true },
+    })
+    const taken = bookedTableIds.map(b => b.tableId).filter(Boolean) as string[]
+
+    return this.prisma.restaurantTable.findMany({
+      where: { id: { notIn: taken }, capacity: { gte: partySize }, isActive: true, isReservable: true },
+      orderBy: { capacity: 'asc' },
+      select: { id: true, tableNumber: true, name: true, capacity: true, zone: true },
+    })
+  }
+
+  // Returns all reservable tables with enough capacity for the date
+  async getTablesForDate(dateStr: string, partySize: number) {
+    const slotDate = new Date(dateStr)
+    if (isNaN(slotDate.getTime())) throw new BadRequestException('Invalid date')
+    const tables = await this.prisma.restaurantTable.findMany({
+      where: { capacity: { gte: partySize }, isActive: true, isReservable: true },
+      orderBy: { capacity: 'asc' },
+      select: { id: true, tableNumber: true, name: true, capacity: true, zone: true },
+    })
+    const message = tables.length === 0
+      ? `No reservable tables available for a party of ${partySize}. Try a different date or party size.`
+      : `${tables.length} table${tables.length > 1 ? 's' : ''} available for ${partySize} guest${partySize > 1 ? 's' : ''} on ${dateStr}.`
+    return { _data: tables, _message: message }
+  }
+
+  // Returns available time slots for a specific table on a given date, grouped by period
+  async getSlotsForTable(dateStr: string, tableId: string) {
+    const slotDate = new Date(dateStr)
+    if (isNaN(slotDate.getTime())) throw new BadRequestException('Invalid date')
+    const cfg = await this.settingsService.get()
+
+    const table = await this.prisma.restaurantTable.findUnique({
+      where: { id: tableId },
+      select: { tableNumber: true, name: true },
+    })
+
+    const bookedSlots = await this.prisma.booking.findMany({
+      where: { tableId, slotDate, status: { in: ['PENDING', 'CONFIRMED', 'ARRIVED'] } },
+      select: { slotTime: true },
+    })
+    const bookedSet = new Set(bookedSlots.map(b => b.slotTime))
+
+    const tableName = table ? (table.name ?? `Table ${table.tableNumber}`) : 'this table'
+    const dayIdx = new Date(dateStr + 'T12:00:00Z').getUTCDay()
+    const dayName = DAY_NAMES[dayIdx]
+
+    // Get this day's specific schedule
+    const daySchedule = getDaySchedule(dateStr, cfg.weeklySchedule)
+    if (!daySchedule.open) {
+      return {
+        _data: { slots: [], grouped: { morning: [], afternoon: [], evening: [] }, openTime: '00:00', closeTime: '00:00', slotDurationMins: cfg.slotDurationMins },
+        _message: `Restaurant is closed on ${dayName}s.`,
+      }
+    }
+
+    const allSlots = generateSlots(daySchedule, cfg.slotDurationMins)
+
+    // Filter out past slots for today (using same cutoff as public availability)
+    const now = new Date()
+    const cutoffMs = now.getTime() + cfg.sameDayCutoffMins * 60_000
+    const isToday = slotDate.toDateString() === now.toDateString()
+    const futureSlots = isToday
+      ? allSlots.filter(s => {
+          const [h, m] = s.split(':').map(Number)
+          const slotDatetime = new Date(slotDate)
+          slotDatetime.setHours(h, m, 0, 0)
+          return slotDatetime.getTime() > cutoffMs
+        })
+      : allSlots
+
+    const nonBusySlots = cfg.peakHoursEnabled
+      ? futureSlots.filter(s => !isPeakSlot(s, cfg))
+      : futureSlots
+    const available = nonBusySlots.filter(s => !bookedSet.has(s))
+
+    const grouped = {
+      morning:   available.filter(t => parseInt(t) < 12),
+      afternoon: available.filter(t => { const h = parseInt(t); return h >= 12 && h < 18 }),
+      evening:   available.filter(t => parseInt(t) >= 18),
+    }
+
+    const totalAll = futureSlots.length
+    const booked = totalAll - available.length
+
+    let message: string
+    if (available.length === 0 && totalAll === 0) {
+      message = `Restaurant operating hours are not configured. Please check settings.`
+    } else if (available.length === 0) {
+      message = `${tableName} is fully booked on ${dateStr} (all ${booked} slots taken). Please select a different table or date.`
+    } else {
+      message = `${available.length} slot${available.length > 1 ? 's' : ''} available for ${tableName} on ${dateStr} (${booked} already booked).`
+    }
+
+    const firstShift = daySchedule.shifts?.[0] ?? DEFAULT_SHIFT
+    return {
+      _data: { slots: available, grouped, openTime: firstShift.openTime, closeTime: firstShift.closeTime, slotDurationMins: cfg.slotDurationMins },
+      _message: message,
+    }
   }
 
   async clearStrikes(customerId: string) {
@@ -262,8 +652,9 @@ export class BookingsService {
       const slotTime = new Date(b.slotDate)
       slotTime.setHours(h, m, 0, 0)
       if (slotTime <= now) {
-        const peak = cfg.peakHoursEnabled && isPeakSlot(b.slotTime, cfg.peakStart, cfg.peakEnd)
-        const windowMins = peak ? cfg.noShowWindowPeak : cfg.noShowWindowOffPeak
+        const peak = cfg.peakHoursEnabled && isPeakSlot(b.slotTime, cfg)
+        // Minimum 1 min grace even if peak grace is set to 0 — prevents instant NO_SHOW on CONFIRMED
+        const windowMins = Math.max(1, peak ? cfg.noShowGracePeriodPeak : cfg.noShowGracePeriodOffPeak)
         const expiresAt = new Date(slotTime.getTime() + windowMins * 60_000)
         await this.prisma.booking.update({
           where: { id: b.id },
@@ -276,8 +667,8 @@ export class BookingsService {
       where: { status: 'CONFIRMED', slotExpiresAt: { lt: now } },
     })
     for (const b of expired) {
-      await this.prisma.booking.update({ where: { id: b.id }, data: { status: 'NO_SHOW' } })
-      await this.upsertStrike(b.customerId, true)
+      await this.prisma.booking.update({ where: { id: b.id }, data: { status: 'NO_SHOW', tableId: null } })
+      if (b.customerId) await this.upsertStrike(b.customerId, true)
     }
   }
 

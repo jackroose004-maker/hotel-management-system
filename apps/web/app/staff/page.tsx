@@ -1,14 +1,16 @@
 'use client'
+'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Utensils, Clock, CheckCircle, TrendingUp,
   Users, Banknote, ArrowRight, RefreshCw, Zap,
-  ChefHat, CalendarDays, LayoutGrid,
+  ChefHat, CalendarDays, LayoutGrid, Timer,
 } from 'lucide-react'
 import type React from 'react'
 import api from '@/lib/api'
 import { getSocket } from '@/lib/socket'
+import { useAuthStore } from '@/store/auth'
 
 interface TableSummary { id: string; tableNumber: number; name: string | null; status: string; capacity: number }
 interface OrderSummary {
@@ -123,28 +125,36 @@ function UrgentRow({ order }: { order: OrderSummary }) {
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────────
+interface ActiveShift { id: string; clockIn: string; user: { id: string; name: string; role: string } }
+
 export default function Dashboard() {
   const router = useRouter()
+  const { user } = useAuthStore()
+  const isManager = ['OWNER', 'MANAGER'].includes(user?.role ?? '')
   const [tables, setTables]           = useState<TableSummary[]>([])
   const [orders, setOrders]           = useState<OrderSummary[]>([])
   const [todayRevenue, setTodayRevenue] = useState(0)
   const [todayOrders, setTodayOrders]   = useState(0)
   const [loading, setLoading]         = useState(true)
+  const [activeShifts, setActiveShifts] = useState<ActiveShift[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [tablesRes, ordersRes, reportsRes] = await Promise.all([
+      const requests: Promise<any>[] = [
         api.get('/tables'),
         api.get('/orders/active'),
         api.get('/reports/today').catch(() => ({ data: null })),
-      ])
+      ]
+      if (isManager) requests.push(api.get('/shifts/active').catch(() => ({ data: [] })))
+      const [tablesRes, ordersRes, reportsRes, shiftsRes] = await Promise.all(requests)
       setTables(tablesRes.data ?? [])
       setOrders(ordersRes.data ?? [])
       setTodayRevenue(reportsRes.data?.grossRevenue ?? 0)
       setTodayOrders(reportsRes.data?.orderCount ?? 0)
+      if (isManager) setActiveShifts(shiftsRes?.data ?? [])
     } finally { setLoading(false) }
-  }, [])
+  }, [isManager])
 
   useEffect(() => {
     load()
@@ -228,8 +238,26 @@ export default function Dashboard() {
     },
   ]
 
+  const today = new Date().toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long' })
+
   return (
-    <div className="flex flex-col flex-1 p-4 sm:p-6 gap-5 overflow-auto">
+    <div className="flex flex-col flex-1 overflow-hidden">
+
+      {/* Header — matches h-14 sidebar line */}
+      <div className="h-14 flex items-center justify-between px-4 sm:px-6 border-b flex-shrink-0"
+        style={{ backgroundColor: 'var(--header-bg)', borderColor: 'var(--card-border)' }}>
+        <div>
+          <h1 className="text-base font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>
+            {user?.role === 'OWNER' || user?.role === 'MANAGER' ? 'Overview' : 'Dashboard'}
+          </h1>
+          <p className="text-[11px] leading-none mt-0.5" style={{ color: 'var(--text-muted)' }}>{today}</p>
+        </div>
+        <button onClick={load} className="p-1.5 rounded-lg" style={{ color: 'var(--text-muted)' }} title="Refresh">
+          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+    <div className="flex-1 overflow-auto p-4 sm:p-6 flex flex-col gap-5">
 
       {/* ── 6-stat grid ─────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -368,11 +396,47 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <button onClick={load}
-        className="self-end flex items-center gap-1.5 text-xs transition-opacity hover:opacity-60"
-        style={{ color: 'var(--text-muted)' }}>
-        <RefreshCw size={11} className={loading ? 'animate-spin' : ''} /> Refresh
-      </button>
+      {/* ── Active shifts (manager/owner only) ── */}
+      {isManager && activeShifts.length > 0 && (
+        <div className="rounded-2xl border overflow-hidden"
+          style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
+          <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'var(--card-border)' }}>
+            <Timer size={14} style={{ color: 'var(--brand)' }} />
+            <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>On Shift Now</span>
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full ml-1"
+              style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }}>
+              {activeShifts.length}
+            </span>
+          </div>
+          <div className="divide-y" style={{ borderColor: 'var(--card-border)' }}>
+            {activeShifts.map(s => {
+              const elapsed = Date.now() - new Date(s.clockIn).getTime()
+              const h = Math.floor(elapsed / 3600000)
+              const m = Math.floor((elapsed % 3600000) / 60000)
+              const dur = h > 0 ? `${h}h ${m}m` : `${m}m`
+              return (
+                <div key={s.id} className="flex items-center justify-between px-4 py-2.5">
+                  <div>
+                    <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{s.user.name}</span>
+                    <span className="text-[10px] ml-2 capitalize" style={{ color: 'var(--text-muted)' }}>{s.user.role.toLowerCase()}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                      {new Date(s.clockIn).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
+                      {dur}
+                    </span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+    </div>
     </div>
   )
 }

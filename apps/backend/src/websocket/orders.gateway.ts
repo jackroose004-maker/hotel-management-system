@@ -17,4 +17,12 @@ export class OrdersGateway {
   emitOrderReady(order: any) {
     this.server.emit('order:ready', order)
   }
+
+  emitOrderHelp(payload: { orderId: string; message: string }) {
+    this.server.emit('order:help', payload)
+  }
+
+  emitOrderMessage(payload: { orderId: string; message: string; staffName: string }) {
+    this.server.emit('order:message', payload)
+  }
 }

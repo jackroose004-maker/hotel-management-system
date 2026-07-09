@@ -5,10 +5,11 @@ import Link from 'next/link'
 import {
   ClipboardList, CheckCircle2, ChefHat, BellRing, PackageCheck,
   ArrowLeft, ArrowRight, Loader2, AlertCircle, Banknote, CreditCard,
-  Star, XCircle, Clock, Plus,
+  Star, XCircle, Clock, Plus, MessageCircle, Send,
 } from 'lucide-react'
-import { useLangStore, applyLangDir, t } from '@/store/lang'
+import { useLangStore, applyLangDir, t, syncLangToServer, type Lang } from '@/store/lang'
 import { initBrand, useBrandStore } from '@/store/brand'
+import { getSocket } from '@/lib/socket'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
@@ -63,13 +64,19 @@ export default function TrackOrderPage() {
   const { lang, setLang } = useLangStore()
   const [mounted, setMounted] = useState(false)
   const ar = mounted && lang === 'ar'
-  const brandName   = useBrandStore(s => s.restaurantName)
-  const brandNameAr = useBrandStore(s => s.restaurantNameAr)
+  const brandName      = useBrandStore(s => s.restaurantName)
+  const brandNameAr    = useBrandStore(s => s.restaurantNameAr)
+  const showLangToggle = useBrandStore(s => s.showLanguageToggle)
   const logoUrl     = useBrandStore(s => s.logoUrl)
 
   const [order, setOrder]   = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]   = useState('')
+  const [messages, setMessages] = useState<{ from: 'staff' | 'guest'; text: string; at: Date }[]>([])
+  const [helpSent, setHelpSent] = useState(false)
+  const [helpBusy, setHelpBusy] = useState(false)
+  const [customHelp, setCustomHelp] = useState('')
+  const [showHelpInput, setShowHelpInput] = useState(false)
 
   const fetchOrder = useCallback(async () => {
     try {
@@ -87,6 +94,16 @@ export default function TrackOrderPage() {
     initBrand()
     fetchOrder()
   }, [lang, fetchOrder])
+
+  useEffect(() => {
+    const socket = getSocket()
+    const onMsg = (payload: { orderId: string; message: string; staffName: string }) => {
+      if (payload.orderId !== orderId) return
+      setMessages(prev => [...prev, { from: 'staff', text: payload.message, at: new Date() }])
+    }
+    socket.on('order:message', onMsg)
+    return () => { socket.off('order:message', onMsg) }
+  }, [orderId])
 
   useEffect(() => {
     if (!order || ['DELIVERED', 'CANCELLED'].includes(order.status)) return
@@ -118,29 +135,37 @@ export default function TrackOrderPage() {
         <div dir="ltr" className="flex items-center gap-3 h-full w-full">
           {ar ? (
             <>
-              <button onClick={() => setLang('en')} className="text-[10px] font-bold px-2.5 py-1 rounded-full ml-auto flex-shrink-0"
-                style={{ backgroundColor: '#141414', color: 'var(--brand)', border: '1px solid #222' }}>EN</button>
-              <div className="flex-1 min-w-0 text-right">
-                <div className="font-black text-sm text-white leading-none">{brandNameAr || brandName}</div>
-              </div>
-              {logoUrl
-                ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
-                : <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--brand)' }} />
-              }
+              {showLangToggle && (
+                <button onClick={() => { setLang('en'); syncLangToServer('en', typeof window !== 'undefined' ? localStorage.getItem('token') : null) }} className="text-[10px] font-bold px-2.5 py-1 rounded-full ml-auto flex-shrink-0"
+                  style={{ backgroundColor: '#141414', color: 'var(--brand)', border: '1px solid #222' }}>EN</button>
+              )}
+              <Link href="/" className="flex items-center gap-2 flex-shrink-0 ml-auto">
+                <div className="flex-1 min-w-0 text-right">
+                  <div className="font-black text-sm text-white leading-none">{brandNameAr || brandName}</div>
+                </div>
+                {logoUrl
+                  ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover" />
+                  : <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }} />
+                }
+              </Link>
               <Link href="/menu" className="text-gray-600 hover:text-white flex-shrink-0"><ArrowRight size={18} /></Link>
             </>
           ) : (
             <>
               <Link href="/menu" className="text-gray-600 hover:text-white flex-shrink-0"><ArrowLeft size={18} /></Link>
-              {logoUrl
-                ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
-                : <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--brand)' }} />
-              }
-              <div className="flex-1 min-w-0">
-                <div className="font-black text-sm text-white leading-none">{brandName}</div>
-              </div>
-              <button onClick={() => setLang('ar')} className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
-                style={{ backgroundColor: '#141414', color: '#666', border: '1px solid #222' }}>ع</button>
+              <Link href="/" className="flex items-center gap-2 flex-shrink-0">
+                {logoUrl
+                  ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover" />
+                  : <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ backgroundColor: 'var(--brand)' }} />
+                }
+                <div className="flex-1 min-w-0">
+                  <div className="font-black text-sm text-white leading-none">{brandName}</div>
+                </div>
+              </Link>
+              {showLangToggle && (
+                <button onClick={() => { setLang('ar'); syncLangToServer('ar', typeof window !== 'undefined' ? localStorage.getItem('token') : null) }} className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: '#141414', color: '#666', border: '1px solid #222' }}>ع</button>
+              )}
             </>
           )}
         </div>
@@ -346,6 +371,114 @@ export default function TrackOrderPage() {
                 <Plus size={15} />
                 {ar ? 'أضف المزيد من العناصر' : 'Add more items'}
               </Link>
+            )}
+
+            {/* ── Guest ↔ Staff chat ── */}
+            {isActive && (
+              <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid #1e1e1e' }}>
+                <div className="px-4 py-3 flex items-center gap-2"
+                  style={{ backgroundColor: '#0d0d0d', borderBottom: messages.length > 0 ? '1px solid #1e1e1e' : 'none' }}>
+                  <MessageCircle size={13} style={{ color: 'var(--brand)' }} />
+                  <span className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">
+                    {ar ? 'تواصل مع الموظفين' : 'Talk to staff'}
+                  </span>
+                </div>
+
+                {/* message thread */}
+                {messages.length > 0 && (
+                  <div className="px-4 py-3 space-y-2.5">
+                    {messages.map((m, i) => (
+                      <div key={i} className={`flex ${m.from === 'guest' ? 'justify-end' : 'justify-start'}`}>
+                        <div className="max-w-[80%] px-3 py-2 rounded-2xl text-sm leading-snug"
+                          style={m.from === 'staff'
+                            ? { backgroundColor: '#1a1a1a', color: '#e5e5e5', borderBottomLeftRadius: 6 }
+                            : { backgroundColor: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)', borderBottomRightRadius: 6 }}>
+                          {m.from === 'staff' && (
+                            <p className="text-[9px] font-bold mb-1" style={{ color: '#666' }}>Staff</p>
+                          )}
+                          {m.text}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* help actions */}
+                <div className="px-4 pb-4 pt-3 space-y-2">
+                  {!helpSent ? (
+                    <>
+                      {!showHelpInput ? (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={async () => {
+                              setHelpBusy(true)
+                              await fetch(`${API}/orders/${orderId}/help`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: '' }) })
+                              setMessages(p => [...p, { from: 'guest', text: ar ? 'أحتاج مساعدة' : 'Need help', at: new Date() }])
+                              setHelpSent(true)
+                              setHelpBusy(false)
+                            }}
+                            disabled={helpBusy}
+                            className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all disabled:opacity-40"
+                            style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}>
+                            {helpBusy ? <Loader2 size={12} className="animate-spin" /> : '🙋'}
+                            {ar ? 'أحتاج مساعدة' : 'Need help?'}
+                          </button>
+                          <button
+                            onClick={() => setShowHelpInput(true)}
+                            className="px-3 py-2.5 rounded-xl text-xs font-bold transition-all"
+                            style={{ backgroundColor: '#1a1a1a', color: '#666', border: '1px solid #2a2a2a' }}>
+                            {ar ? 'رسالة' : 'Message'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <input
+                            autoFocus
+                            value={customHelp}
+                            onChange={e => setCustomHelp(e.target.value)}
+                            onKeyDown={async e => {
+                              if (e.key !== 'Enter' || !customHelp.trim()) return
+                              setHelpBusy(true)
+                              await fetch(`${API}/orders/${orderId}/help`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: customHelp.trim() }) })
+                              setMessages(p => [...p, { from: 'guest', text: customHelp.trim(), at: new Date() }])
+                              setCustomHelp('')
+                              setShowHelpInput(false)
+                              setHelpSent(true)
+                              setHelpBusy(false)
+                            }}
+                            placeholder={ar ? 'اكتب رسالتك…' : 'Type your message…'}
+                            className="flex-1 rounded-xl px-3 py-2.5 text-sm outline-none"
+                            style={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a', color: '#e5e5e5' }}
+                          />
+                          <button
+                            disabled={helpBusy || !customHelp.trim()}
+                            onClick={async () => {
+                              if (!customHelp.trim()) return
+                              setHelpBusy(true)
+                              await fetch(`${API}/orders/${orderId}/help`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: customHelp.trim() }) })
+                              setMessages(p => [...p, { from: 'guest', text: customHelp.trim(), at: new Date() }])
+                              setCustomHelp('')
+                              setShowHelpInput(false)
+                              setHelpSent(true)
+                              setHelpBusy(false)
+                            }}
+                            className="w-10 h-10 rounded-xl flex items-center justify-center disabled:opacity-40"
+                            style={{ backgroundColor: 'var(--brand)' }}>
+                            <Send size={13} style={{ color: '#000' }} />
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 py-1">
+                      <CheckCircle2 size={13} style={{ color: '#34d399' }} />
+                      <p className="text-xs" style={{ color: '#34d399' }}>
+                        {ar ? 'تم إرسال طلبك للموظفين' : 'Staff have been notified — they\'ll reply shortly'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
             {/* ── Delivered: back to menu CTA ── */}

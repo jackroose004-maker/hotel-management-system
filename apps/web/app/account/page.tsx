@@ -37,18 +37,19 @@ const BOOKING_STATUS_LABEL_AR: Record<string, string> = {
   NO_SHOW: 'لم يحضر', CANCELLED: 'ملغى',
 }
 const DIETARY_OPTIONS = [
-  { id: 'vegetarian', label: 'Vegetarian', emoji: '🥗' },
-  { id: 'vegan',      label: 'Vegan',      emoji: '🌱' },
-  { id: 'halal',      label: 'Halal only', emoji: '☪️'  },
-  { id: 'gluten',     label: 'Gluten-free',emoji: '🌾' },
-  { id: 'dairy',      label: 'Dairy-free', emoji: '🥛' },
-  { id: 'nut',        label: 'Nut allergy',emoji: '🥜' },
-  { id: 'seafood',    label: 'No seafood', emoji: '🦐' },
-  { id: 'spicy',      label: 'Mild spice', emoji: '🌶️' },
+  { id: 'vegetarian', label: 'Vegetarian',  labelAr: 'نباتي',          emoji: '🥗' },
+  { id: 'vegan',      label: 'Vegan',       labelAr: 'نباتي صرف',      emoji: '🌱' },
+  { id: 'halal',      label: 'Halal only',  labelAr: 'حلال فقط',       emoji: '☪️'  },
+  { id: 'gluten',     label: 'Gluten-free', labelAr: 'خالٍ من الغلوتين',emoji: '🌾' },
+  { id: 'dairy',      label: 'Dairy-free',  labelAr: 'خالٍ من الألبان', emoji: '🥛' },
+  { id: 'nut',        label: 'Nut allergy', labelAr: 'حساسية من المكسرات',emoji: '🥜' },
+  { id: 'seafood',    label: 'No seafood',  labelAr: 'بدون مأكولات بحرية',emoji: '🦐' },
+  { id: 'spicy',      label: 'Mild spice',  labelAr: 'تتبيل خفيف',     emoji: '🌶️' },
 ]
 
-function slotLabel(t: string) {
-  const [h, m] = t.split(':').map(Number)
+
+function slotLabel(timeStr: string) {
+  const [h, m] = timeStr.split(':').map(Number)
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
 function timeAgo(dateStr: string) {
@@ -110,7 +111,10 @@ function AccountContent() {
   const searchParams = useSearchParams()
   const { user, token, logout, init } = useAuthStore()
   const cart = useCartStore()
-  const logoUrl = useBrandStore(s => s.logoUrl)
+  const logoUrl        = useBrandStore(s => s.logoUrl)
+  const brandName      = useBrandStore(s => s.restaurantName)
+  const brandNameAr    = useBrandStore(s => s.restaurantNameAr)
+  const showLangToggle = useBrandStore(s => s.showLanguageToggle)
   const { lang, setLang } = useLangStore()
   const ar = lang === 'ar'
   useEffect(() => { applyLangDir(lang) }, [lang])
@@ -158,8 +162,8 @@ function AccountContent() {
 
   useEffect(() => {
     if (!token) { router.replace('/login?redirect=/account'); return }
-    if (user && ['STAFF', 'MANAGER', 'OWNER'].includes(user.role)) {
-      router.replace('/staff')
+    if (user && ['STAFF', 'MANAGER', 'OWNER', 'CHEF'].includes(user.role)) {
+      router.replace('/staff/orders')
       return
     }
     if (searchParams.get('tab') === 'bookings') setTab('bookings')
@@ -401,17 +405,19 @@ function AccountContent() {
                     <UtensilsCrossed size={14} className="text-black" />
                   </div>
               }
-              <span className="font-black text-sm text-white tracking-wide">AL MANZIL</span>
+              <span className="font-black text-sm text-white tracking-wide">{ar ? (brandNameAr || brandName) : brandName}</span>
             </Link>
             <div className="flex items-center gap-2">
-              <button onClick={() => setLang(ar ? 'en' : 'ar')}
-                className="text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
-                style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: ar ? 'var(--brand)' : '#555', border: '1px solid rgba(255,255,255,0.08)' }}>
-                {ar ? 'EN' : 'ع'}
-              </button>
+              {showLangToggle && (
+                <button onClick={() => setLang(ar ? 'en' : 'ar')}
+                  className="text-[10px] font-bold px-2.5 py-1 rounded-full transition-all"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.06)', color: ar ? 'var(--brand)' : '#555', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  {ar ? 'EN' : 'ع'}
+                </button>
+              )}
               <button onClick={() => { logout(); router.push('/') }}
                 className="flex items-center gap-1.5 text-xs text-gray-600 hover:text-gray-300 transition-colors">
-                <LogOut size={13} /> {ar ? 'خروج' : 'Sign out'}
+                <LogOut size={13} /> {t(lang, 'nav.signOut')}
               </button>
             </div>
           </div>
@@ -428,7 +434,7 @@ function AccountContent() {
                 </div>
             }
             <div>
-              <p className="text-gray-500 text-xs mb-0.5">Welcome back</p>
+              <p className="text-gray-500 text-xs mb-0.5">{t(lang, 'account.welcomeBack')}</p>
               <h1 className="text-2xl font-black text-white leading-none">{firstName}</h1>
               <p className="text-gray-600 text-xs mt-1">{user.email}</p>
             </div>
@@ -437,10 +443,10 @@ function AccountContent() {
           {/* Stats row */}
           <div className="grid grid-cols-4 gap-2" style={{ animation: 'fadeUp 0.5s 80ms ease both' }}>
             {[
-              { label: 'Orders',     value: totalOrders || '—' },
-              { label: 'Spent',      value: totalOrders ? `AED ${totalSpent.toFixed(0)}` : '—' },
-              { label: 'Visits',     value: visits || '—' },
-              { label: 'Favourites', value: favItems.length || '—', action: () => setTab('favourites') },
+              { label: t(lang, 'account.orders'),     value: totalOrders || '—' },
+              { label: t(lang, 'account.spent'),      value: totalOrders ? `AED ${totalSpent.toFixed(0)}` : '—' },
+              { label: t(lang, 'account.visits'),     value: visits || '—' },
+              { label: t(lang, 'account.favourites'), value: favItems.length || '—', action: () => setTab('favourites') },
             ].map((s, i) => (
               <button key={s.label} onClick={s.action}
                 className="rounded-2xl px-2 py-3 text-center transition-all"
@@ -487,7 +493,7 @@ function AccountContent() {
                   style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)', border: '1px solid rgba(var(--brand-rgb),0.25)' }}>
                   <div className="w-2 h-2 rounded-full animate-pulse flex-shrink-0" style={{ backgroundColor: 'var(--brand)' }} />
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-sm" style={{ color: 'var(--brand)' }}>Order in progress</div>
+                    <div className="font-bold text-sm" style={{ color: 'var(--brand)' }}>{t(lang, 'account.orderInProgress')}</div>
                     <div className="text-xs text-gray-500 mt-0.5 truncate">
                       {(ar ? ORDER_STATUS_LABEL_AR : ORDER_STATUS_LABEL)[activeOrders[0].status]} · {activeOrders[0].items.slice(0,2).map((i: any) => ar && i.menuItem.nameAr ? i.menuItem.nameAr : i.menuItem.name).join('، ')}
                     </div>
@@ -506,10 +512,10 @@ function AccountContent() {
                   style={{ backgroundColor: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)' }}>
                   <CalendarDays size={18} className="text-blue-400 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-sm text-blue-300">Upcoming reservation</div>
+                    <div className="font-bold text-sm text-blue-300">{t(lang, 'account.upcomingReservation')}</div>
                     <div className="text-xs text-gray-500 mt-0.5">
-                      {new Date(upcomingBooks[0].slotDate).toLocaleDateString('en-AE', { weekday: 'short', day: 'numeric', month: 'short' })}
-                      {' at '}{slotLabel(upcomingBooks[0].slotTime)} · {upcomingBooks[0].partySize} guests
+                      {new Date(upcomingBooks[0].slotDate).toLocaleDateString(ar ? 'ar-AE' : 'en-AE', { weekday: 'short', day: 'numeric', month: 'short' })}
+                      {` ${t(lang, 'account.atTime')} `}{slotLabel(upcomingBooks[0].slotTime)} · {ar ? `${upcomingBooks[0].partySize} ${upcomingBooks[0].partySize === 1 ? 'ضيف' : 'ضيوف'}` : `${upcomingBooks[0].partySize} ${upcomingBooks[0].partySize === 1 ? 'guest' : 'guests'}`}
                     </div>
                   </div>
                   <button onClick={() => setTab('bookings')} className="text-blue-400"><ChevronRight size={16} /></button>
@@ -525,8 +531,8 @@ function AccountContent() {
                   style={{ backgroundColor: 'rgba(255,255,255,0.03)', border: '1px dashed #2a2a2a' }}>
                   <Leaf size={16} className="text-green-500 flex-shrink-0" />
                   <div className="flex-1">
-                    <div className="text-sm font-semibold text-white">Set dietary preferences</div>
-                    <div className="text-xs text-gray-600 mt-0.5">Helps the kitchen prepare your meals correctly</div>
+                    <div className="text-sm font-semibold text-white">{t(lang, 'account.setDietary')}</div>
+                    <div className="text-xs text-gray-600 mt-0.5">{t(lang, 'account.setDietaryHint')}</div>
                   </div>
                   <ChevronRight size={14} className="text-gray-700" />
                 </button>
@@ -535,15 +541,15 @@ function AccountContent() {
 
             {/* Quick actions */}
             <FadeIn delay={100}>
-              <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-2">Quick Actions</p>
+              <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-2">{t(lang, 'home.quickActions')}</p>
               <div className="grid grid-cols-2 gap-3">
                 <Link href="/menu"
                   className="rounded-2xl p-4 flex flex-col gap-3 transition-all active:scale-[0.97]"
                   style={{ backgroundColor: 'var(--brand)' }}>
                   <Utensils size={22} className="text-black" />
                   <div>
-                    <div className="font-black text-black text-sm">Order Food</div>
-                    <div className="text-black/60 text-xs">Browse full menu</div>
+                    <div className="font-black text-black text-sm">{t(lang, 'home.orderFood')}</div>
+                    <div className="text-black/60 text-xs">{t(lang, 'home.browseMenu')}</div>
                   </div>
                 </Link>
                 <Link href="/book"
@@ -551,8 +557,8 @@ function AccountContent() {
                   style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
                   <CalendarDays size={22} style={{ color: 'var(--brand)' }} />
                   <div>
-                    <div className="font-black text-white text-sm">Reserve Table</div>
-                    <div className="text-gray-600 text-xs">Pick date &amp; time</div>
+                    <div className="font-black text-white text-sm">{t(lang, 'home.reserveTable')}</div>
+                    <div className="text-gray-600 text-xs">{t(lang, 'home.pickDateTime')}</div>
                   </div>
                 </Link>
               </div>
@@ -563,10 +569,10 @@ function AccountContent() {
               <FadeIn delay={130}>
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest flex items-center gap-1.5">
-                    <Heart size={10} className="text-red-400 fill-red-400" /> Favourites
+                    <Heart size={10} className="text-red-400 fill-red-400" /> {t(lang, 'account.favourites')}
                   </p>
                   <button onClick={() => setTab('favourites')} style={{ color: 'var(--brand)' }} className="text-xs flex items-center gap-1">
-                    See all <ArrowRight size={11} />
+                    {t(lang, 'account.seeAll')} <ArrowRight size={11} />
                   </button>
                 </div>
                 <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
@@ -598,9 +604,9 @@ function AccountContent() {
               return (
                 <FadeIn delay={160}>
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Must Try</p>
+                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">{t(lang, 'home.mustTry')}</p>
                     <Link href="/menu" style={{ color: 'var(--brand)' }} className="text-xs flex items-center gap-1">
-                      View all <ArrowRight size={11} />
+                      {t(lang, 'home.viewAll')} <ArrowRight size={11} />
                     </Link>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3"
@@ -677,18 +683,18 @@ function AccountContent() {
                   <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#111' }}>
                     <ShoppingBag size={28} className="text-gray-700" />
                   </div>
-                  <p className="text-white font-bold mb-1">No orders yet</p>
-                  <p className="text-gray-600 text-sm mb-5">Ready to try something amazing?</p>
+                  <p className="text-white font-bold mb-1">{t(lang, 'account.noOrders')}</p>
+                  <p className="text-gray-600 text-sm mb-5">{t(lang, 'account.noOrdersHint')}</p>
                   <Link href="/menu" className="inline-flex items-center gap-2 font-bold px-6 py-3 rounded-2xl text-sm"
                     style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-                    <Utensils size={15} /> Browse Menu
+                    <Utensils size={15} /> {t(lang, 'account.browseMenuBtn')}
                   </Link>
                 </div>
               </FadeIn>
             ) : (
               <div className="space-y-3">
                 {activeOrders.length > 0 && (
-                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">Active</p>
+                  <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest">{t(lang, 'account.activeLabel')}</p>
                 )}
                 {orders.map((order, i) => {
                   const isActive = !['DELIVERED','CANCELLED'].includes(order.status)
@@ -718,21 +724,21 @@ function AccountContent() {
                         </div>
 
                         <div className="text-gray-500 text-xs mb-3 leading-relaxed">
-                          {order.items.slice(0, 3).map((i: any) => `${i.quantity}× ${i.menuItem.name}`).join(', ')}
-                          {order.items.length > 3 && <span className="text-gray-700"> +{order.items.length - 3} more</span>}
+                          {order.items.slice(0, 3).map((i: any) => `${i.quantity}× ${ar && i.menuItem.nameAr ? i.menuItem.nameAr : i.menuItem.name}`).join('، ')}
+                          {order.items.length > 3 && <span className="text-gray-700"> {ar ? `+${order.items.length - 3} أخرى` : `+${order.items.length - 3} more`}</span>}
                         </div>
 
                         <div className="flex items-center justify-between">
                           <div>
                             <span className="font-black text-white text-base">AED {Number(order.total).toFixed(2)}</span>
                             <span className="text-gray-700 text-xs ml-2">
-                              {order.type === 'TAKEAWAY' ? `Token #${order.tokenNumber}` : order.table ? `Table ${order.table.tableNumber}` : 'Dine-in'}
+                              {order.type === 'TAKEAWAY' ? (ar ? `رمز #${order.tokenNumber}` : `Token #${order.tokenNumber}`) : order.table ? (ar ? `طاولة ${order.table.tableNumber}` : `Table ${order.table.tableNumber}`) : t(lang, 'account.dineIn')}
                             </span>
                           </div>
                           {isActive && (
                             <Link href="/menu?track=1" className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-xl"
                               style={{ border: '1px solid rgba(var(--brand-rgb),0.3)', color: 'var(--brand)' }}>
-                              Track <ChevronRight size={12} />
+                              {t(lang, 'account.track')} <ChevronRight size={12} />
                             </Link>
                           )}
                         </div>
@@ -746,7 +752,7 @@ function AccountContent() {
                               </div>
                             ) : (
                               <div className="space-y-2">
-                                <div className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">Rate this order</div>
+                                <div className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">{t(lang, 'account.rateOrder')}</div>
                                 <div className="flex items-center gap-3 flex-wrap">
                                   <StarRating value={fb?.rating ?? 0}
                                     onChange={rating => setFeedback(prev => ({ ...prev, [order.id]: { rating, comment: prev[order.id]?.comment ?? '', submitting: false, done: false } }))}
@@ -755,13 +761,13 @@ function AccountContent() {
                                     <>
                                       <input value={fb?.comment ?? ''}
                                         onChange={e => setFeedback(prev => ({ ...prev, [order.id]: { ...prev[order.id], comment: e.target.value } }))}
-                                        placeholder="Any comments? (optional)"
+                                        placeholder={t(lang, 'account.commentPlaceholder')}
                                         className="flex-1 min-w-0 text-white text-xs px-3 py-1.5 rounded-lg focus:outline-none placeholder-gray-700"
                                         style={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }} />
                                       <button onClick={() => submitFeedback(order.id)} disabled={fb?.submitting}
                                         className="text-xs px-3 py-1.5 rounded-lg font-bold flex-shrink-0 disabled:opacity-50"
                                         style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-                                        {fb?.submitting ? '…' : 'Submit'}
+                                        {fb?.submitting ? '…' : t(lang, 'account.submit')}
                                       </button>
                                     </>
                                   )}
@@ -792,11 +798,11 @@ function AccountContent() {
                   <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#111' }}>
                     <CalendarDays size={28} className="text-gray-700" />
                   </div>
-                  <p className="text-white font-bold mb-1">No reservations yet</p>
-                  <p className="text-gray-600 text-sm mb-5">Reserve your table in seconds</p>
+                  <p className="text-white font-bold mb-1">{t(lang, 'account.noReservations')}</p>
+                  <p className="text-gray-600 text-sm mb-5">{t(lang, 'account.noReservationsHint')}</p>
                   <Link href="/book" className="inline-flex items-center gap-2 font-bold px-6 py-3 rounded-2xl text-sm"
                     style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-                    <CalendarDays size={15} /> Book a Table
+                    <CalendarDays size={15} /> {t(lang, 'account.bookTableBtn')}
                   </Link>
                 </div>
               </FadeIn>
@@ -804,7 +810,7 @@ function AccountContent() {
               <>
                 {upcomingBooks.length > 0 && (
                   <div>
-                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-3">Upcoming</p>
+                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-3">{t(lang, 'account.upcoming')}</p>
                     <div className="space-y-3">
                       {upcomingBooks.map((b, i) => (
                         <FadeIn key={b.id} delay={i * 50}>
@@ -813,26 +819,26 @@ function AccountContent() {
                             <div className="flex items-start justify-between mb-3">
                               <div>
                                 <div className="font-bold text-white text-sm">
-                                  {new Date(b.slotDate).toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'short' })}
+                                  {new Date(b.slotDate).toLocaleDateString(ar ? 'ar-AE' : 'en-AE', { weekday: 'long', day: 'numeric', month: 'short' })}
                                 </div>
                                 <div className="font-bold text-sm mt-0.5" style={{ color: 'var(--brand)' }}>{slotLabel(b.slotTime)}</div>
                               </div>
                               <StatusBadge variant={bookingStatusVariant(b.status)} label={(ar ? BOOKING_STATUS_LABEL_AR : BOOKING_STATUS_LABEL)[b.status] ?? b.status} size="sm" />
                             </div>
                             <div className="flex items-center gap-2 text-xs text-gray-600 mb-4">
-                              <span>Table {b.table?.tableNumber ?? '—'}</span>
+                              <span>{b.table?.tableNumber ? (ar ? `طاولة ${b.table.tableNumber}` : `Table ${b.table.tableNumber}`) : '—'}</span>
                               <span>·</span>
-                              <span>{b.partySize} {b.partySize === 1 ? 'guest' : 'guests'}</span>
+                              <span>{ar ? `${b.partySize} ${b.partySize === 1 ? 'ضيف' : 'ضيوف'}` : `${b.partySize} ${b.partySize === 1 ? 'guest' : 'guests'}`}</span>
                               {b.notes && <><span>·</span><span className="truncate text-gray-700">{b.notes}</span></>}
                             </div>
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-lg"
                                 style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
-                                <Clock size={10} /> Arrive within 15 min of slot
+                                <Clock size={10} /> {t(lang, 'account.arriveWithin')}
                               </div>
                               <button onClick={() => cancelBooking(b.id)} disabled={cancellingId === b.id}
                                 className="text-xs text-red-500 hover:text-red-400 disabled:opacity-40 font-medium">
-                                {cancellingId === b.id ? <Loader2 size={12} className="animate-spin" /> : 'Cancel'}
+                                {cancellingId === b.id ? <Loader2 size={12} className="animate-spin" /> : t(lang, 'account.cancel')}
                               </button>
                             </div>
                           </div>
@@ -844,7 +850,7 @@ function AccountContent() {
 
                 {bookings.filter(b => !['PENDING','CONFIRMED'].includes(b.status)).length > 0 && (
                   <div>
-                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-3">History</p>
+                    <p className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-3">{t(lang, 'account.history')}</p>
                     <div className="space-y-2">
                       {bookings.filter(b => !['PENDING','CONFIRMED'].includes(b.status)).map((b, i) => (
                         <FadeIn key={b.id} delay={i * 40}>
@@ -852,10 +858,10 @@ function AccountContent() {
                             style={{ backgroundColor: '#0d0d0d', border: '1px solid #1a1a1a' }}>
                             <div className="flex-1 min-w-0">
                               <div className="text-sm font-medium text-gray-400 truncate">
-                                {new Date(b.slotDate).toLocaleDateString('en-AE', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                {new Date(b.slotDate).toLocaleDateString(ar ? 'ar-AE' : 'en-AE', { day: 'numeric', month: 'short', year: 'numeric' })}
                                 {' · '}{slotLabel(b.slotTime)}
                               </div>
-                              <div className="text-xs text-gray-700 mt-0.5">{b.partySize} guests</div>
+                              <div className="text-xs text-gray-700 mt-0.5">{ar ? `${b.partySize} ${b.partySize === 1 ? 'ضيف' : 'ضيوف'}` : `${b.partySize} ${b.partySize === 1 ? 'guest' : 'guests'}`}</div>
                             </div>
                             <StatusBadge variant={bookingStatusVariant(b.status)} label={(ar ? BOOKING_STATUS_LABEL_AR : BOOKING_STATUS_LABEL)[b.status] ?? b.status} size="xs" />
                           </div>
@@ -868,7 +874,7 @@ function AccountContent() {
                 <FadeIn delay={100}>
                   <Link href="/book" className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-sm font-bold"
                     style={{ border: '1px solid rgba(var(--brand-rgb),0.3)', color: 'var(--brand)' }}>
-                    <CalendarDays size={15} /> Make another reservation
+                    <CalendarDays size={15} /> {t(lang, 'account.makeAnotherReservation')}
                   </Link>
                 </FadeIn>
               </>
@@ -889,17 +895,17 @@ function AccountContent() {
                   <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4" style={{ backgroundColor: '#111' }}>
                     <Heart size={28} className="text-gray-700" />
                   </div>
-                  <p className="text-white font-bold mb-1">No favourites yet</p>
-                  <p className="text-gray-600 text-sm mb-5">Tap ♡ on any dish while browsing the menu</p>
+                  <p className="text-white font-bold mb-1">{t(lang, 'account.noFavourites')}</p>
+                  <p className="text-gray-600 text-sm mb-5">{t(lang, 'account.noFavouritesHint')}</p>
                   <Link href="/menu" className="inline-flex items-center gap-2 font-bold px-6 py-3 rounded-2xl text-sm"
                     style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-                    <Utensils size={15} /> Browse Menu
+                    <Utensils size={15} /> {t(lang, 'account.browseMenuBtn')}
                   </Link>
                 </div>
               </FadeIn>
             ) : (
               <>
-                <p className="text-xs text-gray-600 mb-4">{favItems.length} saved dish{favItems.length !== 1 ? 'es' : ''}</p>
+                <p className="text-xs text-gray-600 mb-4">{ar ? `${favItems.length} طبق محفوظ` : `${favItems.length} saved dish${favItems.length !== 1 ? 'es' : ''}`}</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {favItems.map((item: any, i) => (
                     <FadeIn key={item.id} delay={i * 40}>
@@ -931,7 +937,7 @@ function AccountContent() {
                               onClick={() => router.push(`/menu?open=${item.id}`)}
                               className="flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-lg"
                               style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-                              <Plus size={10} /> View
+                              <Plus size={10} /> {t(lang, 'account.view')}
                             </button>
                           </div>
                         </div>
@@ -953,45 +959,45 @@ function AccountContent() {
               <div className="rounded-2xl p-4" style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                    <User size={14} style={{ color: 'var(--brand)' }} /> Personal Info
+                    <User size={14} style={{ color: 'var(--brand)' }} /> {t(lang, 'account.personalInfo')}
                   </h2>
                   {!editingProfile
                     ? <button onClick={() => setEditingProfile(true)} className="flex items-center gap-1 text-xs text-gray-600 hover:text-white transition-colors">
-                        <Edit3 size={12} /> Edit
+                        <Edit3 size={12} /> {t(lang, 'account.edit')}
                       </button>
                     : <div className="flex items-center gap-2">
                         <button onClick={() => { setEditingProfile(false); setProfileName(user.name) }}
                           className="text-xs text-gray-600 hover:text-white flex items-center gap-1">
-                          <X size={12} /> Cancel
+                          <X size={12} /> {t(lang, 'account.cancel')}
                         </button>
                         <button onClick={saveProfile} disabled={savingProfile}
                           className="text-xs px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 disabled:opacity-50"
                           style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-                          <Save size={11} /> {savingProfile ? '…' : 'Save'}
+                          <Save size={11} /> {savingProfile ? '…' : t(lang, 'account.save')}
                         </button>
                       </div>
                   }
                 </div>
                 <div className="space-y-3">
                   <div>
-                    <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1 block">Name</label>
+                    <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1 block">{t(lang, 'account.name')}</label>
                     {editingProfile
                       ? <input value={profileName} onChange={e => setProfileName(e.target.value)}
                           className="w-full text-white text-sm px-3.5 py-2.5 rounded-xl focus:outline-none"
                           style={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}
-                          placeholder="Your name" />
+                          placeholder={t(lang, 'account.yourNamePlaceholder')} />
                       : <div className="text-sm text-white">{user.name}</div>
                     }
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1 block">Email</label>
+                    <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1 block">{t(lang, 'account.email')}</label>
                     <div className="text-sm text-gray-500 flex items-center gap-2">
                       <Mail size={12} className="text-gray-700" /> {user.email}
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>Verified</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>{t(lang, 'account.verified')}</span>
                     </div>
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1 block">Member since</label>
+                    <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1 block">{t(lang, 'account.memberSince')}</label>
                     <div className="text-sm text-gray-500">
                       {(user as any).createdAt ? new Date((user as any).createdAt).toLocaleDateString('en-AE', { month: 'long', year: 'numeric' }) : '—'}
                     </div>
@@ -1004,11 +1010,9 @@ function AccountContent() {
             <FadeIn delay={60}>
               <div className="rounded-2xl p-4" style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
                 <h2 className="text-sm font-bold text-white flex items-center gap-2 mb-1">
-                  <Leaf size={14} className="text-green-500" /> Dietary Preferences
+                  <Leaf size={14} className="text-green-500" /> {t(lang, 'account.dietaryPrefs')}
                 </h2>
-                <p className="text-xs text-gray-600 mb-4">
-                  These are saved to your profile and automatically added as a note with every order you place, so the kitchen knows.
-                </p>
+                <p className="text-xs text-gray-600 mb-4">{t(lang, 'account.dietaryHint')}</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {DIETARY_OPTIONS.map(opt => {
                     const active = dietary.includes(opt.id)
@@ -1019,7 +1023,7 @@ function AccountContent() {
                           ? { backgroundColor: 'rgba(34,197,94,0.1)', color: '#4ade80', border: '1px solid rgba(34,197,94,0.3)' }
                           : { backgroundColor: '#1a1a1a', color: '#666', border: '1px solid #2a2a2a' }}>
                         <span>{opt.emoji}</span>
-                        <span className="truncate">{opt.label}</span>
+                        <span className="truncate">{ar ? opt.labelAr : opt.label}</span>
                         {active && <Check size={11} className="ml-auto flex-shrink-0 text-green-400" />}
                       </button>
                     )
@@ -1028,7 +1032,7 @@ function AccountContent() {
                 {dietary.length > 0 && (
                   <p className="text-[10px] text-green-600 mt-3 flex items-center gap-1.5">
                     <Check size={10} />
-                    {dietary.length} preference{dietary.length !== 1 ? 's' : ''} active — will appear in your order notes to the kitchen
+                    {ar ? `${dietary.length} تفضيل نشط — سيظهر في ملاحظات طلبك للمطبخ` : `${dietary.length} preference${dietary.length !== 1 ? 's' : ''} active — will appear in your order notes to the kitchen`}
                   </p>
                 )}
               </div>
@@ -1038,13 +1042,13 @@ function AccountContent() {
             <FadeIn delay={100}>
               <div className="rounded-2xl p-4" style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
                 <h2 className="text-sm font-bold text-white flex items-center gap-2 mb-1">
-                  <Bell size={14} style={{ color: 'var(--brand)' }} /> Notifications
+                  <Bell size={14} style={{ color: 'var(--brand)' }} /> {t(lang, 'account.notifications')}
                 </h2>
-                <p className="text-xs text-gray-600 mb-4">Preferences saved — in-app push notifications coming soon.</p>
+                <p className="text-xs text-gray-600 mb-4">{t(lang, 'account.notifHint')}</p>
                 <div className="space-y-3">
                   {[
-                    { label: 'Order updates',     sub: 'When your order status changes',    value: notifyOrder,   key: 'order'   as const },
-                    { label: 'Booking reminders', sub: '2 hours before your reservation',   value: notifyBooking, key: 'booking' as const },
+                    { label: t(lang, 'account.orderUpdates'),     sub: t(lang, 'account.orderUpdatesSub'),    value: notifyOrder,   key: 'order'   as const },
+                    { label: t(lang, 'account.bookingReminders'), sub: t(lang, 'account.bookingRemindersSub'), value: notifyBooking, key: 'booking' as const },
                   ].map(item => (
                     <div key={item.key} className="flex items-center justify-between gap-4">
                       <div>
@@ -1070,11 +1074,11 @@ function AccountContent() {
             <FadeIn delay={140}>
               <div className="rounded-2xl p-4" style={{ border: '1px solid rgba(239,68,68,0.2)' }}>
                 <h2 className="text-sm font-bold text-red-500 flex items-center gap-2 mb-3">
-                  <AlertTriangle size={13} /> Account
+                  <AlertTriangle size={13} /> {t(lang, 'account.accountSection')}
                 </h2>
                 <button onClick={() => { logout(); router.push('/') }}
                   className="flex items-center gap-2 text-sm text-red-500 hover:text-red-400 font-medium transition-colors">
-                  <LogOut size={13} /> Sign out of all devices
+                  <LogOut size={13} /> {t(lang, 'account.signOutAllDevices')}
                 </button>
               </div>
             </FadeIn>

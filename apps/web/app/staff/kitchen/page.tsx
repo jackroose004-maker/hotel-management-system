@@ -181,7 +181,7 @@ export default function KitchenPage() {
     <div className="flex flex-col flex-1">
 
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
+      <div className="flex items-center gap-3 px-4 sm:px-6 h-14 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold text-gray-900 dark:text-white">Kitchen Display</h1>
           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
