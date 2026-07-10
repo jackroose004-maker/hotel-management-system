@@ -164,20 +164,23 @@ function VideoUpload({ value, onChange }: { value: string; onChange: (url: strin
           <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>Uploading video…</span>
         </div>
       ) : hasVideo ? (
-        <div className="flex items-center gap-3 px-4 py-3">
-          <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ backgroundColor: 'rgba(var(--brand-rgb),0.15)' }}>
-            <span className="text-lg">🎬</span>
+        <div className="flex flex-col gap-0" onClick={e => e.stopPropagation()}>
+          <video
+            src={value}
+            className="w-full rounded-xl"
+            style={{ maxHeight: 160, objectFit: 'cover' }}
+            muted autoPlay loop playsInline
+          />
+          <div className="flex items-center gap-3 px-4 py-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{value.split('/').pop()}</p>
+            </div>
+            <button onClick={() => onChange('')}
+              className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
+              <X size={11} />
+            </button>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>Video uploaded</p>
-            <p className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{value.split('/').pop()}</p>
-          </div>
-          <button onClick={e => { e.stopPropagation(); onChange('') }}
-            className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
-            style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#f87171' }}>
-            <X size={11} />
-          </button>
         </div>
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
