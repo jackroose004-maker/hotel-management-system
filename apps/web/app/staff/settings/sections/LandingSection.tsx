@@ -18,6 +18,54 @@ interface Props {
   setOpenPanel: (v: string) => void
 }
 
+const PANELS = [
+  { id: 'hero',     label: 'Hero',             icon: '🎬', desc: 'Headline, subtext, buttons & background media' },
+  { id: 'dishes',   label: 'Signature Dishes', icon: '🍽️', desc: 'Featured dish section & card selection' },
+  { id: 'relay',    label: 'Food Relay',       icon: '🔥', desc: 'Diagonal image gallery & headline' },
+  { id: 'ambience', label: 'Ambience',         icon: '🌿', desc: 'Space section text & photos' },
+  { id: 'reviews',  label: 'Guest Reviews',    icon: '⭐', desc: 'Reviews section headline' },
+]
+
+function Accordion({ id, openPanel, setOpenPanel, children }: {
+  id: string; openPanel: string; setOpenPanel: (v: string) => void; children: React.ReactNode
+}) {
+  const panel = PANELS.find(p => p.id === id)!
+  const open = openPanel === id
+  return (
+    <div className="overflow-hidden transition-all"
+      style={{
+        border: `1px solid ${open ? 'rgba(var(--brand-rgb),0.35)' : 'var(--card-border)'}`,
+        borderRadius: 14,
+        backgroundColor: 'var(--card-bg)',
+        marginBottom: 8,
+        boxShadow: open ? '0 0 0 3px rgba(var(--brand-rgb),0.06)' : 'none',
+      }}>
+      <button type="button" onClick={() => setOpenPanel(open ? '' : id)}
+        className="w-full flex items-center gap-3.5 px-5 py-3.5 text-left transition-all">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 transition-all"
+          style={{ backgroundColor: open ? 'rgba(var(--brand-rgb),0.12)' : 'var(--muted-bg)' }}>
+          {panel.icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold leading-tight" style={{ color: open ? 'var(--brand)' : 'var(--text-primary)' }}>{panel.label}</p>
+          <p className="text-[11px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{panel.desc}</p>
+        </div>
+        <ChevronDown size={15} style={{
+          color: open ? 'var(--brand)' : 'var(--text-muted)',
+          transition: 'transform 0.2s',
+          transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+          flexShrink: 0,
+        }} />
+      </button>
+      {open && (
+        <div className="px-5 pb-5 pt-1 space-y-5 border-t" style={{ borderColor: 'rgba(var(--brand-rgb),0.12)' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function LandingSection({ cfg, set, menuItems, videoUploading, setVideoUploading, openPanel, setOpenPanel }: Props) {
   const [dishCat, setDishCat] = React.useState('All')
   const [dishQ, setDishQ] = React.useState('')
@@ -34,56 +82,10 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
     (!dishQ || i.name.toLowerCase().includes(dishQ.toLowerCase()))
   )
 
-  const panels = [
-    { id: 'hero',       label: 'Hero',              icon: '🎬', desc: 'Headline, subtext, buttons & background media' },
-    { id: 'dishes',     label: 'Signature Dishes',  icon: '🍽️', desc: 'Featured dish section & card selection' },
-    { id: 'relay',      label: 'Food Relay',        icon: '🔥', desc: 'Diagonal image gallery & headline' },
-    { id: 'ambience',   label: 'Ambience',          icon: '🌿', desc: 'Space section text & photos' },
-    { id: 'reviews',    label: 'Guest Reviews',     icon: '⭐', desc: 'Reviews section headline' },
-  ]
-
-  const Accordion = ({ id, children }: { id: string; children: React.ReactNode }) => {
-    const panel = panels.find(p => p.id === id)!
-    const open = openPanel === id
-    return (
-      <div className="overflow-hidden transition-all"
-        style={{
-          border: `1px solid ${open ? 'rgba(var(--brand-rgb),0.35)' : 'var(--card-border)'}`,
-          borderRadius: 14,
-          backgroundColor: 'var(--card-bg)',
-          marginBottom: 8,
-          boxShadow: open ? '0 0 0 3px rgba(var(--brand-rgb),0.06)' : 'none',
-        }}>
-        <button type="button" onClick={() => setOpenPanel(open ? '' : id)}
-          className="w-full flex items-center gap-3.5 px-5 py-3.5 text-left transition-all">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0 transition-all"
-            style={{ backgroundColor: open ? 'rgba(var(--brand-rgb),0.12)' : 'var(--muted-bg)' }}>
-            {panel.icon}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold leading-tight" style={{ color: open ? 'var(--brand)' : 'var(--text-primary)' }}>{panel.label}</p>
-            <p className="text-[11px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{panel.desc}</p>
-          </div>
-          <ChevronDown size={15} style={{
-            color: open ? 'var(--brand)' : 'var(--text-muted)',
-            transition: 'transform 0.2s',
-            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-            flexShrink: 0,
-          }} />
-        </button>
-        {open && (
-          <div className="px-5 pb-5 pt-1 space-y-5 border-t" style={{ borderColor: 'rgba(var(--brand-rgb),0.12)' }}>
-            {children}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   return (
     <div className="px-5 py-4">
       {/* HERO */}
-      <Accordion id="hero">
+      <Accordion id="hero" openPanel={openPanel} setOpenPanel={setOpenPanel}>
         <div className="space-y-4">
           {([
             { key: 'line1',     keyAr: 'line1Ar',     label: 'Headline line 1', placeholder: 'Taste of',                              placeholderAr: 'طعم'                              },
@@ -209,7 +211,7 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
       </Accordion>
 
       {/* DISHES */}
-      <Accordion id="dishes">
+      <Accordion id="dishes" openPanel={openPanel} setOpenPanel={setOpenPanel}>
         <div className="space-y-4 mb-5 pb-5" style={{ borderBottom: '1px solid var(--card-border)' }}>
           <BilingualField label="Section eyebrow label"
             valueEn={hc.dishesSubtext ?? ''} valueAr={hc.dishesSubtextAr ?? ''}
@@ -314,7 +316,7 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
       </Accordion>
 
       {/* FOOD RELAY */}
-      <Accordion id="relay">
+      <Accordion id="relay" openPanel={openPanel} setOpenPanel={setOpenPanel}>
         <div className="space-y-4">
           <BilingualField label="Eyebrow label"
             valueEn={hc.relayTagline ?? ''} valueAr={hc.relayTaglineAr ?? ''}
@@ -332,7 +334,7 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
       </Accordion>
 
       {/* AMBIENCE */}
-      <Accordion id="ambience">
+      <Accordion id="ambience" openPanel={openPanel} setOpenPanel={setOpenPanel}>
         <div className="space-y-4">
           <BilingualField label="Eyebrow label"
             valueEn={hc.ambienceTagline ?? ''} valueAr={hc.ambienceTaglineAr ?? ''}
@@ -393,7 +395,7 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
       </Accordion>
 
       {/* REVIEWS */}
-      <Accordion id="reviews">
+      <Accordion id="reviews" openPanel={openPanel} setOpenPanel={setOpenPanel}>
         <BilingualField label="Section headline"
           valueEn={hc.reviewsHeadline ?? ''} valueAr={hc.reviewsHeadlineAr ?? ''}
           placeholder="Loved by every table" placeholderAr="محبوب على كل طاولة"
