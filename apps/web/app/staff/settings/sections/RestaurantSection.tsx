@@ -69,8 +69,8 @@ export default function RestaurantSection({ cfg, set }: Props) {
           <div className="w-full sm:w-40 flex-shrink-0">
             <ImageUpload
               value={cfg.logoUrl}
-              onChange={v => { set('logoUrl', v); applyFavicon(v) }}
-              folder="almanzil/logo"
+              onChange={v => { set('logoUrl', v ?? ''); applyFavicon(v ?? '') }}
+              folder="logos"
               publicId="logo"
               aspectRatio="square"
             />
@@ -101,7 +101,7 @@ export default function RestaurantSection({ cfg, set }: Props) {
             <ImageUpload
               value={cfg.loginDesktopImage ?? ''}
               onChange={v => set('loginDesktopImage', v ?? '')}
-              folder="almanzil/login"
+              folder="backgrounds"
               publicId="login-bg"
               aspectRatio="free"
               mediaType="both"

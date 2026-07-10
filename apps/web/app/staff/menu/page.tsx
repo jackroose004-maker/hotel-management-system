@@ -280,7 +280,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
     } catch { toast.error('Failed to delete option') }
   }
 
-  const f = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }))
+  const f = (k: string, v: string | undefined) => setForm(p => ({ ...p, [k]: v ?? '' }))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -395,7 +395,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
               <ImageUpload
                 value={form.imageUrl}
                 onChange={v => f('imageUrl', v)}
-                folder="almanzil/menu"
+                folder="menu"
                 hint="Drag & drop, click, or paste image · uploads to CDN instantly"
                 aspectRatio="video"
               />

@@ -183,7 +183,7 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
           ) : (
             <div className="flex flex-col gap-2">
               <ImageUpload value={hc.heroImageUrl ?? ''} onChange={v => setHc('heroImageUrl', v ?? '')}
-                folder="almanzil/hero" publicId="hero-image" aspectRatio="video" />
+                folder="backgrounds" publicId="hero-image" aspectRatio="video" />
               <div className="flex gap-1.5">
                 <input value={imgPasteUrl} onChange={e => setImgPasteUrl(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && imgPasteUrl.trim()) { setHc('heroImageUrl', imgPasteUrl.trim()); setImgPasteUrl('') } }}
@@ -368,7 +368,7 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
                       <ImageUpload
                         value={url}
                         onChange={v => { const next = [...imgs]; next[idx] = v ?? ''; setImgs(next) }}
-                        folder="almanzil/ambience"
+                        folder="general"
                         publicId={`amb${idx + 1}`}
                         aspectRatio="free"
                         hint="Recommended: 1400 × 900 px"
