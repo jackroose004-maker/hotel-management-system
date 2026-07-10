@@ -1479,9 +1479,12 @@ function MenuPageInner() {
         <div className="flex justify-center pt-3 pb-1">
           <div className="w-10 h-1 rounded-full" style={{ backgroundColor: '#333' }} />
         </div>
-        {/* Image */}
+        {/* Media — video takes priority */}
         <div className="relative h-44 mx-4 mb-4 rounded-2xl overflow-hidden flex-shrink-0">
-          <FoodImage src={drawerItem.imageUrl} alt={drawerItem.name} className="w-full h-full" />
+          {drawerItem.videoUrl
+            ? <video src={drawerItem.videoUrl} className="w-full h-full object-cover" muted autoPlay loop playsInline />
+            : <FoodImage src={drawerItem.imageUrl} alt={drawerItem.name} className="w-full h-full" />
+          }
           <div className="absolute inset-0 bg-gradient-to-t from-black/85 to-transparent" />
           <div className="absolute bottom-3 left-4 right-14">
             <div className="text-lg font-black text-white leading-tight">

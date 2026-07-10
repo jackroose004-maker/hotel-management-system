@@ -28,6 +28,12 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
   const setHc = (k: keyof HeroConfig, v: string | string[] | null) =>
     set('heroConfig', { ...hc, [k]: v } as any)
 
+  const dishCategories = ['All', ...Array.from(new Set(menuItems.map(i => (i as any).category?.name).filter(Boolean) as string[]))]
+  const filteredDishes = menuItems.filter(i =>
+    (dishCat === 'All' || (i as any).category?.name === dishCat) &&
+    (!dishQ || i.name.toLowerCase().includes(dishQ.toLowerCase()))
+  )
+
   const panels = [
     { id: 'hero',       label: 'Hero',              icon: '🎬', desc: 'Headline, subtext, buttons & background media' },
     { id: 'dishes',     label: 'Signature Dishes',  icon: '🍽️', desc: 'Featured dish section & card selection' },
@@ -221,82 +227,79 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
           </p>
           {menuItems.length === 0 ? (
             <p className="text-xs py-3 text-center" style={{ color: 'var(--text-muted)' }}>Loading menu items…</p>
-          ) : (() => {
-            const categories = ['All', ...Array.from(new Set(menuItems.map(i => i.category?.name).filter(Boolean) as string[]))]
-            const filtered = menuItems.filter(i =>
-              (dishCat === 'All' || i.category?.name === dishCat) &&
-              (!dishQ || i.name.toLowerCase().includes(dishQ.toLowerCase()))
-            )
-            return (
-              <>
-                <div className="flex flex-col gap-2 mb-3">
-                  <input
-                    value={dishQ} onChange={e => setDishQ(e.target.value)}
-                    placeholder="Search dishes…"
-                    className="w-full px-3 py-2 rounded-lg text-sm outline-none"
-                    style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }}
-                  />
-                  <div className="flex gap-1.5 flex-wrap">
-                    {categories.map(cat => (
-                      <button key={cat} type="button" onClick={() => setDishCat(cat)}
-                        className="px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
-                        style={{
-                          backgroundColor: dishCat === cat ? 'var(--brand)' : 'var(--card-bg)',
-                          color: dishCat === cat ? '#000' : 'var(--text-muted)',
-                          border: `1px solid ${dishCat === cat ? 'var(--brand)' : 'var(--card-border)'}`,
-                        }}>
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2 mb-3">
+                <input
+                  value={dishQ} onChange={e => setDishQ(e.target.value)}
+                  placeholder="Search dishes…"
+                  className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                  style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }}
+                />
+                <div className="flex gap-1.5 flex-wrap">
+                  {dishCategories.map(cat => (
+                    <button key={cat} type="button" onClick={() => setDishCat(cat)}
+                      className="px-2.5 py-1 rounded-full text-xs font-semibold transition-all"
+                      style={{
+                        backgroundColor: dishCat === cat ? 'var(--brand)' : 'var(--card-bg)',
+                        color: dishCat === cat ? '#000' : 'var(--text-muted)',
+                        border: `1px solid ${dishCat === cat ? 'var(--brand)' : 'var(--card-border)'}`,
+                      }}>
+                      {cat}
+                    </button>
+                  ))}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[400px] overflow-y-auto pr-1">
-                  {filtered.map(item => {
-                    const selected = (hc.signatureDishIds ?? []).includes(item.id)
-                    const count = (hc.signatureDishIds ?? []).length
-                    const atCap = !selected && count >= 12
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          if (atCap) { toast.error('Remove a dish first — max 12 selected'); return }
-                          const ids = hc.signatureDishIds ?? []
-                          setHc('signatureDishIds', selected ? ids.filter(id => id !== item.id) : [...ids, item.id])
-                        }}
-                        className="flex items-center gap-3 p-2.5 rounded-xl text-left transition-all"
-                        style={{
-                          border: selected ? '1.5px solid var(--brand)' : '1px solid var(--card-border)',
-                          backgroundColor: selected ? 'rgba(var(--brand-rgb),0.08)' : 'var(--card-bg)',
-                          opacity: atCap ? 0.4 : 1,
-                          cursor: atCap ? 'not-allowed' : 'pointer',
-                        }}
-                      >
-                        <div className="relative flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden">
-                          {item.imageUrl
-                            ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                            : <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)' }}><UtensilsCrossed size={16} style={{ color: 'var(--brand)' }} /></div>
-                          }
-                          {selected && (
-                            <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.7)' }}>
-                              <CheckCircle2 size={16} className="text-black" />
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold truncate" style={{ color: selected ? 'var(--brand)' : 'var(--text-primary)' }}>{item.name}</p>
-                          <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                            {item.category?.name && <span className="mr-1.5">{item.category.name} ·</span>}AED {item.price}
-                          </p>
-                        </div>
-                      </button>
-                    )
-                  })}
-                  {filtered.length === 0 && <p className="text-xs col-span-2 py-4 text-center" style={{ color: 'var(--text-muted)' }}>No dishes match</p>}
-                </div>
-              </>
-            )
-          })()}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[400px] overflow-y-auto pr-1">
+                {filteredDishes.map(item => {
+                  const anyItem = item as any
+                  const selected = (hc.signatureDishIds ?? []).includes(item.id)
+                  const atCap = !selected && (hc.signatureDishIds ?? []).length >= 12
+                  const thumb = anyItem.videoUrl || item.imageUrl
+                  const isVideo = !!anyItem.videoUrl
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        if (atCap) { toast.error('Remove a dish first — max 12 selected'); return }
+                        const ids = hc.signatureDishIds ?? []
+                        setHc('signatureDishIds', selected ? ids.filter(id => id !== item.id) : [...ids, item.id])
+                      }}
+                      className="flex items-center gap-3 p-2.5 rounded-xl text-left transition-all"
+                      style={{
+                        border: selected ? '1.5px solid var(--brand)' : '1px solid var(--card-border)',
+                        backgroundColor: selected ? 'rgba(var(--brand-rgb),0.08)' : 'var(--card-bg)',
+                        opacity: atCap ? 0.4 : 1,
+                        cursor: atCap ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      <div className="relative flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden">
+                        {thumb
+                          ? isVideo
+                            ? <video src={thumb} className="w-full h-full object-cover" muted autoPlay loop playsInline />
+                            : <img src={thumb} alt={item.name} className="w-full h-full object-cover" />
+                          : <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)' }}><UtensilsCrossed size={16} style={{ color: 'var(--brand)' }} /></div>
+                        }
+                        {selected && (
+                          <div className="absolute inset-0 flex items-center justify-center" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.7)' }}>
+                            <CheckCircle2 size={16} className="text-black" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: selected ? 'var(--brand)' : 'var(--text-primary)' }}>{item.name}</p>
+                        <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                          {anyItem.category?.name && <span className="mr-1.5">{anyItem.category.name} ·</span>}AED {item.price}
+                        </p>
+                      </div>
+                    </button>
+                  )
+                })}
+                {filteredDishes.length === 0 && <p className="text-xs col-span-2 py-4 text-center" style={{ color: 'var(--text-muted)' }}>No dishes match</p>}
+              </div>
+            </>
+          )}
           <div className="flex items-center justify-between mt-3">
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{(hc.signatureDishIds ?? []).length}/12 selected</p>
             {(hc.signatureDishIds ?? []).length > 0 && (
