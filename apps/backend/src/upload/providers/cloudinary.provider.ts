@@ -4,7 +4,7 @@ import { IStorageProvider, UploadedFile } from '../storage.interface'
 import { Readable } from 'stream'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const FormData = require('form-data') as typeof import('form-data')
-import axios from 'axios'
+import { request as httpsRequest } from 'https'
 
 @Injectable()
 export class CloudinaryProvider implements IStorageProvider {
@@ -35,7 +35,19 @@ export class CloudinaryProvider implements IStorageProvider {
     form.append('upload_preset', this.preset)
     form.append('public_id', publicId)
 
-    const { data } = await axios.post(url, form, { headers: form.getHeaders() })
+    const data = await new Promise<any>((resolve, reject) => {
+      const headers = { ...form.getHeaders() }
+      const parsed = new URL(url)
+      const req = httpsRequest({ hostname: parsed.hostname, path: parsed.pathname, method: 'POST', headers }, res => {
+        let body = ''
+        res.on('data', chunk => { body += chunk })
+        res.on('end', () => {
+          try { resolve(JSON.parse(body)) } catch { reject(new Error('Invalid JSON from Cloudinary')) }
+        })
+      })
+      req.on('error', reject)
+      form.pipe(req)
+    })
 
     return {
       url:      data.secure_url,
