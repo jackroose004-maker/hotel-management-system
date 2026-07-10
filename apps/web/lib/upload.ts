@@ -3,12 +3,13 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? ''
 async function post(endpoint: string, file: File | Blob, folder: string): Promise<string> {
   const fd = new FormData()
   fd.append('file', file)
+  fd.append('folder', folder)
 
   const token = typeof window !== 'undefined'
     ? localStorage.getItem('token') ?? sessionStorage.getItem('token')
     : null
 
-  const res = await fetch(`${API}/${endpoint}?folder=${encodeURIComponent(folder)}`, {
+  const res = await fetch(`${API}/${endpoint}`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: fd,

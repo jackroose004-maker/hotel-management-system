@@ -1,6 +1,6 @@
 import {
   Controller, Post, UploadedFile, UseInterceptors, UseGuards,
-  BadRequestException, Query,
+  BadRequestException, Body,
 } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { memoryStorage } from 'multer'
@@ -8,6 +8,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { UploadService, UploadFolder } from './upload.service'
 
 const VALID_FOLDERS: UploadFolder[] = ['logos', 'menu', 'backgrounds', 'general', 'avatars']
+
+function resolveFolder(folder?: string): UploadFolder {
+  return VALID_FOLDERS.includes(folder as UploadFolder) ? (folder as UploadFolder) : 'general'
+}
 
 @Controller('upload')
 @UseGuards(JwtAuthGuard)
@@ -23,12 +27,10 @@ export class UploadController {
   )
   async uploadImage(
     @UploadedFile() file: Express.Multer.File,
-    @Query('folder') folder?: string,
+    @Body('folder') folder?: string,
   ) {
     if (!file) throw new BadRequestException('No file provided')
-    const uploadFolder: UploadFolder =
-      VALID_FOLDERS.includes(folder as UploadFolder) ? (folder as UploadFolder) : 'general'
-    const result = await this.uploadService.uploadImage(file, uploadFolder)
+    const result = await this.uploadService.uploadImage(file, resolveFolder(folder))
     return { success: true, data: { url: result.url, publicId: result.publicId, width: result.width, height: result.height, bytes: result.bytes, format: result.format } }
   }
 
@@ -41,12 +43,10 @@ export class UploadController {
   )
   async uploadVideo(
     @UploadedFile() file: Express.Multer.File,
-    @Query('folder') folder?: string,
+    @Body('folder') folder?: string,
   ) {
     if (!file) throw new BadRequestException('No file provided')
-    const uploadFolder: UploadFolder =
-      VALID_FOLDERS.includes(folder as UploadFolder) ? (folder as UploadFolder) : 'general'
-    const result = await this.uploadService.uploadVideo(file, uploadFolder)
+    const result = await this.uploadService.uploadVideo(file, resolveFolder(folder))
     return { success: true, data: { url: result.url, publicId: result.publicId, bytes: result.bytes, format: result.format } }
   }
 }

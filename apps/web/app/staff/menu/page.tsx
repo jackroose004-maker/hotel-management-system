@@ -404,7 +404,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
                   type="url"
                   className={ic}
                   placeholder="Or paste image URL (https://...)"
-                  value={form.imageUrl}
+                  value={form.imageUrl ?? ''}
                   onChange={e => f('imageUrl', e.target.value)}
                 />
               )}
@@ -427,7 +427,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
                   type="url"
                   className={ic}
                   placeholder="Or paste video URL (https://...mp4)"
-                  value={form.videoUrl}
+                  value={form.videoUrl ?? ''}
                   onChange={e => f('videoUrl', e.target.value)}
                 />
               )}
