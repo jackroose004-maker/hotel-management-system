@@ -50,9 +50,9 @@ export class SettingsController {
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER')
-  @Get('email/preview/:key')
-  async previewTemplate(@Param('key') key: string, @Res() res: Response) {
-    const html = await this.settings.previewEmailTemplate(key)
+  @Post('email/preview/:key')
+  async previewTemplate(@Param('key') key: string, @Body() overrides: Record<string, any>, @Res() res: Response) {
+    const html = await this.settings.previewEmailTemplate(key, overrides)
     res.setHeader('Content-Type', 'text/html')
     res.send(html)
   }

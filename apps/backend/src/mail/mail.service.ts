@@ -230,13 +230,18 @@ export class MailService {
   }
 
   async sendStaffWelcome(to: string, name: string, tempPassword: string, roleName: string | null, loginUrl: string) {
+    const { base, enabled, fromName, fromAddr, replyTo, subject } = await this.tpl('staff_welcome')
+    if (!enabled) return
+    const resolvedSubject = this.resolveSubject(subject || `Welcome to {{restaurantName}} — Your Staff Account`, { restaurantName: base.restaurantName })
     try {
-      await Promise.resolve().then(() => this.mailer.sendMail({
+      await this.mailer.sendMail({
         to,
-        subject: 'Welcome to Al Manzil — Your Staff Account',
+        subject: resolvedSubject,
+        from: this.buildFrom(fromName, fromAddr),
+        replyTo,
         template: 'staff-welcome',
-        context: { name, email: to, tempPassword, roleName, loginUrl, year: new Date().getFullYear() },
-      }))
+        context: { ...base, footerNoReplyText: base.footerNoReply, name, email: to, tempPassword, roleName, loginUrl, year: new Date().getFullYear() },
+      })
       this.logger.log(`Staff welcome email → ${to}`)
     } catch (err: any) {
       this.logger.error(`Staff welcome email failed → ${to}: ${err?.message}`)

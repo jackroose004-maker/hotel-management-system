@@ -65,11 +65,13 @@ export class SettingsService {
     return this.prisma.emailTemplate.update({ where: { id }, data: dto })
   }
 
-  async previewEmailTemplate(key: string): Promise<string> {
+  async previewEmailTemplate(key: string, overrides: Record<string, any> = {}): Promise<string> {
     const [s, tmpl] = await Promise.all([
       this.prisma.restaurantSettings.findFirst(),
       this.prisma.emailTemplate.findUnique({ where: { key } }),
     ])
+    // Merge live local overrides (unsaved changes from UI) on top of DB values
+    const merged = { ...(tmpl ?? {}), ...overrides }
     const social = (s?.socialLinks ?? {}) as Record<string, string>
     const brandColor = s?.brandColor ?? '#c0392b'
     const darken = (hex: string) => {
@@ -87,23 +89,24 @@ export class SettingsService {
       year:             new Date().getFullYear(),
       supportEmail:     s?.supportEmail     ?? null,
       supportPhone:     s?.supportPhone     ?? null,
-      socialInstagram:  social.instagram    ?? null,
-      socialWhatsapp:   social.whatsapp     ?? null,
+      // Use real values if saved, else sample so the footer is always visible in preview
+      socialInstagram:  social.instagram    ?? 'https://instagram.com',
+      socialWhatsapp:   social.whatsapp     ?? 'https://wa.me/',
       socialTelegram:   social.telegram     ?? null,
       socialTiktok:     social.tiktok       ?? null,
       socialFacebook:   social.facebook     ?? null,
       socialTwitter:    social.twitter      ?? null,
-      hasSocial:        Object.keys(social).length > 0,
-      bgColor:          tmpl?.bgColor       ?? '#f0f0f0',
-      cardTheme:        tmpl?.cardTheme     ?? 'light',
-      isDark:           tmpl?.cardTheme === 'dark',
-      footerNote:       tmpl?.footerNote    ?? null,
-      footerNoReply:    tmpl?.footerNoReply   ?? 'This is an automated message. Please do not reply.',
-      footerNoReplyAr:  tmpl?.footerNoReplyAr ?? 'هذه رسالة آلية. يرجى عدم الرد عليها.',
-      footerNoReplyText: tmpl?.footerNoReply  ?? 'This is an automated message. Please do not reply.',
-      greeting:         tmpl?.greeting      ?? null,
-      greetingAr:       tmpl?.greetingAr    ?? null,
-      greetingText:     tmpl?.greeting      ?? null,
+      hasSocial:        true,
+      bgColor:          merged.bgColor       ?? '#f0f0f0',
+      cardTheme:        merged.cardTheme     ?? 'light',
+      isDark:           merged.cardTheme === 'dark',
+      footerNote:       merged.footerNote    ?? null,
+      footerNoReply:    merged.footerNoReply   ?? 'This is an automated message. Please do not reply.',
+      footerNoReplyAr:  merged.footerNoReplyAr ?? 'هذه رسالة آلية. يرجى عدم الرد عليها.',
+      footerNoReplyText: merged.footerNoReply  ?? 'This is an automated message. Please do not reply.',
+      greeting:         merged.greeting      ?? null,
+      greetingAr:       merged.greetingAr    ?? null,
+      greetingText:     merged.greeting      ?? null,
       isArabic:         false,
       // Sample data
       name:             'Fatima Al Rashidi',
@@ -138,6 +141,7 @@ export class SettingsService {
       order_cancelled:      'order-cancelled',
       otp:                  'otp',
       welcome:              'welcome',
+      staff_welcome:        'staff-welcome',
     }
     const hbsKey = templateMap[key] ?? key
     // Use raw Handlebars compile from template file

@@ -32,14 +32,15 @@ export class UsersService {
   }
 
   async createStaff(
-    dto: { name: string; email: string; password: string; role: string; staffRoleId?: string },
+    dto: { name: string; email: string; password?: string; role: string; staffRoleId?: string },
     actorId?: string,
   ) {
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } })
     if (exists) throw new ConflictException('Email already in use')
     if (!ALLOWED_ROLES.includes(dto.role)) throw new BadRequestException('Role must be STAFF')
 
-    const passwordHash = await bcrypt.hash(dto.password, 10)
+    const tempPassword = dto.password || Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase()
+    const passwordHash = await bcrypt.hash(tempPassword, 10)
 
     let staffRole: { name: string } | null = null
     if (dto.staffRoleId) {
@@ -61,7 +62,7 @@ export class UsersService {
 
     // Send welcome email (non-blocking)
     const loginUrl = `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/staff/login`
-    this.mail.sendStaffWelcome(dto.email, dto.name, dto.password, staffRole?.name ?? null, loginUrl).catch(() => {})
+    this.mail.sendStaffWelcome(dto.email, dto.name, tempPassword, staffRole?.name ?? null, loginUrl).catch(() => {})
 
     this.activityLog.log({
       actorId: actorId ?? undefined,

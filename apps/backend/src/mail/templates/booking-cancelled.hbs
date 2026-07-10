@@ -1,174 +1,106 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="background:{{bgColor}};">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Booking Cancelled — {{restaurantName}}</title>
 </head>
-<body style="margin:0;padding:0;background:{{bgColor}};font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
+<body style="margin:0;padding:0;background:{{bgColor}};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:{{bgColor}};padding:28px 12px;">
+<tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
 
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:{{bgColor}};padding:40px 16px;">
-    <tr>
-      <td align="center">
-        <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
+  <!-- HEADER -->
+  <tr>
+    <td style="background:linear-gradient(150deg,#1a2236 0%,#0d1117 100%);border-radius:16px 16px 0 0;padding:28px 32px 22px;text-align:center;">
+      {{#if logoUrl}}<img src="{{logoUrl}}" width="44" height="44" alt="{{restaurantName}}" style="border-radius:11px;display:block;margin:0 auto 14px;object-fit:cover;opacity:0.75;"/>{{/if}}
+      <p style="margin:0 0 4px;color:rgba(255,255,255,0.4);font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;">{{restaurantName}}</p>
+      <h1 style="margin:0;color:#f1f5f9;font-size:22px;font-weight:800;">Booking Cancelled</h1>
+      <p style="margin:6px 0 0;color:#64748b;font-size:13px;">Your reservation has been cancelled{{#if isStaff}} by our team{{/if}}</p>
+    </td>
+  </tr>
 
-          <!-- HEADER -->
-          <tr>
-            <td style="background:linear-gradient(150deg,#1e293b 0%,#0f172a 100%);border-radius:20px 20px 0 0;padding:36px 40px 28px;text-align:center;">
-              {{#if logoUrl}}
-                <img src="{{logoUrl}}" alt="{{restaurantName}}" width="48" height="48"
-                  style="border-radius:12px;object-fit:cover;display:block;margin:0 auto 14px;opacity:0.7;" />
-              {{/if}}
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td align="center" style="padding-bottom:14px;">
-                    <table cellpadding="0" cellspacing="0">
-                      <tr>
-                        <td style="width:52px;height:52px;background:rgba(239,68,68,0.12);border:1.5px solid rgba(239,68,68,0.3);border-radius:50%;text-align:center;vertical-align:middle;">
-                          <span style="font-size:22px;line-height:52px;">✕</span>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-              <p style="margin:0 0 4px;color:rgba(255,255,255,0.45);font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;">
-                {{restaurantName}}
-              </p>
-              <h1 style="margin:0;color:#f1f5f9;font-size:24px;font-weight:800;">Booking Cancelled</h1>
-              <p style="margin:6px 0 0;color:#94a3b8;font-size:13px;">
-                Your reservation has been cancelled{{#if isStaff}} by our team{{/if}}
-              </p>
-            </td>
-          </tr>
+  <!-- GREETING -->
+  <tr>
+    <td style="background:#151d2e;padding:16px 28px;border-bottom:1px solid #1e2d40;">
+      <p style="margin:0;color:#94a3b8;font-size:13px;line-height:1.65;">
+        Hi <strong style="color:#e2e8f0;">{{name}}</strong> — we're letting you know that your reservation at <strong style="color:#e2e8f0;">{{restaurantName}}</strong> has been cancelled.
+      </p>
+    </td>
+  </tr>
 
-          <!-- GREETING -->
-          <tr>
-            <td style="background:#1e293b;border-bottom:1px solid #334155;padding:18px 40px;">
-              <p style="margin:0;color:#cbd5e1;font-size:14px;line-height:1.6;">
-                Hi <strong style="color:#f1f5f9;">{{name}}</strong> — we're letting you know that your reservation at {{restaurantName}} has been cancelled{{#if isStaff}} by a member of our team{{/if}}.
-              </p>
-            </td>
-          </tr>
+  <!-- REF + DETAILS -->
+  <tr>
+    <td style="background:#151d2e;padding:14px 28px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #1e2d40;border-radius:12px;overflow:hidden;">
+        <tr>
+          <td style="background:rgba(239,68,68,0.07);padding:11px 16px;border-bottom:1px solid #1e2d40;">
+            <table width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td><p style="margin:0;color:#ef4444;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Cancelled Booking</p></td>
+              <td align="right"><p style="margin:0;color:#f1f5f9;font-size:14px;font-weight:900;font-family:monospace;letter-spacing:2px;">{{ref}}</p></td>
+            </tr></table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:11px 16px;border-bottom:1px solid #1e2d40;">
+            <table width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td><p style="margin:0;color:#475569;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Date</p></td>
+              <td align="right"><p style="margin:0;color:#cbd5e1;font-size:13px;font-weight:700;">{{slotDate}}</p></td>
+            </tr></table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:11px 16px;">
+            <table width="100%" cellpadding="0" cellspacing="0"><tr>
+              <td><p style="margin:0;color:#475569;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Time</p></td>
+              <td align="right"><p style="margin:0;color:#cbd5e1;font-size:13px;font-weight:700;">{{slotTime}}</p></td>
+            </tr></table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
 
-          <!-- BOOKING DETAILS -->
-          <tr>
-            <td style="background:#1e293b;padding:28px 40px 0;">
+  <!-- CONTACT NOTICE -->
+  <tr>
+    <td style="background:#151d2e;padding:0 28px 18px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#0d1117;border:1px solid #1e2d40;border-radius:12px;">
+        <tr><td style="padding:14px 18px;">
+          <p style="margin:0;color:#64748b;font-size:12px;line-height:1.7;">
+            If you'd like to rebook or have questions,
+            {{#if supportEmail}}contact us at <a href="mailto:{{supportEmail}}" style="color:{{brandColor}};text-decoration:none;">{{supportEmail}}</a>{{/if}}{{#if supportPhone}} or call <strong style="color:#94a3b8;">{{supportPhone}}</strong>{{/if}}.
+          </p>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
 
-              <!-- Ref -->
-              <table width="100%" cellpadding="0" cellspacing="0"
-                style="background:rgba(239,68,68,0.07);border:1px solid rgba(239,68,68,0.2);border-radius:12px;margin-bottom:24px;">
-                <tr>
-                  <td style="padding:14px 20px;">
-                    <table width="100%" cellpadding="0" cellspacing="0">
-                      <tr>
-                        <td>
-                          <p style="margin:0;color:#ef4444;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Cancelled Booking</p>
-                        </td>
-                        <td align="right">
-                          <p style="margin:0;color:#f1f5f9;font-size:16px;font-weight:900;font-family:monospace;letter-spacing:2px;">#{{ref}}</p>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
+  <!-- SOCIAL -->
+  {{#if hasSocial}}
+  <tr>
+    <td style="background:#0d1117;padding:14px 28px;text-align:center;border-top:1px solid #1e2d40;">
+      <p style="margin:0 0 10px;color:#334155;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Follow us</p>
+      <table cellpadding="0" cellspacing="0" style="margin:0 auto;"><tr>
+        {{#if socialInstagram}}<td style="padding:0 4px;"><a href="{{socialInstagram}}" style="text-decoration:none;display:block;"><img src="https://img.icons8.com/color/32/instagram-new.png" width="32" height="32" alt="Instagram" style="display:block;border-radius:8px;opacity:0.9;"/></a></td>{{/if}}
+        {{#if socialWhatsapp}}<td style="padding:0 4px;"><a href="{{socialWhatsapp}}" style="text-decoration:none;display:block;"><img src="https://img.icons8.com/color/32/whatsapp.png" width="32" height="32" alt="WhatsApp" style="display:block;border-radius:8px;opacity:0.9;"/></a></td>{{/if}}
+        {{#if socialTelegram}}<td style="padding:0 4px;"><a href="{{socialTelegram}}" style="text-decoration:none;display:block;"><img src="https://img.icons8.com/color/32/telegram-app.png" width="32" height="32" alt="Telegram" style="display:block;border-radius:8px;opacity:0.9;"/></a></td>{{/if}}
+        {{#if socialTiktok}}<td style="padding:0 4px;"><a href="{{socialTiktok}}" style="text-decoration:none;display:block;"><img src="https://img.icons8.com/color/32/tiktok.png" width="32" height="32" alt="TikTok" style="display:block;border-radius:8px;opacity:0.9;"/></a></td>{{/if}}
+        {{#if socialFacebook}}<td style="padding:0 4px;"><a href="{{socialFacebook}}" style="text-decoration:none;display:block;"><img src="https://img.icons8.com/color/32/facebook-new.png" width="32" height="32" alt="Facebook" style="display:block;border-radius:8px;opacity:0.9;"/></a></td>{{/if}}
+        {{#if socialTwitter}}<td style="padding:0 4px;"><a href="{{socialTwitter}}" style="text-decoration:none;display:block;"><img src="https://img.icons8.com/color/32/x-2.png" width="32" height="32" alt="X" style="display:block;border-radius:8px;opacity:0.9;"/></a></td>{{/if}}
+      </tr></table>
+    </td>
+  </tr>
+  {{/if}}
 
-              <!-- Detail rows -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-                <tr>
-                  <td style="padding:12px 0;border-bottom:1px solid #334155;">
-                    <table width="100%" cellpadding="0" cellspacing="0">
-                      <tr>
-                        <td><p style="margin:0;color:#64748b;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Date</p></td>
-                        <td align="right"><p style="margin:0;color:#cbd5e1;font-size:14px;font-weight:600;">{{slotDate}}</p></td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:12px 0;">
-                    <table width="100%" cellpadding="0" cellspacing="0">
-                      <tr>
-                        <td><p style="margin:0;color:#64748b;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">Time</p></td>
-                        <td align="right"><p style="margin:0;color:#cbd5e1;font-size:14px;font-weight:600;">{{slotTime}}</p></td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
+  <!-- FOOTER -->
+  <tr>
+    <td style="background:#0d1117;border-radius:0 0 16px 16px;padding:14px 28px;text-align:center;border-top:1px solid #1e2d40;">
+      <p style="margin:0 0 3px;color:rgba(255,255,255,0.2);font-size:11px;">© {{year}} {{restaurantName}}. All rights reserved.</p>
+      <p style="margin:0;color:rgba(255,255,255,0.12);font-size:10px;">{{footerNoReplyText}}{{#if supportEmail}} · {{supportEmail}}{{/if}}</p>
+    </td>
+  </tr>
 
-            </td>
-          </tr>
-
-          <!-- NOTICE -->
-          <tr>
-            <td style="background:#1e293b;padding:0 40px 28px;">
-              <table width="100%" cellpadding="0" cellspacing="0"
-                style="background:#0f172a;border:1px solid #334155;border-radius:12px;">
-                <tr>
-                  <td style="padding:16px 20px;">
-                    <p style="margin:0;color:#94a3b8;font-size:13px;line-height:1.7;">
-                      If you'd like to make a new reservation or have any questions, please visit our
-                      {{#if supportEmail}}
-                        website or contact us at <a href="mailto:{{supportEmail}}" style="color:{{brandColor}};text-decoration:none;">{{supportEmail}}</a>.
-                      {{else}}
-                        website or contact the restaurant directly.
-                      {{/if}}
-                      {{#if supportPhone}}
-                        <br/>You can also reach us by phone: <strong style="color:#e2e8f0;">{{supportPhone}}</strong>
-                      {{/if}}
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          {{#if footerNote}}
-          <tr>
-            <td style="background:#1e293b;padding:0 40px 20px;">
-              <p style="margin:0;color:#64748b;font-size:12px;text-align:center;line-height:1.6;">{{footerNote}}</p>
-            </td>
-          </tr>
-          {{/if}}
-
-          <!-- SOCIAL FOOTER -->
-          {{#if hasSocial}}
-          <tr>
-            <td style="background:#0f172a;padding:16px 40px;text-align:center;border-top:1px solid #1e293b;">
-              <p style="margin:0 0 10px;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:1px;">Follow us</p>
-              <table cellpadding="0" cellspacing="0" style="margin:0 auto;">
-                <tr>
-                  {{#if socialInstagram}}<td style="padding:0 6px;"><a href="{{socialInstagram}}" style="color:#94a3b8;text-decoration:none;font-size:11px;">Instagram</a></td>{{/if}}
-                  {{#if socialWhatsapp}}<td style="padding:0 6px;"><a href="{{socialWhatsapp}}" style="color:#94a3b8;text-decoration:none;font-size:11px;">WhatsApp</a></td>{{/if}}
-                  {{#if socialTelegram}}<td style="padding:0 6px;"><a href="{{socialTelegram}}" style="color:#94a3b8;text-decoration:none;font-size:11px;">Telegram</a></td>{{/if}}
-                  {{#if socialTiktok}}<td style="padding:0 6px;"><a href="{{socialTiktok}}" style="color:#94a3b8;text-decoration:none;font-size:11px;">TikTok</a></td>{{/if}}
-                  {{#if socialFacebook}}<td style="padding:0 6px;"><a href="{{socialFacebook}}" style="color:#94a3b8;text-decoration:none;font-size:11px;">Facebook</a></td>{{/if}}
-                  {{#if socialTwitter}}<td style="padding:0 6px;"><a href="{{socialTwitter}}" style="color:#94a3b8;text-decoration:none;font-size:11px;">Twitter</a></td>{{/if}}
-                </tr>
-              </table>
-            </td>
-          </tr>
-          {{/if}}
-
-          <!-- FOOTER -->
-          <tr>
-            <td style="background:#0f172a;border-radius:0 0 20px 20px;padding:18px 40px;text-align:center;border-top:1px solid #1e293b;">
-              <p style="margin:0 0 3px;color:rgba(255,255,255,0.25);font-size:11px;">
-                © {{year}} {{restaurantName}}. All rights reserved.
-              </p>
-              <p style="margin:0;color:rgba(255,255,255,0.15);font-size:10px;">
-                {{footerNoReplyText}}
-                {{#if supportEmail}}&nbsp;·&nbsp;{{supportEmail}}{{/if}}
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-
+</table>
+</td></tr></table>
 </body>
 </html>
