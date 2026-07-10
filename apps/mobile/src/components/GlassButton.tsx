@@ -1,5 +1,5 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native'
-import { glass } from '../theme/colors'
+import { useBrandStore } from '../stores/brand.store'
 
 interface Props {
   title: string
@@ -11,7 +11,10 @@ interface Props {
 
 // Matches the submit button on apps/web/app/login/page.tsx: brand-filled, rounded-2xl,
 // bold white text, subtle shadow. `translucent` matches the Google sign-in button style.
+// Reads brandColor from the live brand store (fetched from GET /settings/brand) rather
+// than a hardcoded constant, so it tracks whatever the restaurant has actually configured.
 export function GlassButton({ title, onPress, disabled, loading, variant = 'primary' }: Props) {
+  const brandColor = useBrandStore((s) => s.brandColor)
   const isPrimary = variant === 'primary'
   return (
     <Pressable
@@ -19,7 +22,7 @@ export function GlassButton({ title, onPress, disabled, loading, variant = 'prim
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.base,
-        isPrimary ? styles.primary : styles.translucent,
+        isPrimary ? { backgroundColor: brandColor } : styles.translucent,
         (disabled || loading) && styles.disabled,
         pressed && styles.pressed,
       ]}
@@ -40,7 +43,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primary: { backgroundColor: glass.brand },
   translucent: { backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   disabled: { opacity: 0.4 },
   pressed: { opacity: 0.85 },

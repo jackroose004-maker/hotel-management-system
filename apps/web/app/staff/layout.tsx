@@ -11,8 +11,10 @@ import {
 import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { initBrand, useBrandStore } from '@/store/brand'
-import { requestNotifyPermission } from '@/lib/notify'
+import { requestNotifyPermission, notify } from '@/lib/notify'
 import api from '@/lib/api'
+import { getSocket, disconnectSocket } from '@/lib/socket'
+import { initCrossTabAuth, broadcastLogout, teardownCrossTabAuth } from '@/lib/crossTabAuth'
 
 // permission key maps 1-to-1 with the Permission type in auth store
 const NAV = [
@@ -60,6 +62,50 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     requestNotifyPermission()
     setReady(true)
   }, [])
+
+  // Force-logout: socket + cross-tab sync + health-check polling
+  useEffect(() => {
+    if (!token) return
+
+    const doForceLogout = () => {
+      if (loggingOut.current) return
+      loggingOut.current = true
+      notify.error('You were logged out because your account signed in on another device.')
+      broadcastLogout()
+      disconnectSocket()
+      logout()
+      router.replace('/staff/login')
+    }
+
+    // Layer 2 — socket event from backend (immediate kick on new login)
+    const socket = getSocket(token)
+    socket.on('force:logout', doForceLogout)
+
+    // Layer 3 — cross-tab sync (other tabs on same browser)
+    initCrossTabAuth(doForceLogout)
+
+    // Layer 1 fallback — poll /auth/me every 45s + on window focus
+    // Catches cases where socket missed the event (reconnect race, idle tab)
+    const checkSession = async () => {
+      if (loggingOut.current) return
+      try {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'}/auth/me`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        if (res.status === 401) doForceLogout()
+      } catch {}
+    }
+    const pollId = setInterval(checkSession, 45_000)
+    window.addEventListener('focus', checkSession)
+
+    return () => {
+      socket.off('force:logout', doForceLogout)
+      teardownCrossTabAuth()
+      clearInterval(pollId)
+      window.removeEventListener('focus', checkSession)
+    }
+  }, [token])
 
   useEffect(() => {
     if (token) loadShift().then(() => setShowClockBanner(true))

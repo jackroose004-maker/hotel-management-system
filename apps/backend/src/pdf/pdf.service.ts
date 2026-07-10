@@ -21,9 +21,10 @@ export class PdfService {
     preOrderItems?: { name: string; qty: number; amount: string; modifiers?: { name: string; priceAdd: string }[] }[]
     preOrderTotal?: string
     frontendUrl: string
+    qrRef?: string  // UUID for QR scan; falls back to ref if not provided
   }): Promise<Buffer> {
 
-    const qrUrl = `${params.frontendUrl}/book/arrive/${params.ref}`
+    const qrUrl = `${params.frontendUrl}/book/arrive/${params.qrRef ?? params.ref}`
     const qrDataUrl = await QRCode.toDataURL(qrUrl, {
       width: 400,
       margin: 1,

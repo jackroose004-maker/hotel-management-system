@@ -274,13 +274,41 @@ export class BookingsService {
       })
     })
 
-    // Send cancellation email — fire-and-forget
+    const ref = bookingId.slice(-8).toUpperCase()
+    const [slotH, slotM2] = booking.slotTime.split(':').map(Number)
+    const slotTime = `${slotH % 12 || 12}:${String(slotM2).padStart(2, '0')} ${slotH >= 12 ? 'PM' : 'AM'}`
+    const slotDateStr = new Date(booking.slotDate).toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+
+    // Email customer
     if (updated.customer?.email) {
-      const ref = bookingId.slice(-8).toUpperCase()
-      const [h, m2] = booking.slotTime.split(':').map(Number)
-      const slotTime = `${h % 12 || 12}:${String(m2).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
-      const slotDateStr = new Date(booking.slotDate).toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
       this.mail.sendBookingCancellation(updated.customer.email, updated.customer.name, { ref, slotDate: slotDateStr, slotTime, isStaff })
+    }
+
+    // When customer cancels: notify staff via support email + auto-refund paid pre-order
+    if (!isStaff) {
+      this.mail.sendStaffBookingCancellationAlert({
+        ref, guestName: updated.customer?.name ?? 'Guest',
+        guestEmail: updated.customer?.email ?? '',
+        slotDate: slotDateStr, slotTime,
+      }).catch(() => {})
+
+      // Auto-request refund for any paid pre-order
+      const paidPreOrder = await this.prisma.order.findFirst({
+        where: { bookingId, status: 'PRE_ORDER', paymentStatus: 'PAID' },
+      })
+      if (paidPreOrder) {
+        await this.prisma.order.update({
+          where: { id: paidPreOrder.id },
+          data: {
+            status: 'CANCELLED',
+            paymentStatus: 'REFUND_REQUESTED',
+            cancelledAt: new Date(),
+            cancelReason: 'Booking cancelled by customer',
+            statusHistory: { create: { fromStatus: 'PRE_ORDER', toStatus: 'CANCELLED', changedById: null, note: 'Auto-cancelled: booking cancelled by customer' } },
+          },
+        }).catch(e => this.logger.error(`Failed to flag pre-order for refund: ${e?.message}`))
+        this.logger.log(`Pre-order ${paidPreOrder.id} flagged REFUND_REQUESTED — booking ${bookingId} cancelled by customer`)
+      }
     }
 
     return updated
@@ -290,16 +318,49 @@ export class BookingsService {
     const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } })
     if (!booking) throw new NotFoundException('Booking not found')
     if (booking.status === 'CANCELLED') throw new BadRequestException('Booking is cancelled.')
-    const updated = await this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'ARRIVED' } })
-    this.logger.log(`Booking ${bookingId} marked ARRIVED — firing pre-order to kitchen`)
-    try {
-      const fired = await this.ordersService.firePreOrderToKitchen(bookingId)
-      if (fired) this.logger.log(`Pre-order ${fired.id} fired to kitchen (token #${fired.tokenNumber})`)
-      else this.logger.log(`No pre-order found for booking ${bookingId}`)
-    } catch (err: any) {
-      this.logger.error(`Failed to fire pre-order for booking ${bookingId}: ${err?.message}`, err?.stack)
+    if (booking.status === 'ARRIVED') return booking  // idempotent
+    return this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'ARRIVED' } })
+  }
+
+  async getPublicBookingDetails(bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        table: { select: { tableNumber: true, zone: true } },
+        customer: { select: { name: true } },
+        preOrders: {
+          where: { status: 'PRE_ORDER' },
+          include: {
+            items: {
+              include: { menuItem: { select: { name: true, nameAr: true } } },
+            },
+          },
+        },
+      },
+    })
+    if (!booking) throw new NotFoundException('Booking not found')
+    const shortRef = booking.id.slice(-8).toUpperCase()
+    return {
+      ref: shortRef,
+      status: booking.status,
+      slotDate: booking.slotDate,
+      slotTime: booking.slotTime,
+      partySize: booking.partySize,
+      guestName: booking.customer?.name ?? null,
+      table: booking.table ? { number: booking.table.tableNumber, zone: booking.table.zone } : null,
+      preOrderItems: (booking as any).preOrders?.flatMap((o: any) =>
+        o.items.map((i: any) => ({ name: i.menuItem.name, nameAr: i.menuItem.nameAr, quantity: i.quantity }))
+      ) ?? [],
     }
-    return updated
+  }
+
+  async staffCheckIn(bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } })
+    if (!booking) throw new NotFoundException('Booking not found')
+    if (booking.status === 'CANCELLED') throw new BadRequestException('Booking is cancelled')
+    await this.ordersService.checkInGuest(booking.id)
+    await this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'ARRIVED' } })
+    return { success: true, bookingId: booking.id, tableId: booking.tableId }
   }
 
   async getMyBookings(customerId: string) {

@@ -12,7 +12,7 @@ import api from '@/lib/api'
 import { getSocket } from '@/lib/socket'
 import { useAuthStore } from '@/store/auth'
 
-interface TableSummary { id: string; tableNumber: number; name: string | null; status: string; capacity: number }
+interface TableSummary { id: string; tableNumber: number; name: string | null; status: string; capacity: number; isReservable: boolean }
 interface OrderSummary {
   id: string; status: string; type: string; total: number; createdAt: string; paymentStatus: string
   table?: { tableNumber: number; name?: string }
@@ -22,9 +22,15 @@ interface OrderSummary {
 
 const TABLE_CFG: Record<string, { label: string; bg: string; text: string }> = {
   EMPTY:        { label: 'Available',  bg: '#10b981', text: '#fff' },
+  EMPTY_WALKIN: { label: 'Walk-in',    bg: '#6366f1', text: '#fff' },
   OCCUPIED:     { label: 'Occupied',   bg: '#f43f5e', text: '#fff' },
   BILL_PENDING: { label: 'Bill Due',   bg: 'var(--brand)', text: '#fff' },
   DIRTY:        { label: 'Cleaning',   bg: '#6b7280', text: '#fff' },
+}
+
+function tableCfgKey(t: TableSummary) {
+  if (t.status === 'EMPTY' && !t.isReservable) return 'EMPTY_WALKIN'
+  return t.status
 }
 
 function formatDuration(ms: number) {
@@ -57,23 +63,27 @@ function StatCard({
   label: string; value: string | number; sub: string
   icon: React.ReactNode; accent?: string; urgent?: boolean; onClick?: () => void
 }) {
+  const color = urgent ? 'var(--brand)' : (accent ?? 'var(--brand)')
   return (
     <button onClick={onClick}
-      className="rounded-2xl border p-4 text-left transition-all hover:opacity-90 active:scale-[0.98] flex flex-col gap-3 w-full"
-      style={{ backgroundColor: 'var(--card-bg)', borderColor: urgent ? 'var(--brand)' : 'var(--card-border)' }}>
+      className="rounded-2xl border p-4 text-left transition-all hover:opacity-90 active:scale-[0.98] flex flex-col gap-2.5 w-full relative overflow-hidden"
+      style={{ backgroundColor: 'var(--card-bg)', borderColor: urgent ? color : 'var(--card-border)' }}>
+      {/* subtle top accent bar */}
+      <div className="absolute top-0 left-0 right-0 h-0.5 rounded-t-2xl"
+        style={{ backgroundColor: color, opacity: urgent ? 1 : 0.35 }} />
       <div className="flex items-center justify-between">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{ backgroundColor: accent ? `${accent}18` : 'var(--muted-bg)' }}>
+        <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+          style={{ backgroundColor: `${color}18` }}>
           {icon}
         </div>
         {urgent && (
-          <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--brand)' }} />
+          <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: color }} />
         )}
       </div>
       <div>
-        <div className="text-2xl font-black leading-none" style={{ color: 'var(--text-primary)' }}>{value}</div>
-        <div className="text-[10px] font-semibold uppercase tracking-wide mt-1.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
-        <div className="text-[11px] mt-0.5 font-medium" style={{ color: urgent ? 'var(--brand)' : 'var(--text-muted)' }}>{sub}</div>
+        <div className="text-2xl font-black leading-none tabular-nums" style={{ color: 'var(--text-primary)' }}>{value}</div>
+        <div className="text-[10px] font-bold uppercase tracking-widest mt-1.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
+        <div className="text-[10px] mt-0.5 font-medium truncate" style={{ color: urgent ? color : 'var(--text-muted)' }}>{sub}</div>
       </div>
     </button>
   )
@@ -324,13 +334,16 @@ export default function Dashboard() {
                   <div key={i} className="h-14 rounded-xl animate-pulse" style={{ backgroundColor: 'var(--muted-bg)' }} />
                 ))
               : tables.map(t => {
-                  const cfg = TABLE_CFG[t.status] ?? TABLE_CFG.EMPTY
+                  const key = tableCfgKey(t)
+                  const cfg = TABLE_CFG[key] ?? TABLE_CFG.EMPTY
                   return (
                     <button key={t.id} onClick={() => router.push('/staff/tables')}
-                      className="rounded-xl p-2.5 flex flex-col items-center justify-center gap-0.5 hover:opacity-85 active:scale-95 transition-all"
-                      style={{ backgroundColor: cfg.bg, color: cfg.text }}>
-                      <span className="text-[11px] font-black leading-none">{t.name ?? `T${t.tableNumber}`}</span>
-                      <span className="text-[9px] opacity-80 leading-none">{cfg.label}</span>
+                      className="rounded-xl p-2 flex flex-col items-center justify-center gap-0.5 hover:opacity-85 active:scale-95 transition-all relative overflow-hidden"
+                      style={{ backgroundColor: cfg.bg + '22', border: `1.5px solid ${cfg.bg}55` }}>
+                      <span className="text-[11px] font-black leading-none" style={{ color: cfg.bg }}>{t.name ?? `T${t.tableNumber}`}</span>
+                      <span className="text-[8px] font-semibold leading-none opacity-70" style={{ color: cfg.bg }}>{cfg.label}</span>
+                      {/* capacity pip */}
+                      <span className="text-[7px] leading-none mt-0.5 opacity-50" style={{ color: cfg.bg }}>{t.capacity}p</span>
                     </button>
                   )
                 })
@@ -340,7 +353,7 @@ export default function Dashboard() {
           {/* Legend */}
           <div className="flex items-center gap-3 px-4 pb-3 flex-wrap">
             {Object.entries(TABLE_CFG).map(([, cfg]) => (
-              <div key={cfg.label} className="flex items-center gap-1">
+              <div key={cfg.label} className="flex items-center gap-1.5">
                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: cfg.bg }} />
                 <span className="text-[9px] font-medium" style={{ color: 'var(--text-muted)' }}>{cfg.label}</span>
               </div>

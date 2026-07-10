@@ -44,18 +44,23 @@ export default function StripePaymentForm({ orderId, total, onSuccess, onCancel 
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="bg-gray-50 rounded-xl p-4 border">
-        <PaymentElement options={{ layout: 'tabs' }} />
+      <div className="rounded-xl p-4" style={{ background: 'var(--input-bg)', border: '1px solid var(--card-border)' }}>
+        <PaymentElement options={{
+          layout: 'accordion',
+          wallets: { link: 'never', applePay: 'never', googlePay: 'never' },
+          fields: { billingDetails: { name: 'never', email: 'never', phone: 'never', address: 'never' } },
+        }} />
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
+        <div className="text-sm px-4 py-3 rounded-xl" style={{ background: 'var(--c-danger-bg)', border: '1px solid var(--c-danger-bdr)', color: 'var(--c-danger-fg)' }}>
           {error}
         </div>
       )}
 
       <button type="submit" disabled={loading || !stripe}
-        className="w-full bg-orange-500 text-white py-4 rounded-2xl font-bold text-base hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+        className="w-full py-4 rounded-2xl font-bold text-base transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+        style={{ background: 'var(--brand)', color: '#000' }}>
         {loading
           ? <><Loader2 size={18} className="animate-spin" /> Processing...</>
           : <><Lock size={16} /> Pay AED {total.toFixed(2)}</>
@@ -63,11 +68,12 @@ export default function StripePaymentForm({ orderId, total, onSuccess, onCancel 
       </button>
 
       <button type="button" onClick={onCancel}
-        className="w-full border border-gray-200 text-gray-500 py-3 rounded-2xl text-sm hover:bg-gray-50">
+        className="w-full py-3 rounded-2xl text-sm transition-colors"
+        style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)', background: 'transparent' }}>
         Back to Cart
       </button>
 
-      <p className="text-center text-xs text-gray-400 flex items-center justify-center gap-1">
+      <p className="text-center text-xs flex items-center justify-center gap-1" style={{ color: 'var(--text-muted)' }}>
         <Lock size={10} /> Secured by Stripe · AED only
       </p>
     </form>

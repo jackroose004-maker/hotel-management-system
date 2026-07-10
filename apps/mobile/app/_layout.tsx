@@ -3,13 +3,16 @@ import { Stack } from 'expo-router'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useAuthStore } from '../src/stores/auth.store'
+import { useBrandStore } from '../src/stores/brand.store'
 
 export default function RootLayout() {
   const init = useAuthStore((s) => s.init)
+  const initBrand = useBrandStore((s) => s.init)
 
   useEffect(() => {
     init()
-  }, [init])
+    initBrand()
+  }, [init, initBrand])
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

@@ -271,5 +271,5 @@
   "login.password": "Password",
   "login.confirmPassword": "Confirm Password",
   "login.yourNamePlaceholder": "Your name",
-  "login.createFreeAccount": "Create Free Account"
+  "login.createFreeAccount": "Join"
 }

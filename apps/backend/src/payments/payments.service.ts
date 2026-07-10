@@ -92,7 +92,7 @@ export class PaymentsService {
   // Settle all unpaid orders at a table — staff picks CASH or CARD
   async settleAllCashForTable(tableId: string, method: 'CASH' | 'CARD' = 'CASH', settledById?: string) {
     const unpaid = await this.prisma.order.findMany({
-      where: { tableId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
+      where: { tableId, paymentStatus: 'UNPAID', status: { notIn: ['CANCELLED', 'PRE_ORDER'] } },
       select: { id: true, total: true },
     })
     if (!unpaid.length) return { settled: 0, total: 0 }
@@ -124,10 +124,16 @@ export class PaymentsService {
     const { method, discountAmount = 0, discountReason, splitCashAmount, tipAmount = 0, settledById } = opts
 
     const unpaid = await this.prisma.order.findMany({
-      where: { tableSessionId: sessionId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
+      where: {
+        tableSessionId: sessionId,
+        paymentStatus: 'UNPAID',
+        // Settle any active order — not just DELIVERED.
+        // Pre-orders can be in ACCEPTED/PREPARING/READY when staff settle at the table.
+        status: { notIn: ['CANCELLED', 'PRE_ORDER'] },
+      },
       select: { id: true, total: true, tableId: true },
     })
-    if (!unpaid.length) return { settled: 0, total: 0 }
+    if (!unpaid.length) throw new Error('No unpaid orders found for this session')
 
     const sessionTotal = unpaid.reduce((s, o) => s + Number(o.total), 0)
 

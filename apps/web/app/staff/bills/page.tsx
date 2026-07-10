@@ -21,7 +21,7 @@ interface BillOrder {
   user?: { name: string } | null
   items: { quantity: number; unitPrice: number; menuItem: { name: string } }[]
 }
-interface BillSummary { subtotal: number; vatAmount: number; total: number; allPaid: boolean; anyUnpaid: boolean; orderCount: number }
+interface BillSummary { subtotal: number; vatAmount: number; discount?: number; tipAmount?: number; total: number; allPaid: boolean; anyUnpaid: boolean; orderCount: number; settledBy?: { name: string } | null; settledAt?: string | null }
 interface Tab { sessionId: string; orders: BillOrder[]; summary: BillSummary }
 interface ActiveTableEntry { table: TableRow; tabs: Tab[]; combined: BillSummary }
 interface ClosedSession { table: TableRow; sessionId: string; orders: BillOrder[]; summary: BillSummary; closedAt: string }
@@ -628,7 +628,10 @@ function TabRow({ tab, idx, tableName, onSettle, onTransferDone, busy, isManager
   const label = tabLabel(tab, idx)
   const isMember = !!tab.orders.find(o => o.user)
   const total = Number(tab.summary.total)
-  const hasUnapproved = tab.orders.some(o => o.status === 'PENDING')
+  // Block settle while any unpaid order is still being prepared (not yet READY or DELIVERED)
+  const hasUnapproved = tab.orders.some(
+    o => ['PENDING', 'ACCEPTED', 'PREPARING'].includes(o.status) && o.paymentStatus !== 'PAID'
+  )
 
   const itemMap = new Map<string, { name: string; qty: number; price: number }>()
   for (const o of tab.orders) {
@@ -707,11 +710,14 @@ function TabRow({ tab, idx, tableName, onSettle, onTransferDone, busy, isManager
               {hasUnapproved && (
                 <div className="flex-1 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold"
                   style={{ backgroundColor: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b' }}>
-                  ⏳ Order still pending approval — settle after kitchen accepts
+                  {tab.orders.some(o => o.status === 'PENDING' && o.paymentStatus !== 'PAID')
+                    ? '⏳ Waiting for kitchen to accept'
+                    : '🍳 Food still being prepared'}
                 </div>
               )}
               {!hasUnapproved && (
               <>
+              {(splitPaymentEnabled ?? true) && (
               <button
                 onClick={() => setShowSplit(true)} disabled={busy}
                 className="py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50 transition-opacity hover:opacity-90 flex-shrink-0"
@@ -719,6 +725,7 @@ function TabRow({ tab, idx, tableName, onSettle, onTransferDone, busy, isManager
                 title="Split bill between guests">
                 <Users size={11} /> Split
               </button>
+              )}
               <button
                 onClick={() => setShowSettle(true)} disabled={busy}
                 className="flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 disabled:opacity-50 transition-opacity hover:opacity-90 text-white"
@@ -889,8 +896,9 @@ function ClosedSessionCard({ s, onRefund }: { s: ClosedSession; onRefund: () => 
   const [expanded, setExpanded] = useState(false)
   const [refundOrder, setRefundOrder] = useState<BillOrder | null>(null)
   const tableName = s.table.name ?? `Table ${s.table.tableNumber}`
-  const userName = s.orders.find(o => o.user)?.user?.name?.split(' ')[0] ?? 'Guest'
+  const guestName = s.orders.find(o => o.user)?.user?.name?.split(' ')[0] ?? 'Guest'
 
+  // Aggregate items across all orders
   const itemMap = new Map<string, { name: string; qty: number; price: number }>()
   for (const o of s.orders) {
     for (const i of o.items) {
@@ -902,74 +910,117 @@ function ClosedSessionCard({ s, onRefund }: { s: ClosedSession; onRefund: () => 
   }
   const items = [...itemMap.values()]
 
+  // Payment method from first paid order
+  const paymentMethod = s.orders.find(o => o.paymentMethod)?.paymentMethod
+  const methodIcon = paymentMethod === 'CARD' ? <CreditCard size={10} />
+    : paymentMethod === 'SPLIT' ? <><Banknote size={10} /><span>+</span><CreditCard size={10} /></>
+    : <Banknote size={10} />
+  const methodLabel = paymentMethod === 'CARD' ? 'Card' : paymentMethod === 'SPLIT' ? 'Split' : 'Cash'
+  const methodColor = paymentMethod === 'CARD' ? '#60a5fa' : paymentMethod === 'SPLIT' ? '#a78bfa' : '#4ade80'
+
+  const settledBy = s.summary.settledBy?.name?.split(' ')[0]
+  const closedTime = new Date(s.closedAt).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })
+  const hasRefundable = s.orders.some(o => o.paymentStatus === 'PAID' || o.paymentStatus === 'REFUND_REQUESTED')
+
   return (
     <div className="rounded-2xl border overflow-hidden" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
-      <button onClick={() => setExpanded(p => !p)} className="w-full px-4 py-3.5 flex items-center gap-3 text-left transition-colors hover:opacity-90">
+      {/* Green settled stripe */}
+      <div className="h-0.5" style={{ backgroundColor: 'var(--c-success-fg)' }} />
+
+      {/* Header row — always visible */}
+      <button onClick={() => setExpanded(p => !p)} className="w-full px-4 py-3 flex items-center gap-3 text-left">
+        {/* Table badge */}
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black text-white flex-shrink-0"
+          style={{ backgroundColor: 'var(--c-success-fg)' }}>
+          {s.table.tableNumber}
+        </div>
+
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-gray-900 dark:text-white text-sm">{tableName}</span>
-            <span className="text-gray-300 dark:text-white/20">·</span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">{userName}</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{tableName}</span>
+            <span style={{ color: 'var(--text-muted)' }}>·</span>
+            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{guestName}</span>
           </div>
-          <div className="text-[10px] text-gray-400 mt-0.5">
-            {new Date(s.closedAt).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })}
-            {' · '}{s.summary.orderCount} order{s.summary.orderCount !== 1 ? 's' : ''}
-            {' · '}{items.length} items
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{closedTime}</span>
+            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>·</span>
+            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{items.length} item{items.length !== 1 ? 's' : ''}</span>
+            {settledBy && <>
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>·</span>
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>by {settledBy}</span>
+            </>}
           </div>
         </div>
-        <div className="flex items-center gap-2.5 flex-shrink-0">
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Payment method pill */}
+          <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+            style={{ backgroundColor: `${methodColor}18`, color: methodColor, border: `1px solid ${methodColor}44` }}>
+            {methodIcon} {methodLabel}
+          </span>
           <div className="text-right">
-            <div className="text-sm font-black text-gray-900 dark:text-white">AED {Number(s.summary.total).toFixed(2)}</div>
-            <div className="text-[10px] font-semibold" style={{ color: s.summary.allPaid ? 'var(--c-success-fg)' : 'var(--c-pending-fg)' }}>
-              {s.summary.allPaid ? '✓ Settled' : 'Pending'}
-            </div>
+            <div className="text-sm font-black" style={{ color: 'var(--text-primary)' }}>AED {Number(s.summary.total).toFixed(2)}</div>
+            <div className="text-[10px] font-semibold" style={{ color: 'var(--c-success-fg)' }}>✓ Settled</div>
           </div>
-          {expanded ? <ChevronDown size={13} className="text-gray-400" /> : <ChevronRight size={13} className="text-gray-400" />}
+          {expanded ? <ChevronDown size={13} style={{ color: 'var(--text-muted)' }} /> : <ChevronRight size={13} style={{ color: 'var(--text-muted)' }} />}
         </div>
       </button>
 
+      {/* Expanded body */}
       {expanded && (
-        <div className="px-4 pb-4 space-y-1.5">
-          {items.map((item, i) => (
-            <div key={i} className="flex justify-between text-xs">
-              <span className="text-gray-600 dark:text-gray-300"><span className="font-semibold">{item.qty}×</span> {item.name}</span>
-              <span className="text-gray-400">AED {item.price.toFixed(2)}</span>
-            </div>
-          ))}
+        <div className="border-t px-4 pb-4 pt-3 space-y-3" style={{ borderColor: 'var(--card-border)' }}>
+          {/* Items */}
+          <div className="space-y-1">
+            {items.map((item, i) => (
+              <div key={i} className="flex justify-between text-xs">
+                <span style={{ color: 'var(--text-muted)' }}>
+                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.qty}×</span> {item.name}
+                </span>
+                <span style={{ color: 'var(--text-muted)' }}>AED {item.price.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+
           <TotalsBlock subtotal={Number(s.summary.subtotal)} vat={Number(s.summary.vatAmount)} total={Number(s.summary.total)} />
-          <div className="pt-1 space-y-2">
-            <div className="flex gap-1.5 flex-wrap">
-              {s.orders.filter(o => o.paymentStatus === 'PAID' || o.paymentStatus === 'REFUND_REQUESTED').map((o, oi) => (
-                <button key={o.id} onClick={() => o.paymentStatus === 'PAID' ? setRefundOrder(o) : undefined}
-                  disabled={o.paymentStatus === 'REFUND_REQUESTED'}
-                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                  style={{ backgroundColor: o.paymentStatus === 'REFUND_REQUESTED' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${o.paymentStatus === 'REFUND_REQUESTED' ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.25)'}`, color: o.paymentStatus === 'REFUND_REQUESTED' ? '#f59e0b' : '#f87171' }}>
-                  <RotateCcw size={10} />
-                  {o.paymentStatus === 'REFUND_REQUESTED' ? `Order ${oi + 1} — Pending approval` : `Refund order ${s.orders.length > 1 ? oi + 1 : ''}`}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
+
+          {/* Action row */}
+          <div className="flex items-center gap-2 pt-1">
+            {hasRefundable && (
+              <div className="flex gap-1.5 flex-wrap flex-1">
+                {s.orders.filter(o => o.paymentStatus === 'PAID' || o.paymentStatus === 'REFUND_REQUESTED').map((o, oi) => (
+                  <button key={o.id} onClick={() => o.paymentStatus === 'PAID' ? setRefundOrder(o) : undefined}
+                    disabled={o.paymentStatus === 'REFUND_REQUESTED'}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: o.paymentStatus === 'REFUND_REQUESTED' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.08)', border: `1px solid ${o.paymentStatus === 'REFUND_REQUESTED' ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.2)'}`, color: o.paymentStatus === 'REFUND_REQUESTED' ? '#f59e0b' : '#f87171' }}>
+                    <RotateCcw size={10} />
+                    {o.paymentStatus === 'REFUND_REQUESTED' ? `Refund pending` : `Refund${s.orders.length > 1 ? ` #${oi + 1}` : ''}`}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 ml-auto">
               <button onClick={() => window.open(`/receipt/${s.sessionId}`, '_blank')}
-                className="flex items-center gap-1.5 text-xs border border-[var(--card-border)] px-3 py-1.5 rounded-lg transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
-                <Printer size={11} /> <span className="hidden sm:inline">Reprint</span>
+                title="Print receipt"
+                className="p-2 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+                style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+                <Printer size={13} />
               </button>
-              <button onClick={() => {
-                const url = `${window.location.origin}/receipt/${s.sessionId}`
-                window.open(url, '_blank')
-              }} className="flex items-center gap-1.5 text-xs border border-[var(--card-border)] px-3 py-1.5 rounded-lg transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
-                <Receipt size={11} /> <span className="hidden sm:inline">View / PDF</span><span className="sm:hidden">PDF</span>
+              <button onClick={() => window.open(`${window.location.origin}/receipt/${s.sessionId}`, '_blank')}
+                title="View / PDF"
+                className="p-2 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+                style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+                <Receipt size={13} />
               </button>
-              <button onClick={() => {
-                const url = `${window.location.origin}/receipt/${s.sessionId}`
-                if (navigator.share) {
-                  navigator.share({ title: 'Your Receipt', url })
-                } else {
-                  navigator.clipboard.writeText(url)
-                  notify.success('Receipt link copied!')
-                }
-              }} className="flex items-center gap-1.5 text-xs border border-[var(--card-border)] px-3 py-1.5 rounded-lg transition-colors hover:bg-gray-50 dark:hover:bg-gray-800">
-                <Share2 size={11} /> Share
+              <button
+                title="Share receipt link"
+                onClick={() => {
+                  const url = `${window.location.origin}/receipt/${s.sessionId}`
+                  if (navigator.share) { navigator.share({ title: 'Your Receipt', url }) }
+                  else { navigator.clipboard.writeText(url); notify.success('Receipt link copied!') }
+                }}
+                className="p-2 rounded-lg border transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+                style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+                <Share2 size={13} />
               </button>
             </div>
           </div>

@@ -9,7 +9,6 @@ import { UsersService } from './users.service'
 export class UsersController {
   constructor(private users: UsersService) {}
 
-  // Staff — look up a customer by email to check if they exist
   @UseGuards(RolesGuard)
   @Roles('OWNER', 'STAFF')
   @Get('lookup')
@@ -27,8 +26,11 @@ export class UsersController {
   @UseGuards(RolesGuard)
   @Roles('OWNER')
   @Post('staff')
-  createStaff(@Body() body: { name: string; email: string; password: string; role: string }) {
-    return this.users.createStaff(body)
+  createStaff(
+    @Body() body: { name: string; email: string; password: string; role: string; staffRoleId?: string },
+    @Request() req,
+  ) {
+    return this.users.createStaff(body, req.user.id)
   }
 
   @UseGuards(RolesGuard)
@@ -36,7 +38,7 @@ export class UsersController {
   @Patch('staff/:id')
   updateStaff(
     @Param('id') id: string,
-    @Body() body: { name?: string; role?: string; isActive?: boolean; password?: string },
+    @Body() body: { name?: string; role?: string; isActive?: boolean; password?: string; staffRoleId?: string | null },
     @Request() req,
   ) {
     return this.users.updateStaff(id, body, req.user.id)

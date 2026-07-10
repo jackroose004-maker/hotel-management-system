@@ -60,7 +60,7 @@ const CANCELLABLE_BY_ROLE: Record<string, string[]> = {
   OWNER:   ['PENDING', 'ACCEPTED', 'PREPARING'],
 }
 
-function OrderCard({ order, onAdvance, onCancel, onVoid, onAddItems, onRush, onReply, hasGuestMessage, busy, isNew, userRole, hasKitchenPerm }: {
+function OrderCard({ order, onAdvance, onCancel, onVoid, onAddItems, onRush, onReply, hasGuestMessage, busy, isNew, userRole, hasKitchenPerm, thermalEnabled }: {
   order: Order
   onAdvance: (id: string, status: string) => void
   onCancel?: (id: string) => void
@@ -73,6 +73,7 @@ function OrderCard({ order, onAdvance, onCancel, onVoid, onAddItems, onRush, onR
   isNew?: boolean
   userRole?: string
   hasKitchenPerm?: boolean
+  thermalEnabled?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const estMins = Math.max(...order.items.map(i => i.menuItem.prepTimeMins ?? 15), 15)
@@ -80,7 +81,14 @@ function OrderCard({ order, onAdvance, onCancel, onVoid, onAddItems, onRush, onR
   // Kitchen-permission users can only advance kitchen stages (ACCEPTED→PREPARING→READY)
   const KITCHEN_STAGES = ['ACCEPTED', 'PREPARING']
   const canAdvance = !hasKitchenPerm || KITCHEN_STAGES.includes(order.status)
-  const next = canAdvance ? NEXT_STATUS[order.status] : undefined
+  // Skip mode: PENDING jumps to READY (prints KOT), READY → DELIVERED; no middle stages
+  const SKIP_STATUS: Record<string, string> = { PENDING: 'READY', READY: 'DELIVERED' }
+  const SKIP_LABEL: Record<string, string>  = { PENDING: 'Accept & Ready', READY: 'Mark Served' }
+  const SKIP_LABEL_SHORT: Record<string, string> = { PENDING: 'Accept', READY: 'Served' }
+  const nextStatus = canAdvance ? (thermalEnabled ? (SKIP_STATUS[order.status] ?? NEXT_STATUS[order.status]) : NEXT_STATUS[order.status]) : undefined
+  const nextLabel       = thermalEnabled ? (SKIP_LABEL[order.status]       ?? NEXT_LABEL[order.status])       : NEXT_LABEL[order.status]
+  const nextLabelShort  = thermalEnabled ? (SKIP_LABEL_SHORT[order.status] ?? NEXT_LABEL_SHORT[order.status]) : NEXT_LABEL_SHORT[order.status]
+  const next = nextStatus
   const tableLabel = order.type === 'DINE_IN'
     ? (order.table?.name ?? (order.table?.tableNumber ? `Table ${order.table.tableNumber}` : 'Dine-in'))
     : `#${order.tokenNumber}`
@@ -204,14 +212,14 @@ function OrderCard({ order, onAdvance, onCancel, onVoid, onAddItems, onRush, onR
                   className={`w-full py-2.5 rounded-lg text-[11px] font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-[0.98] ${order.status === 'PENDING' ? '' : NEXT_COLOR[order.status]}`}
                   style={order.status === 'PENDING' ? { backgroundColor: 'var(--brand)', color: '#000' } : undefined}>
                   {busy ? <Loader2 size={11} className="animate-spin" /> : null}
-                  <span className="hidden sm:inline">{NEXT_LABEL[order.status]}</span>
-                  <span className="sm:hidden">{NEXT_LABEL_SHORT[order.status]}</span>
+                  <span className="hidden sm:inline">{nextLabel}</span>
+                  <span className="sm:hidden">{nextLabelShort}</span>
                 </button>
               )}
               {/* Secondary actions — compact row */}
               {(onAddItems || onCancel || onVoid || onRush || (onReply && hasGuestMessage)) && (
                 <div className="flex gap-1.5">
-                  {onAddItems && ['PENDING','ACCEPTED','PREPARING'].includes(order.status) && (
+                  {onAddItems && (thermalEnabled ? ['PENDING','READY'].includes(order.status) : ['PENDING','ACCEPTED','PREPARING'].includes(order.status)) && (
                     <button onClick={() => onAddItems(order.id)} disabled={busy}
                       className="flex-1 py-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-all disabled:opacity-50"
                       style={{ border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}
@@ -543,8 +551,8 @@ function AddItemsModal({ order, onClose, onSaved }: {
   const cartTotal = cart.reduce((s, e) => {
     const item = menuItems.find(i => i.id === e.menuItemId)
     if (!item) return s
-    const modExtra = (item.modifierGroups ?? []).flatMap(g => g.options).filter(o => e.optionIds.includes(o.id)).reduce((a, o) => a + o.priceAdd, 0)
-    return s + (item.price + modExtra) * e.quantity
+    const modExtra = (item.modifierGroups ?? []).flatMap(g => g.options).filter(o => e.optionIds.includes(o.id)).reduce((a, o) => a + Number(o.priceAdd), 0)
+    return s + (Number(item.price) + modExtra) * e.quantity
   }, 0)
 
   function cartAddSimple(item: AddMenuItem) {
@@ -609,7 +617,7 @@ function AddItemsModal({ order, onClose, onSaved }: {
         const allOpts = (item.modifierGroups ?? []).flatMap(g => g.options)
         const modifiers = e.optionIds.map(oid => {
           const opt = allOpts.find(o => o.id === oid)!
-          return { optionId: oid, name: opt.name, priceAdd: opt.priceAdd }
+          return { optionId: oid, name: opt.name, priceAdd: Number(opt.priceAdd) }
         })
         return { menuItemId: e.menuItemId, quantity: e.quantity, ...(modifiers.length ? { modifiers } : {}) }
       })
@@ -800,7 +808,7 @@ function AddItemsModal({ order, onClose, onSaved }: {
                               {selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                             </div>
                             <span className="flex-1 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{opt.name}</span>
-                            {opt.priceAdd > 0 && <span className="text-xs font-semibold" style={{ color: 'var(--brand)' }}>+AED {opt.priceAdd.toFixed(2)}</span>}
+                            {Number(opt.priceAdd) > 0 && <span className="text-xs font-semibold" style={{ color: 'var(--brand)' }}>+AED {Number(opt.priceAdd).toFixed(2)}</span>}
                           </button>
                         )
                       })}
@@ -1044,6 +1052,7 @@ function OrdersPageInner() {
   const [replyText, setReplyText] = useState('')
   const [replyBusy, setReplyBusy] = useState(false)
   const [staffOrderTable, setStaffOrderTable] = useState<{ id: string; name: string } | null>(null)
+  const [thermalEnabled, setThermalEnabled] = useState(false)
   const recentlyActioned = useRef<Set<string>>(new Set())
   const userRole = useAuthStore(s => s.user?.role ?? 'STAFF')
   // Kitchen-only mode: user has 'kitchen' but NOT 'orders' — pure KDS/display user (Chef role)
@@ -1063,8 +1072,12 @@ function OrdersPageInner() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const { data } = await api.get(filter === 'active' ? '/orders/active' : '/orders')
-      setOrders(data)
+      const [ordersRes, settingsRes] = await Promise.all([
+        api.get(filter === 'active' ? '/orders/active' : '/orders'),
+        api.get('/settings'),
+      ])
+      setOrders(ordersRes.data)
+      setThermalEnabled(settingsRes.data?.thermalEnabled ?? false)
     } finally { setLoading(false) }
   }, [filter])
 
@@ -1271,11 +1284,10 @@ function OrdersPageInner() {
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {/* ── Mobile tab bar (md and below) ── */}
         <div className="flex md:hidden flex-shrink-0 gap-1 px-3 pt-3 pb-2">
-          {[
-            { label: 'Approval', dot: '#eab308', count: pending.length + zombies.length },
-            { label: 'Kitchen',  dot: '#3b82f6', count: kitchen.length },
-            { label: 'Ready',    dot: '#22c55e', count: ready.length },
-          ].map((tab, i) => (
+          {(thermalEnabled
+            ? [{ label: 'Approval', dot: '#eab308', count: pending.length + zombies.length }, { label: 'Ready', dot: '#22c55e', count: ready.length }]
+            : [{ label: 'Approval', dot: '#eab308', count: pending.length + zombies.length }, { label: 'Kitchen', dot: '#3b82f6', count: kitchen.length }, { label: 'Ready', dot: '#22c55e', count: ready.length }]
+          ).map((tab, i) => (
             <button key={i} onClick={() => setMobileTab(i)}
               className="flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl text-[10px] font-bold transition-all"
               style={{
@@ -1339,6 +1351,7 @@ function OrdersPageInner() {
                       onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
                       userRole={userRole}
                       hasKitchenPerm={hasKitchenPerm}
+                      thermalEnabled={thermalEnabled}
                       onRush={rushOrder}
                       onReply={id => setReplyTarget(id)}
                       hasGuestMessage={!!(guestMessages[o.id]?.length)}
@@ -1384,18 +1397,20 @@ function OrdersPageInner() {
             )}
           </KanbanColumn>
 
-          {/* ── Col 2: In Kitchen ── */}
-          <KanbanColumn title="In Kitchen" dotColor="#3b82f6" count={kitchen.length}
-            emptyIcon={<ChefHat size={28} />} emptyText="Nothing cooking">
-            {kitchen.map(o => (
-              <OrderCard key={o.id} order={o} onAdvance={advance}
-                onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
-                onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
-                userRole={userRole} hasKitchenPerm={hasKitchenPerm} onRush={rushOrder}
-                onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)}
-                busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
-            ))}
-          </KanbanColumn>
+          {/* ── Col 2: In Kitchen (hidden in skip-kitchen-stages mode) ── */}
+          {!thermalEnabled && (
+            <KanbanColumn title="In Kitchen" dotColor="#3b82f6" count={kitchen.length}
+              emptyIcon={<ChefHat size={28} />} emptyText="Nothing cooking">
+              {kitchen.map(o => (
+                <OrderCard key={o.id} order={o} onAdvance={advance}
+                  onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
+                  onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
+                  userRole={userRole} hasKitchenPerm={hasKitchenPerm} thermalEnabled={thermalEnabled} onRush={rushOrder}
+                  onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)}
+                  busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
+              ))}
+            </KanbanColumn>
+          )}
 
           {/* ── Col 3: Ready ── */}
           <KanbanColumn title="Ready" dotColor="#22c55e" count={ready.length}
@@ -1403,7 +1418,8 @@ function OrdersPageInner() {
             {ready.map(o => (
               <OrderCard key={o.id} order={o} onAdvance={advance}
                 onVoid={id => setVoidTarget(orders.find(x => x.id === id) ?? null)}
-                userRole={userRole} hasKitchenPerm={hasKitchenPerm} onRush={rushOrder}
+                onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
+                userRole={userRole} hasKitchenPerm={hasKitchenPerm} thermalEnabled={thermalEnabled} onRush={rushOrder}
                 onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)}
                 busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
             ))}
@@ -1428,7 +1444,7 @@ function OrdersPageInner() {
                     onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
                       onVoid={id => setVoidTarget(orders.find(x => x.id === id) ?? null)}
                       onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
-                      userRole={userRole} hasKitchenPerm={hasKitchenPerm} onRush={rushOrder}
+                      userRole={userRole} hasKitchenPerm={hasKitchenPerm} thermalEnabled={thermalEnabled} onRush={rushOrder}
                       onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)}
                     busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
                 ))}
@@ -1458,17 +1474,18 @@ function OrdersPageInner() {
               </div>
             )}
           </>}
-          {mobileTab === 1 && <>
+          {mobileTab === 1 && !thermalEnabled && <>
             {kitchen.map(o => <OrderCard key={o.id} order={o} onAdvance={advance}
               onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
               onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
-              userRole={userRole} hasKitchenPerm={hasKitchenPerm} onRush={rushOrder} onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
+              userRole={userRole} hasKitchenPerm={hasKitchenPerm} thermalEnabled={thermalEnabled} onRush={rushOrder} onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
             {kitchen.length === 0 && <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}><ChefHat size={28} /><span className="text-xs">Nothing here</span></div>}
           </>}
-          {mobileTab === 2 && <>
+          {(thermalEnabled ? mobileTab === 1 : mobileTab === 2) && <>
             {ready.map(o => <OrderCard key={o.id} order={o} onAdvance={advance}
               onVoid={id => setVoidTarget(orders.find(x => x.id === id) ?? null)}
-              userRole={userRole} hasKitchenPerm={hasKitchenPerm} onRush={rushOrder} onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
+              onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
+              userRole={userRole} hasKitchenPerm={hasKitchenPerm} thermalEnabled={thermalEnabled} onRush={rushOrder} onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
             {ready.length === 0 && <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}><CheckCircle size={28} /><span className="text-xs">Nothing here</span></div>}
           </>}
         </div>

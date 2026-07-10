@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { CalendarDays, Users, Phone, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Plus, Loader2, UtensilsCrossed, ChevronRight, Trash2, Search, ChevronLeft } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
+import { useBrandStore } from '@/store/brand'
 import api from '@/lib/api'
 import { useConfirm } from '@/lib/confirm'
 
@@ -69,7 +70,7 @@ function fmtSlot(t: string) {
   return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
 
-const STEPS = ['Guest', 'Reservation', 'Confirm', 'Pre-order'] as const
+const STEPS = ['Guest', 'Reservation', 'Details', 'Add Food'] as const
 type Step = 0 | 1 | 2 | 3
 
 function StepBar({ current, showPreOrder }: { current: Step; showPreOrder?: boolean }) {
@@ -106,6 +107,7 @@ function StepBar({ current, showPreOrder }: { current: Step; showPreOrder?: bool
 
 function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDone: () => void; token: string }) {
   const router = useRouter()
+  const brandColor = useBrandStore(s => s.brandColor) || '#f59e0b'
   const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirm()
   const today = new Date().toLocaleDateString('en-CA')
   const [step, setStep] = useState<Step>(0)
@@ -147,8 +149,6 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
   const [error, setError] = useState('')
 
   // Pre-order (Step 3)
-  const [pendingTempPassword, setPendingTempPassword] = useState<string | null>(null)
-  const [createdBookingId, setCreatedBookingId] = useState<string | null>(null)
   const [menuCategories, setMenuCategories] = useState<{ id: string; name: string }[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [activeCatId, setActiveCatId] = useState<string | null>(null)
@@ -250,51 +250,64 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
     } catch {} finally { setMenuLoading(false) }
   }
 
+  const bookingPayload = () => ({
+    guestName: guestName.trim(),
+    guestEmail: guestEmail.trim(),
+    guestPhone: guestPhone.trim().length > 5 ? guestPhone.trim() : undefined,
+    partySize,
+    slotDate,
+    slotTime,
+    tableId: tableId || undefined,
+    notes: notes.trim() || undefined,
+  })
+
   async function submit() {
     const tableName = selectedTable ? (selectedTable.name ?? `Table ${selectedTable.tableNumber}`) : '—'
     const dateStr = new Date(slotDate + 'T12:00:00').toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long' })
-    // When pre-ordering food, skip the dialog here — it will show at the end of step 3
-    // with the full food summary. Only show it now for a plain booking.
-    if (!orderFood) {
-      const ok = await confirmDialog({
-        title: 'Confirm Booking',
-        message: `${guestName} — ${dateStr} at ${fmtSlot(slotTime)} · ${tableName} · ${partySize} guest${partySize > 1 ? 's' : ''}${notes ? ` · "${notes}"` : ''}`,
-        confirmLabel: 'Confirm Booking',
-      })
-      if (!ok) return
+
+    if (orderFood) {
+      // Don't create anything yet — go collect food first, submit everything together at the end
+      await loadMenu()
+      goStep(3)
+      return
     }
+
+    const ok = await confirmDialog({
+      title: 'Confirm Booking',
+      message: `${guestName} — ${dateStr} at ${fmtSlot(slotTime)} · ${tableName} · ${partySize} guest${partySize > 1 ? 's' : ''}${notes ? ` · "${notes}"` : ''}`,
+      confirmLabel: 'Confirm Booking',
+    })
+    if (!ok) return
     setBusy(true); setError('')
     try {
-      const res = await api.post('/bookings/staff-create', {
-        guestName: guestName.trim(),
-        guestEmail: guestEmail.trim(),
-        guestPhone: guestPhone.trim().length > 5 ? guestPhone.trim() : undefined,
-        partySize,
-        slotDate,
-        slotTime,
-        tableId: tableId || undefined,
-        notes: notes.trim() || undefined,
-        skipEmail: orderFood, // defer email until after pre-order is saved
-      }, { headers: { Authorization: `Bearer ${token}` } })
-      const data = (res as any)?.data ?? res
-      const bookingId = data?.id
-      if (orderFood && bookingId) {
-        setCreatedBookingId(bookingId)
-        // Store temp password in memory so it can be included in the combined email
-        setPendingTempPassword(data?.tempPassword ?? null)
-        await loadMenu()
-        goStep(3)
-      } else {
-        onDone()
-      }
+      await api.post('/bookings/staff-create', bookingPayload(), { headers: { Authorization: `Bearer ${token}` } })
+      onDone()
     } catch (err: any) {
       setError(err?.response?.data?.message ?? err?.message ?? 'Could not create booking')
     } finally { setBusy(false) }
   }
 
   async function savePreOrder() {
-    if (!createdBookingId) return
-    if (cart.length === 0) { onDone(); return }
+    const tableName = selectedTable ? (selectedTable.name ?? `Table ${selectedTable.tableNumber}`) : '—'
+    const dateStr = new Date(slotDate + 'T12:00:00').toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long' })
+
+    if (cart.length === 0) {
+      // Staff skipped food — confirm then create a plain booking
+      const ok = await confirmDialog({
+        title: 'Confirm Booking (No Pre-order)',
+        message: `${guestName} — ${dateStr} at ${fmtSlot(slotTime)} · ${tableName} · ${partySize} guest${partySize > 1 ? 's' : ''}`,
+        confirmLabel: 'Confirm Booking',
+      })
+      if (!ok) return
+      setPreOrderBusy(true); setError('')
+      try {
+        await api.post('/bookings/staff-create', bookingPayload(), { headers: { Authorization: `Bearer ${token}` } })
+        onDone()
+      } catch (err: any) {
+        setError(err?.response?.data?.message ?? err?.message ?? 'Could not create booking')
+      } finally { setPreOrderBusy(false) }
+      return
+    }
 
     // Merge identical entries (same item + same modifiers)
     const merged: Record<string, CartEntry & { qty: number }> = {}
@@ -309,9 +322,6 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
       modifiers: e.optionIds.map(id => ({ optionId: id })),
     }))
 
-    // Show final confirmation with booking + food summary
-    const tableName = selectedTable ? (selectedTable.name ?? `Table ${selectedTable.tableNumber}`) : '—'
-    const dateStr = new Date(slotDate + 'T12:00:00').toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long' })
     const foodSummary = Object.values(merged).map(e => {
       const item = menuItems.find(i => i.id === e.menuItemId)
       if (!item) return null
@@ -320,6 +330,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
         : ''
       return `${e.qty}× ${item.name}${modLabels ? ` (${modLabels})` : ''}`
     }).filter(Boolean).join(', ')
+
     const ok = await confirmDialog({
       title: 'Confirm Booking & Pre-order',
       message: `${guestName} — ${dateStr} at ${fmtSlot(slotTime)} · ${tableName} · ${partySize} guest${partySize > 1 ? 's' : ''} · Food: ${foodSummary} (AED ${cartTotal.toFixed(2)})`,
@@ -329,16 +340,23 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
 
     setPreOrderBusy(true); setError('')
     try {
-      await api.post(`/orders/booking/${createdBookingId}/pre-order`, {
+      // Step 1: Create booking (skip booking email — combined email sent with pre-order)
+      const res = await api.post('/bookings/staff-create', { ...bookingPayload(), skipEmail: true }, { headers: { Authorization: `Bearer ${token}` } })
+      const data = (res as any)?.data ?? res
+      const bookingId = data?.id
+      const tempPassword = data?.tempPassword ?? null
+
+      // Step 2: Create pre-order (sends combined booking + food confirmation email)
+      await api.post(`/orders/booking/${bookingId}/pre-order`, {
         items,
         type: 'DINE_IN',
-        ...(pendingTempPassword ? { tempPassword: pendingTempPassword } : {}),
-      }, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+        deferred: true,
+        ...(tempPassword ? { tempPassword } : {}),
+      }, { headers: { Authorization: `Bearer ${token}` } })
+
       onDone()
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? err?.message ?? 'Could not save pre-order')
+      setError(err?.response?.data?.message ?? err?.message ?? 'Could not save booking')
     } finally { setPreOrderBusy(false) }
   }
 
@@ -491,6 +509,21 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
                       </button>
                     ))}
                   </div>
+                  {/* Custom size input for values not in the quick-pick list */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Custom:</span>
+                    <input
+                      type="number" min={1} max={50}
+                      placeholder="e.g. 9"
+                      className="w-20 h-8 rounded-lg px-2.5 text-sm font-bold text-center outline-none"
+                      style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }}
+                      onChange={e => {
+                        const v = parseInt(e.target.value)
+                        if (v > 0 && v <= 50) { setPartySize(v); fetchTables(slotDate, v) }
+                      }}
+                    />
+                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>guests</span>
+                  </div>
                 </div>
               </div>
 
@@ -512,7 +545,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
                 {!tablesLoading && tables.length > 0 && (
                   <>
                     {/* Zone filter pills */}
-                    {zones.length > 2 && (
+                    {zones.length > 1 && (
                       <div className="flex gap-1.5 flex-wrap mb-2">
                         {zones.map(z => (
                           <button key={z} type="button" onClick={() => setZoneFilter(z)}
@@ -602,7 +635,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
                   </div>
                   {customerLookup?.found
                     ? <span className="text-[10px] px-2 py-0.5 rounded-full font-bold flex-shrink-0" style={{ backgroundColor: '#dcfce7', color: '#16a34a' }}>Existing</span>
-                    : <span className="text-[10px] px-2 py-0.5 rounded-full font-bold flex-shrink-0" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>New</span>
+                    : <span className="text-[10px] px-2 py-0.5 rounded-full font-bold flex-shrink-0" style={{ backgroundColor: `${brandColor}18`, color: brandColor, border: `1px solid ${brandColor}33` }}>New</span>
                   }
                 </div>
 
@@ -637,7 +670,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
               {preOrderEnabled && <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--card-border)' }}>
                 <button type="button" onClick={() => setOrderFood(v => !v)}
                   className="w-full flex items-center gap-3 px-4 py-3 transition-colors"
-                  style={{ backgroundColor: orderFood ? 'rgba(var(--brand-rgb),0.06)' : 'var(--card-bg)' }}>
+                  style={{ backgroundColor: orderFood ? `${brandColor}0f` : 'var(--card-bg)' }}>
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
                     style={{ backgroundColor: orderFood ? 'var(--brand)' : 'var(--muted-bg)' }}>
                     <UtensilsCrossed size={15} style={{ color: orderFood ? '#fff' : 'var(--text-muted)' }} />
@@ -710,13 +743,13 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
                       const totalQty = itemEntries.reduce((s, e) => s + e.quantity, 0)
                       return (
                         <div key={item.id} className="rounded-xl overflow-hidden cursor-pointer active:opacity-80 transition-opacity"
-                          style={{ border: `1px solid ${totalQty > 0 ? 'rgba(var(--brand-rgb),0.3)' : 'var(--card-border)'}`, backgroundColor: totalQty > 0 ? 'rgba(var(--brand-rgb),0.04)' : 'var(--card-bg)' }}
+                          style={{ border: `1px solid ${totalQty > 0 ? `${brandColor}4d` : 'var(--card-border)'}`, backgroundColor: totalQty > 0 ? `${brandColor}0a` : 'var(--card-bg)' }}
                           onClick={() => hasModifiers ? openModSheet(item) : cartAddSimple(item)}>
                           <div className="flex items-center gap-3 px-3 py-3">
                             <div className="flex-1 min-w-0">
                               <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
                               <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                AED {item.price.toFixed(2)}{hasModifiers && <span className="ml-1 opacity-60">· customisable</span>}
+                                AED {item.price.toFixed(2)}{hasModifiers && <span className="ml-1 opacity-60">· customizable</span>}
                               </p>
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
@@ -776,7 +809,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
                   {/* Cart summary */}
                   {cartCount > 0 && (
                     <div className="rounded-xl p-3 flex items-center justify-between"
-                      style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
+                      style={{ backgroundColor: `${brandColor}14`, border: `1px solid ${brandColor}33` }}>
                       <span className="text-sm font-semibold" style={{ color: 'var(--brand)' }}>
                         {cartCount} item{cartCount > 1 ? 's' : ''} selected
                       </span>
@@ -793,19 +826,19 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
 
         {/* Footer */}
         <div className="px-5 py-3 border-t flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
-          {step > 0 && step < 3 ? (
+          {step > 0 ? (
             <button type="button" onClick={() => goStep((step - 1) as Step)}
               className="px-4 py-2 rounded-xl text-sm font-semibold"
               style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
               Back
             </button>
-          ) : step === 0 ? (
+          ) : (
             <button type="button" onClick={onClose}
               className="px-4 py-2 rounded-xl text-sm font-semibold"
               style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
               Cancel
             </button>
-          ) : null}
+          )}
           <div className="flex-1" />
           {step < 2 && (
             <button type="button"
@@ -820,7 +853,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
               className="px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 disabled:opacity-50 min-w-0"
               style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>
               {busy && <Loader2 size={13} className="animate-spin flex-shrink-0" />}
-              <span className="truncate">{orderFood ? 'Confirm & Add Food' : 'Confirm Booking'}</span>
+              <span className="truncate">{orderFood ? 'Next: Add Food' : 'Confirm Booking'}</span>
             </button>
           )}
           {step === 3 && (
@@ -856,7 +889,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
                 <div key={group.id}>
                   <div className="flex items-center gap-2 mb-2">
                     <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{group.name}</p>
-                    {group.required && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)' }}>Required</span>}
+                    {group.required && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: `${brandColor}1a`, color: brandColor }}>Required</span>}
                     {group.maxSelect > 1 && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Pick up to {group.maxSelect}</span>}
                   </div>
                   <div className="space-y-1.5">
@@ -868,8 +901,8 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
                           onClick={() => toggleModOption(group.id, opt.id, group.maxSelect)}
                           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all"
                           style={{
-                            border: `1px solid ${selected ? 'var(--brand)' : 'var(--card-border)'}`,
-                            backgroundColor: selected ? 'rgba(var(--brand-rgb),0.06)' : 'var(--muted-bg)',
+                            border: `1px solid ${selected ? brandColor : 'var(--card-border)'}`,
+                            backgroundColor: selected ? `${brandColor}0f` : 'var(--muted-bg)',
                           }}>
                           <div className="flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center"
                             style={{ borderColor: selected ? 'var(--brand)' : 'var(--card-border)', backgroundColor: selected ? 'var(--brand)' : 'transparent' }}>
@@ -906,6 +939,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
 }
 
 function DatePicker({ value, onChange }: { value: string; onChange: (d: string) => void }) {
+  const brandColor = useBrandStore(s => s.brandColor) || '#f59e0b'
   const [open, setOpen] = useState(false)
   const [cal, setCal] = useState(() => { const d = new Date(value + 'T12:00:00'); return { y: d.getFullYear(), m: d.getMonth() } })
   const ref = useRef<HTMLDivElement>(null)
@@ -970,7 +1004,7 @@ function DatePicker({ value, onChange }: { value: string; onChange: (d: string) 
                   style={isSelected
                     ? { background: 'var(--brand)', color: '#fff' }
                     : isToday
-                      ? { background: 'rgba(var(--brand-rgb),0.15)', color: 'var(--brand)', fontWeight: 800 }
+                      ? { background: `${brandColor}26`, color: brandColor, fontWeight: 800 }
                       : { color: 'var(--text-primary)' }}>
                   {day}
                 </button>
@@ -993,6 +1027,7 @@ function DatePicker({ value, onChange }: { value: string; onChange: (d: string) 
 
 export default function StaffBookingsPage() {
   const { token } = useAuthStore()
+  const brandColor = useBrandStore(s => s.brandColor) || '#f59e0b'
   const router = useRouter()
   const todayStr = new Date().toLocaleDateString('en-CA')
   const [viewDate, setViewDate] = useState(todayStr)
@@ -1193,14 +1228,14 @@ export default function StaffBookingsPage() {
                     {b.status === 'ARRIVED' && (
                       <button onClick={() => router.push(`/staff/orders?tableId=${b.table?.id}&tableName=${encodeURIComponent(b.table?.name ?? `Table ${b.table?.tableNumber}`)}`)}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold"
-                        style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.25)' }}>
+                        style={{ backgroundColor: `${brandColor}1e`, color: 'var(--brand)', border: '1px solid ${brandColor}40' }}>
                         <UtensilsCrossed size={13} /> Order Food
                       </button>
                     )}
                     {b.status === 'PENDING' && (
                       <button onClick={() => confirmBooking(b.id)}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold"
-                        style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.25)' }}>
+                        style={{ backgroundColor: `${brandColor}1e`, color: 'var(--brand)', border: '1px solid ${brandColor}40' }}>
                         <CheckCircle2 size={13} /> Confirm
                       </button>
                     )}
@@ -1247,13 +1282,13 @@ export default function StaffBookingsPage() {
                     {b.status === 'ARRIVED' && (
                       <button onClick={() => router.push(`/staff/orders?tableId=${b.table?.id}&tableName=${encodeURIComponent(b.table?.name ?? `Table ${b.table?.tableNumber}`)}`)
 } className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-colors"
-                        style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.25)' }}>
+                        style={{ backgroundColor: `${brandColor}1e`, color: 'var(--brand)', border: '1px solid ${brandColor}40' }}>
                         <UtensilsCrossed size={13} /> Order Food
                       </button>
                     )}
                     {b.status === 'PENDING' && (
                       <button onClick={() => confirmBooking(b.id)} className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-colors"
-                        style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.25)' }}>
+                        style={{ backgroundColor: `${brandColor}1e`, color: 'var(--brand)', border: '1px solid ${brandColor}40' }}>
                         <CheckCircle2 size={13} /> Confirm
                       </button>
                     )}
@@ -1350,7 +1385,7 @@ export default function StaffBookingsPage() {
                     <div className="flex items-center justify-between mb-3">
                       <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Pre-order</p>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                        style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)' }}>
+                        style={{ backgroundColor: `${brandColor}1a`, color: 'var(--brand)' }}>
                         Held · fires on arrival
                       </span>
                     </div>
@@ -1407,14 +1442,14 @@ export default function StaffBookingsPage() {
                 {b.status === 'ARRIVED' && (
                   <button onClick={() => { setDetailBooking(null); router.push(`/staff/orders?tableId=${b.table?.id}&tableName=${encodeURIComponent(b.table?.name ?? `Table ${b.table?.tableNumber}`)}`) }}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold"
-                    style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.25)' }}>
+                    style={{ backgroundColor: `${brandColor}1e`, color: 'var(--brand)', border: '1px solid ${brandColor}40' }}>
                     <UtensilsCrossed size={14} /> Order Food
                   </button>
                 )}
                 {b.status === 'PENDING' && (
                   <button onClick={() => { confirmBooking(b.id); setDetailBooking(null) }}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold"
-                    style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.25)' }}>
+                    style={{ backgroundColor: `${brandColor}1e`, color: 'var(--brand)', border: '1px solid ${brandColor}40' }}>
                     <CheckCircle2 size={14} /> Confirm Booking
                   </button>
                 )}

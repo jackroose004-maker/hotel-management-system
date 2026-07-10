@@ -171,9 +171,14 @@ export class SettingsService {
     billConfig: Record<string, any>
     kdsEnabled: boolean
     thermalEnabled: boolean
+    preOrderLeadMins: number
     thermalPrinterIp: string
     thermalPrinterPort: number
     kotConfig: Record<string, any>
+    splitPaymentEnabled: boolean
+    tipEnabled: boolean
+    discountEnabled: boolean
+    preOrderEnabled: boolean
     // Email config
     smtpHost: string; smtpPort: number; smtpSecure: boolean
     smtpUser: string; smtpPass: string

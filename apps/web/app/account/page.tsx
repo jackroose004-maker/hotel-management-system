@@ -6,9 +6,11 @@ import {
   UtensilsCrossed, ShoppingBag, CalendarDays, LogOut, Home,
   ChevronRight, Clock, ArrowRight, Star, Utensils, Plus, Heart, User,
   Bell, Leaf, Edit3, Save, X, Mail, AlertTriangle, Check,
-  Loader2, Package,
+  Loader2, Package, Camera,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
+import ReactCrop, { centerCrop, makeAspectCrop, type Crop } from 'react-image-crop'
+import 'react-image-crop/dist/ReactCrop.css'
 import { useCartStore } from '@/store/cart'
 import { useBrandStore } from '@/store/brand'
 import { useLangStore, applyLangDir, t } from '@/store/lang'
@@ -36,6 +38,13 @@ const BOOKING_STATUS_LABEL_AR: Record<string, string> = {
   PENDING: 'قادم', CONFIRMED: 'مؤكد', ARRIVED: 'تمت الزيارة',
   NO_SHOW: 'لم يحضر', CANCELLED: 'ملغى',
 }
+const FALLBACK_TESTIMONIALS = [
+  { quote: 'The Malabar Biriyani is unlike anything else in Dubai. Perfectly spiced, every single time.', name: 'Mohammed A.', tag: 'Verified guest' },
+  { quote: 'Appam and coconut stew at midnight — felt like home. The service was warm and attentive.', name: 'Priya R.', tag: 'Verified guest' },
+  { quote: 'Best Kerala fish curry I\'ve had outside of Kochi. The chefs really know their craft.', name: 'Rajan M.', tag: 'Verified guest' },
+  { quote: 'The table booking was seamless and the food arrived exactly on time. Will definitely be back.', name: 'Sarah K.', tag: 'Verified guest' },
+]
+
 const DIETARY_OPTIONS = [
   { id: 'vegetarian', label: 'Vegetarian',  labelAr: 'نباتي',          emoji: '🥗' },
   { id: 'vegan',      label: 'Vegan',       labelAr: 'نباتي صرف',      emoji: '🌱' },
@@ -138,6 +147,9 @@ function AccountContent() {
   const [homeLoaded,     setHomeLoaded]     = useState(false)
   const [mustTryPage,    setMustTryPage]    = useState(0)
   const [mustTryFading,  setMustTryFading]  = useState(false)
+  const [testimonials,  setTestimonials]   = useState<{ quote: string; name: string; tag: string; rating?: number }[]>(FALLBACK_TESTIMONIALS)
+  const [testimonialIdx, setTestimonialIdx] = useState(0)
+  const [testimonialFading, setTestimonialFading] = useState(false)
 
   // Feedback
   const [feedback, setFeedback] = useState<Record<string, { rating: number; comment: string; submitting: boolean; done: boolean }>>({})
@@ -146,7 +158,15 @@ function AccountContent() {
   const [editingProfile, setEditingProfile] = useState(false)
   const [profileName,    setProfileName]    = useState('')
   const [savingProfile,  setSavingProfile]  = useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const avatarInputRef  = useRef<HTMLInputElement>(null)
+  const cropImgRef      = useRef<HTMLImageElement>(null)
+  const [cropSrc,  setCropSrc]  = useState<string | null>(null)
+  const [crop,     setCrop]     = useState<Crop>()
+  const [completedCrop, setCompletedCrop] = useState<Crop>()
   const [cancellingId,   setCancellingId]   = useState<string | null>(null)
+  const [initialized,    setInitialized]    = useState(false)
+  const homeStartedRef = useRef(false)
 
   // Profile prefs
   const [dietary,        setDietary]        = useState<string[]>([])
@@ -158,17 +178,24 @@ function AccountContent() {
   const [totalOrders, setTotalOrders] = useState(0)
   const [visits,      setVisits]      = useState(0)
 
-  useEffect(() => { init() }, [])
+  useEffect(() => { init(); setInitialized(true) }, [])
 
   useEffect(() => {
+    // Wait for init() to read localStorage before deciding to redirect.
+    // Without this, the effect fires with token=null on the very first render
+    // (before init() runs), triggers router.replace('/login'), and that round-trip
+    // causes a full remount — doubling every API call.
+    if (!initialized) return
     if (!token) { router.replace('/login?redirect=/account'); return }
     if (user && ['STAFF', 'MANAGER', 'OWNER', 'CHEF'].includes(user.role)) {
       router.replace('/staff/orders')
       return
     }
     if (searchParams.get('tab') === 'bookings') setTab('bookings')
+    if (homeStartedRef.current) return
+    homeStartedRef.current = true
     loadHome()
-  }, [token, user])
+  }, [initialized, token, user])
 
   useEffect(() => {
     if (user) {
@@ -197,14 +224,24 @@ function AccountContent() {
     return () => clearInterval(t)
   }, [featuredItems.length])
 
+  useEffect(() => {
+    if (testimonials.length < 2) return
+    const t = setInterval(() => {
+      setTestimonialFading(true)
+      setTimeout(() => { setTestimonialIdx(i => (i + 1) % testimonials.length); setTestimonialFading(false) }, 350)
+    }, 4000)
+    return () => clearInterval(t)
+  }, [testimonials.length])
+
   async function authFetch(url: string, opts: RequestInit = {}) {
-    return fetch(url, { ...opts, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers ?? {}) } })
+    const isFormData = opts.body instanceof FormData
+    return fetch(url, { ...opts, headers: { Authorization: `Bearer ${token}`, ...(isFormData ? {} : { 'Content-Type': 'application/json' }), ...(opts.headers ?? {}) } })
   }
 
   async function loadHome() {
     try {
       const [mRes, sRes] = await Promise.all([
-        fetch(`${API}/menu/items`),
+        fetch(`${API}/menu/items?limit=20`),
         fetch(`${API}/settings`),
       ])
       const mJson = await mRes.json()
@@ -222,12 +259,13 @@ function AccountContent() {
         setFeaturedItems(withImg.slice(0, 12))
       }
 
-      // Quick stats — load orders count & total spent without full data
-      // Do NOT set ordersLoaded here so the Orders tab runs the full merge (with localStorage guest orders)
+      // Load orders for stats + active-order banner on Home tab.
+      // Do NOT set ordersLoaded so the Orders tab still runs the full merge (with localStorage guest orders).
       const oRes = await authFetch(`${API}/orders/mine`)
       if (oRes.ok) {
         const oJson = await oRes.json()
         const oData: any[] = Array.isArray(oJson?.data ?? oJson) ? (oJson?.data ?? oJson) : []
+        setOrders(oData)  // populate for active-order banner and badge counts
         setTotalOrders(oData.length)
         setTotalSpent(oData.reduce((s: number, o: any) => s + Number(o.total), 0))
         // Visits = unique paid sessions (dine-in groups by tableSessionId, takeaway counts individually)
@@ -254,6 +292,20 @@ function AccountContent() {
         const fData: any[] = Array.isArray(fJson?.data ?? fJson) ? (fJson?.data ?? fJson) : []
         setFavItems(fData)
         setFavsLoaded(true)
+      }
+      // Live reviews
+      const rRes = await fetch(`${API}/orders/reviews/public?limit=10`)
+      if (rRes.ok) {
+        const rJson = await rRes.json()
+        const rData: { rating: number; comment: string; name: string }[] = rJson.data ?? rJson
+        if (rData.length >= 2) {
+          setTestimonials(rData.map(r => ({
+            quote: r.comment,
+            name: r.name,
+            tag: r.rating === 5 ? '★ 5-star review' : '★★★★ 4-star review',
+            rating: r.rating,
+          })))
+        }
       }
     } finally { setHomeLoaded(true) }
   }
@@ -343,11 +395,59 @@ function AccountContent() {
     } catch { setFeedback(prev => ({ ...prev, [orderId]: { ...prev[orderId], submitting: false } })) }
   }
 
+  function openCropModal(file: File) {
+    if (!file.type.startsWith('image/')) { toast.error('Please select an image file'); return }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Image must be under 5 MB'); return }
+    const url = URL.createObjectURL(file)
+    setCropSrc(url)
+    setCrop(undefined)
+  }
+
+  function onCropImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
+    const { naturalWidth: w, naturalHeight: h } = e.currentTarget
+    const c = centerCrop(makeAspectCrop({ unit: '%', width: 80 }, 1, w, h), w, h)
+    setCrop(c); setCompletedCrop(c)
+  }
+
+  async function cropAndUpload() {
+    if (!cropImgRef.current || !completedCrop) return
+    const img    = cropImgRef.current
+    const scaleX = img.naturalWidth  / img.width
+    const scaleY = img.naturalHeight / img.height
+    const canvas = document.createElement('canvas')
+    const size   = 400
+    canvas.width  = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(
+      img,
+      completedCrop.x * scaleX, completedCrop.y * scaleY,
+      completedCrop.width * scaleX, completedCrop.height * scaleY,
+      0, 0, size, size,
+    )
+    const blob = await new Promise<Blob>(res => canvas.toBlob(b => res(b!), 'image/jpeg', 0.92))
+    setCropSrc(null)
+    setUploadingAvatar(true)
+    try {
+      const fd = new FormData(); fd.append('file', new File([blob], 'avatar.jpg', { type: 'image/jpeg' }))
+      const r = await authFetch(`${API}/auth/me/avatar`, { method: 'POST', body: fd })
+      if (!r.ok) { toast.error('Upload failed — try again'); return }
+      const meRes = await authFetch(`${API}/auth/me`)
+      if (meRes.ok) {
+        const me = await meRes.json()
+        const meData = me?.data ?? me
+        const { token } = useAuthStore.getState()
+        useAuthStore.getState().setAuth(meData, token!)
+      }
+      toast.success('Profile photo updated')
+    } finally { setUploadingAvatar(false) }
+  }
+
   async function saveProfile() {
     setSavingProfile(true)
     try {
       const r = await authFetch(`${API}/auth/me`, { method: 'PATCH', body: JSON.stringify({ name: profileName }) })
-      if (r.ok) { toast.success('Profile updated'); setEditingProfile(false) }
+      if (r.ok) toast.success('Profile updated')
       else toast.error('Could not save — try again')
     } finally { setSavingProfile(false) }
   }
@@ -395,7 +495,7 @@ function AccountContent() {
           <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.06)', transform: 'translate(30%,-30%)' }} />
         </div>
 
-        <div className="relative px-4 sm:px-6 pt-5 pb-5 max-w-2xl mx-auto">
+        <div className="relative px-4 sm:px-8 pt-5 pb-6 max-w-6xl mx-auto">
           {/* Nav row */}
           <div className="flex items-center justify-between mb-6">
             <Link href="/" className="flex items-center gap-2">
@@ -422,26 +522,43 @@ function AccountContent() {
             </div>
           </div>
 
-          {/* Avatar + name */}
-          <div className="flex items-center gap-4 mb-6" style={{ animation: 'fadeUp 0.5s ease both' }}>
-            {user.avatarUrl
-              ? <img src={user.avatarUrl} alt={user.name}
-                  className="w-16 h-16 rounded-2xl object-cover"
-                  style={{ border: '2px solid var(--brand)' }} referrerPolicy="no-referrer" />
-              : <div className="w-16 h-16 rounded-2xl flex items-center justify-center font-black text-2xl shadow-xl flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, var(--brand), #d97706)', color: '#000' }}>
-                  {user.name.charAt(0).toUpperCase()}
+          {/* Hero body: avatar+name left, stats right on desktop */}
+          <div className="md:flex md:items-end md:justify-between md:gap-8">
+            {/* Avatar + name */}
+            <div className="flex items-center gap-4 mb-5 md:mb-0" style={{ animation: 'fadeUp 0.5s ease both' }}>
+              {/* Clickable avatar */}
+              <input ref={avatarInputRef} type="file" accept="image/*" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) openCropModal(f); e.target.value = '' }} />
+              <button onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}
+                className="relative w-16 h-16 md:w-20 md:h-20 rounded-2xl flex-shrink-0 group overflow-hidden"
+                style={{ border: '2px solid var(--brand)' }}>
+                {user.avatarUrl
+                  ? <img src={user.avatarUrl} alt={user.name}
+                      className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  : <div className="w-full h-full flex items-center justify-center font-black text-2xl md:text-3xl"
+                      style={{ background: 'linear-gradient(135deg, var(--brand), #d97706)', color: '#000' }}>
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                }
+                {/* overlay */}
+                <div className="absolute inset-0 flex items-center justify-center transition-opacity duration-200 rounded-2xl"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.5)', opacity: uploadingAvatar ? 1 : 0 }}
+                  onMouseEnter={e => { if (!uploadingAvatar) (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                  onMouseLeave={e => { if (!uploadingAvatar) (e.currentTarget as HTMLElement).style.opacity = '0' }}>
+                  {uploadingAvatar
+                    ? <Loader2 size={18} className="text-white animate-spin" />
+                    : <Camera size={18} className="text-white" />}
                 </div>
-            }
-            <div>
-              <p className="text-gray-500 text-xs mb-0.5">{t(lang, 'account.welcomeBack')}</p>
-              <h1 className="text-2xl font-black text-white leading-none">{firstName}</h1>
-              <p className="text-gray-600 text-xs mt-1">{user.email}</p>
+              </button>
+              <div>
+                <p className="text-gray-500 text-xs mb-0.5">{t(lang, 'account.welcomeBack')}</p>
+                <h1 className="text-2xl md:text-3xl font-black text-white leading-none">{firstName}</h1>
+                <p className="text-gray-600 text-xs mt-1">{user.email}</p>
+              </div>
             </div>
-          </div>
 
-          {/* Stats row */}
-          <div className="grid grid-cols-4 gap-2" style={{ animation: 'fadeUp 0.5s 80ms ease both' }}>
+            {/* Stats row */}
+            <div className="grid grid-cols-4 gap-2 md:gap-3" style={{ animation: 'fadeUp 0.5s 80ms ease both' }}>
             {[
               { label: t(lang, 'account.orders'),     value: totalOrders || '—' },
               { label: t(lang, 'account.spent'),      value: totalOrders ? `AED ${totalSpent.toFixed(0)}` : '—' },
@@ -449,26 +566,27 @@ function AccountContent() {
               { label: t(lang, 'account.favourites'), value: favItems.length || '—', action: () => setTab('favourites') },
             ].map((s, i) => (
               <button key={s.label} onClick={s.action}
-                className="rounded-2xl px-2 py-3 text-center transition-all"
-                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
+                className="rounded-2xl px-3 py-3 text-center transition-all"
+                style={{ backgroundColor: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', minWidth: 72 }}
                 disabled={!s.action}>
                 <div className="font-black text-white text-base leading-none">{s.value}</div>
                 <div className="text-gray-600 text-[9px] mt-1 uppercase tracking-wide">{s.label}</div>
               </button>
             ))}
-          </div>
+            </div>{/* end stats grid */}
+          </div>{/* end hero body */}
         </div>
       </div>
 
-      {/* ── Tab bar ── */}
-      <div className="sticky top-0 z-10 py-2" style={{ backgroundColor: 'rgba(8,8,8,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+      {/* ── Mobile tab bar (hidden on desktop) ── */}
+      <div className="md:hidden sticky top-0 z-10 py-2 px-4" style={{ backgroundColor: 'rgba(8,8,8,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
         <div className="flex gap-1 rounded-2xl p-1" style={{ backgroundColor: 'rgba(255,255,255,0.04)' }}>
           {TABS.map(({ id, label, Icon, badge }) => (
             <button key={id} onClick={() => setTab(id)}
               className="flex-1 relative flex flex-col items-center gap-0.5 py-2 rounded-xl text-[10px] font-bold transition-all"
               style={tab === id ? { backgroundColor: 'var(--brand)', color: '#000' } : { color: '#555' }}>
               <Icon size={14} />
-              <span className="hidden sm:block">{label}</span>
+              <span>{label}</span>
               {(badge ?? 0) > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 text-[8px] font-black rounded-full flex items-center justify-center"
                   style={{ backgroundColor: tab === id ? '#000' : 'var(--brand)', color: tab === id ? 'var(--brand)' : '#000' }}>
@@ -480,8 +598,33 @@ function AccountContent() {
         </div>
       </div>
 
-      {/* ── Tab Content ── */}
-      <div className="px-4 sm:px-6 py-5 pb-16 max-w-2xl mx-auto">
+      {/* ── Desktop layout: sidebar + content ── */}
+      <div className="max-w-6xl mx-auto md:flex md:gap-8 px-4 sm:px-8 py-6 pb-16">
+
+        {/* Desktop sidebar */}
+        <aside className="hidden md:block w-52 shrink-0">
+          <nav className="sticky top-6 space-y-1">
+            {TABS.map(({ id, label, Icon, badge }) => (
+              <button key={id} onClick={() => setTab(id)}
+                className="w-full relative flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-bold text-left transition-all"
+                style={tab === id
+                  ? { backgroundColor: 'var(--brand)', color: '#000' }
+                  : { color: '#666', backgroundColor: 'transparent' }}>
+                <Icon size={16} />
+                {label}
+                {(badge ?? 0) > 0 && (
+                  <span className="ml-auto w-5 h-5 text-[9px] font-black rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: tab === id ? 'rgba(0,0,0,0.2)' : 'var(--brand)', color: tab === id ? '#000' : '#000' }}>
+                    {badge}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        {/* ── Tab Content ── */}
+        <div className="flex-1 min-w-0">
 
         {/* ═══ HOME ═══ */}
         {tab === 'home' && (
@@ -655,16 +798,39 @@ function AccountContent() {
               )
             })()}
 
-            {/* Testimonial */}
+            {/* Testimonials relay */}
             <FadeIn delay={200}>
-              <div className="rounded-2xl p-5" style={{ background: 'linear-gradient(135deg, #111, #0d0d0d)', border: '1px solid #1e1e1e' }}>
-                <div className="flex gap-0.5 mb-2">
-                  {[1,2,3,4,5].map(i => <Star key={i} size={12} className="text-yellow-400 fill-yellow-400" />)}
+              <div className="rounded-2xl p-5 relative overflow-hidden"
+                style={{ background: 'linear-gradient(135deg, #111, #0d0d0d)', border: '1px solid #1e1e1e' }}>
+                <div style={{
+                  transition: 'opacity 0.35s ease, transform 0.35s ease',
+                  opacity: testimonialFading ? 0 : 1,
+                  transform: testimonialFading ? 'translateY(6px)' : 'translateY(0)',
+                }}>
+                  <div className="flex gap-0.5 mb-3">
+                    {[1,2,3,4,5].map(i => (
+                      <Star key={i} size={12} className={i <= (testimonials[testimonialIdx]?.rating ?? 5) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-700'} />
+                    ))}
+                  </div>
+                  <p className="text-white text-sm font-semibold leading-relaxed mb-3">
+                    &ldquo;{testimonials[testimonialIdx]?.quote}&rdquo;
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-gray-600 text-xs">— {testimonials[testimonialIdx]?.name}</p>
+                    <span className="text-[9px] px-2 py-0.5 rounded-full font-bold"
+                      style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)' }}>
+                      {testimonials[testimonialIdx]?.tag}
+                    </span>
+                  </div>
                 </div>
-                <p className="text-white text-sm font-semibold leading-snug mb-2">
-                  &ldquo;The Malabar Biriyani is unlike anything else in Dubai.&rdquo;
-                </p>
-                <p className="text-gray-600 text-xs">— Mohammed A., verified guest</p>
+                {/* Dot indicators */}
+                <div className="flex justify-center gap-1.5 mt-4">
+                  {testimonials.map((_, i) => (
+                    <button key={i} onClick={() => { setTestimonialFading(true); setTimeout(() => { setTestimonialIdx(i); setTestimonialFading(false) }, 350) }}
+                      className="rounded-full transition-all duration-300"
+                      style={{ width: i === testimonialIdx ? 18 : 6, height: 6, backgroundColor: i === testimonialIdx ? 'var(--brand)' : '#333' }} />
+                  ))}
+                </div>
               </div>
             </FadeIn>
           </div>
@@ -954,53 +1120,154 @@ function AccountContent() {
         {tab === 'profile' && (
           <div className="space-y-4">
 
-            {/* Personal info */}
+            {/* ── Crop modal ── */}
+            {cropSrc && (
+              <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center"
+                style={{ backgroundColor: 'rgba(0,0,0,0.92)', backdropFilter: 'blur(8px)' }}>
+                <div className="flex flex-col items-center gap-4 w-full max-w-sm px-4">
+                  <div>
+                    <p className="text-white font-black text-lg text-center mb-0.5">Crop your photo</p>
+                    <p className="text-center text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>Drag to reposition · pinch or scroll to zoom</p>
+                  </div>
+                  <div className="rounded-2xl overflow-hidden" style={{ maxHeight: '55vh' }}>
+                    <ReactCrop crop={crop} onChange={c => setCrop(c)} onComplete={c => setCompletedCrop(c)}
+                      aspect={1} circularCrop minWidth={60}>
+                      <img ref={cropImgRef} src={cropSrc} onLoad={onCropImageLoad}
+                        style={{ maxHeight: '55vh', maxWidth: '100%', display: 'block' }} alt="crop preview" />
+                    </ReactCrop>
+                  </div>
+                  <div className="flex gap-3 w-full">
+                    <button onClick={() => { setCropSrc(null); URL.revokeObjectURL(cropSrc) }}
+                      className="flex-1 py-3 rounded-2xl font-bold text-sm"
+                      style={{ backgroundColor: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>
+                      Cancel
+                    </button>
+                    <button onClick={cropAndUpload}
+                      className="flex-1 py-3 rounded-2xl font-bold text-sm"
+                      style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                      Use Photo
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Edit profile bottom sheet ── */}
+            {editingProfile && (
+              <div className="fixed inset-0 z-50 flex items-end" style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
+                onClick={() => { setEditingProfile(false); setProfileName(user.name) }}>
+                <div className="w-full rounded-t-3xl flex flex-col"
+                  style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e', maxHeight: '85vh' }}
+                  onClick={e => e.stopPropagation()}>
+                  {/* drag handle */}
+                  <div className="flex justify-center pt-3 pb-1">
+                    <div className="w-10 h-1 rounded-full" style={{ backgroundColor: '#333' }} />
+                  </div>
+                  <div className="overflow-y-auto px-5 pt-3 pb-8 flex flex-col gap-5">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-lg font-black text-white">Edit Profile</h2>
+                      <button onClick={() => { setEditingProfile(false); setProfileName(user.name) }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#1a1a1a' }}>
+                        <X size={14} className="text-gray-400" />
+                      </button>
+                    </div>
+
+                    {/* avatar inside sheet */}
+                    <div className="flex items-center gap-4">
+                      <button onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}
+                        className="relative w-16 h-16 rounded-2xl flex-shrink-0 overflow-hidden group"
+                        style={{ border: '2px solid var(--brand)' }}>
+                        {user.avatarUrl
+                          ? <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          : <div className="w-full h-full flex items-center justify-center font-black text-2xl"
+                              style={{ background: 'linear-gradient(135deg, var(--brand), #d97706)', color: '#000' }}>
+                              {user.name.charAt(0).toUpperCase()}
+                            </div>
+                        }
+                        <div className="absolute inset-0 flex items-center justify-center transition-opacity rounded-2xl opacity-0 group-hover:opacity-100"
+                          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+                          {uploadingAvatar ? <Loader2 size={16} className="text-white animate-spin" /> : <Camera size={16} className="text-white" />}
+                        </div>
+                      </button>
+                      <div>
+                        <p className="text-sm font-semibold text-white mb-0.5">Profile photo</p>
+                        <p className="text-[11px] mb-2" style={{ color: '#555' }}>JPG, PNG or WebP · Max 5 MB</p>
+                        <button onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}
+                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-50"
+                          style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
+                          <Camera size={11} /> {uploadingAvatar ? 'Uploading…' : 'Change photo'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* name field */}
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-widest mb-1.5 block" style={{ color: '#555' }}>
+                        {t(lang, 'account.name')}
+                      </label>
+                      <input value={profileName} onChange={e => setProfileName(e.target.value)}
+                        className="w-full text-white text-sm px-4 py-3 rounded-2xl focus:outline-none transition-colors"
+                        style={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}
+                        onFocus={e => e.currentTarget.style.borderColor = 'rgba(var(--brand-rgb),0.5)'}
+                        onBlur={e => e.currentTarget.style.borderColor = '#2a2a2a'}
+                        placeholder={t(lang, 'account.yourNamePlaceholder')} />
+                    </div>
+
+                    {/* email — read only in sheet */}
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-widest mb-1.5 block" style={{ color: '#555' }}>
+                        {t(lang, 'account.email')}
+                      </label>
+                      <div className="flex items-center gap-2 px-4 py-3 rounded-2xl" style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
+                        <Mail size={13} style={{ color: '#444' }} />
+                        <span className="text-sm" style={{ color: '#555' }}>{user.email}</span>
+                        <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
+                          {t(lang, 'account.verified')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button onClick={async () => { await saveProfile(); setEditingProfile(false) }}
+                      disabled={savingProfile || !profileName.trim()}
+                      className="w-full font-bold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-40"
+                      style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                      {savingProfile ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><Save size={14} /> Save Changes</>}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Personal info — read-only card */}
             <FadeIn delay={0}>
               <div className="rounded-2xl p-4" style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-sm font-bold text-white flex items-center gap-2">
                     <User size={14} style={{ color: 'var(--brand)' }} /> {t(lang, 'account.personalInfo')}
                   </h2>
-                  {!editingProfile
-                    ? <button onClick={() => setEditingProfile(true)} className="flex items-center gap-1 text-xs text-gray-600 hover:text-white transition-colors">
-                        <Edit3 size={12} /> {t(lang, 'account.edit')}
-                      </button>
-                    : <div className="flex items-center gap-2">
-                        <button onClick={() => { setEditingProfile(false); setProfileName(user.name) }}
-                          className="text-xs text-gray-600 hover:text-white flex items-center gap-1">
-                          <X size={12} /> {t(lang, 'account.cancel')}
-                        </button>
-                        <button onClick={saveProfile} disabled={savingProfile}
-                          className="text-xs px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 disabled:opacity-50"
-                          style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-                          <Save size={11} /> {savingProfile ? '…' : t(lang, 'account.save')}
-                        </button>
-                      </div>
-                  }
+                  <button onClick={() => { setEditingProfile(true); setProfileName(user.name) }}
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl transition-colors"
+                    style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.15)' }}>
+                    <Edit3 size={11} /> {t(lang, 'account.edit')}
+                  </button>
                 </div>
                 <div className="space-y-3">
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1 block">{t(lang, 'account.name')}</label>
-                    {editingProfile
-                      ? <input value={profileName} onChange={e => setProfileName(e.target.value)}
-                          className="w-full text-white text-sm px-3.5 py-2.5 rounded-xl focus:outline-none"
-                          style={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}
-                          placeholder={t(lang, 'account.yourNamePlaceholder')} />
-                      : <div className="text-sm text-white">{user.name}</div>
-                    }
+                  <div className="flex items-center justify-between py-2" style={{ borderBottom: '1px solid #1a1a1a' }}>
+                    <span className="text-[11px] font-semibold" style={{ color: '#555' }}>{t(lang, 'account.name')}</span>
+                    <span className="text-sm font-semibold text-white">{user.name}</span>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1 block">{t(lang, 'account.email')}</label>
-                    <div className="text-sm text-gray-500 flex items-center gap-2">
-                      <Mail size={12} className="text-gray-700" /> {user.email}
-                      <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>{t(lang, 'account.verified')}</span>
+                  <div className="flex items-center justify-between py-2" style={{ borderBottom: '1px solid #1a1a1a' }}>
+                    <span className="text-[11px] font-semibold" style={{ color: '#555' }}>{t(lang, 'account.email')}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm" style={{ color: '#666' }}>{user.email}</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>✓</span>
                     </div>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1 block">{t(lang, 'account.memberSince')}</label>
-                    <div className="text-sm text-gray-500">
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-[11px] font-semibold" style={{ color: '#555' }}>{t(lang, 'account.memberSince')}</span>
+                    <span className="text-sm" style={{ color: '#666' }}>
                       {(user as any).createdAt ? new Date((user as any).createdAt).toLocaleDateString('en-AE', { month: 'long', year: 'numeric' }) : '—'}
-                    </div>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1085,7 +1352,8 @@ function AccountContent() {
 
           </div>
         )}
-      </div>
+        </div>{/* end tab content */}
+      </div>{/* end desktop layout */}
     </div>
   )
 }

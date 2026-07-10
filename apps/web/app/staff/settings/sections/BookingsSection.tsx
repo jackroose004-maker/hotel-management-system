@@ -1,6 +1,6 @@
 'use client'
 import React, { useState } from 'react'
-import { Toggle, TimePick } from './_controls'
+import { Toggle, TimePick, Slider } from './_controls'
 import type { Cfg } from './_types'
 import type { RestaurantTable } from '../page'
 import { Users, Clock, ShieldCheck, Timer, Zap, AlertCircle, Minus, Plus, TriangleAlert } from 'lucide-react'
@@ -511,11 +511,24 @@ export default function BookingsSection({ cfg, set, tables, setTables, token, sa
       <Section icon={Zap} title="Pre-order" accent="#10b981">
         <ToggleRow
           label="Allow pre-order food with bookings"
-          desc="Staff can attach a food pre-order when creating a booking. The order fires to the kitchen when the guest arrives."
+          desc="Staff can attach a food pre-order when creating a booking. The pre-order fires to the kitchen automatically based on the lead time, so food is ready on arrival. Staff still check in the guest manually to seat the table."
           checked={cfg.preOrderEnabled ?? true}
           onChange={v => set('preOrderEnabled', v)}
-          divider={false}
+          divider={true}
         />
+        {cfg.preOrderEnabled && (
+          <div className="px-4 pb-4">
+            <p className="text-sm font-medium mb-0.5" style={{ color: 'var(--text-primary)' }}>Kitchen lead time</p>
+            <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+              Minutes before the booking slot to auto-send the pre-order to the kitchen — giving the kitchen prep time before the guest walks in. Set to 0 to only fire when staff tap "Check In Guest" on the table.
+            </p>
+            <Slider
+              value={cfg.preOrderLeadMins ?? 30}
+              min={0} max={120} step={5} unit="min"
+              onChange={v => set('preOrderLeadMins', v)}
+            />
+          </div>
+        )}
       </Section>
 
       </div>

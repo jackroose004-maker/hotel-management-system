@@ -1,8 +1,8 @@
 'use client'
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Eye, EyeOff, UtensilsCrossed, ArrowLeft } from 'lucide-react'
+import { Eye, EyeOff, UtensilsCrossed, ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { useLangStore, applyLangDir, t } from '@/store/lang'
 import { useBrandStore } from '@/store/brand'
@@ -52,6 +52,98 @@ function LoginForm() {
   }
   useEffect(() => { setQuoteIdx(Math.floor(Math.random() * HERO_QUOTES.length)) }, [])
   const [form, setForm] = useState({ name: '', email: '', phone: '+971 ', password: '', confirmPassword: '' })
+  const [emailTaken, setEmailTaken] = useState(false)
+  const [emailChecking, setEmailChecking] = useState(false)
+
+  // ── Forgot password state ──
+  type ResetStep = 'email' | 'otp' | 'password' | 'done'
+  const [resetMode, setResetMode]         = useState(false)
+  const [resetStep, setResetStep]         = useState<ResetStep>('email')
+  const [resetEmail, setResetEmail]       = useState('')
+  const [resetOtp, setResetOtp]           = useState(['', '', '', '', '', ''])
+  const [resetToken, setResetToken]       = useState('')
+  const [newPassword, setNewPassword]     = useState('')
+  const [confirmPw, setConfirmPw]         = useState('')
+  const [showNewPw, setShowNewPw]         = useState(false)
+  const [showConfirmPw, setShowConfirmPw] = useState(false)
+  const [resetLoading, setResetLoading]   = useState(false)
+  const [resendCooldown, setResendCooldown] = useState(0)
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([])
+
+  const checkEmailExists = async (email: string) => {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return
+    setEmailChecking(true)
+    try {
+      const r = await fetch(`${API}/auth/check-email?email=${encodeURIComponent(email)}`)
+      const json = await r.json()
+      setEmailTaken(!!(json?.data ?? json)?.exists)
+    } catch {}
+    finally { setEmailChecking(false) }
+  }
+
+  const startResendCooldown = (secs = 60) => {
+    setResendCooldown(secs)
+    if (cooldownRef.current) clearInterval(cooldownRef.current)
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown(v => { if (v <= 1) { clearInterval(cooldownRef.current!); return 0 } return v - 1 })
+    }, 1000)
+  }
+
+  const sendResetOtp = async (email: string) => {
+    setResetLoading(true)
+    try {
+      const r = await fetch(`${API}/auth/forgot-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })
+      const json = await r.json()
+      if (!r.ok) throw new Error((json?.error ?? json?.data ?? json)?.message ?? 'Could not send reset code')
+      setResetEmail(email)
+      setResetStep('otp')
+      setResetOtp(['', '', '', '', '', ''])
+      startResendCooldown(60)
+      setTimeout(() => otpRefs.current[0]?.focus(), 100)
+    } catch (e: any) { toast.error(e.message ?? 'Could not send reset code') }
+    finally { setResetLoading(false) }
+  }
+
+  const verifyResetOtp = async () => {
+    const code = resetOtp.join('')
+    if (code.length < 6) { toast.error('Enter the 6-digit code'); return }
+    setResetLoading(true)
+    try {
+      const r = await fetch(`${API}/auth/verify-reset-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: resetEmail, code }) })
+      const json = await r.json()
+      if (!r.ok) throw new Error((json?.data ?? json)?.message ?? 'Invalid code')
+      setResetToken((json?.data ?? json).resetToken)
+      setResetStep('password')
+    } catch (e: any) { toast.error(e.message ?? 'Invalid or expired code') }
+    finally { setResetLoading(false) }
+  }
+
+  const doReset = async () => {
+    if (newPassword.length < 8) { toast.error('Password must be at least 8 characters'); return }
+    if (newPassword !== confirmPw) { toast.error('Passwords do not match'); return }
+    setResetLoading(true)
+    try {
+      const r = await fetch(`${API}/auth/reset-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ resetToken, password: newPassword }) })
+      const json = await r.json()
+      if (!r.ok) throw new Error((json?.error ?? json?.data ?? json)?.message ?? 'Reset failed. Start over.')
+      setResetStep('done')
+    } catch (e: any) { toast.error(e.message ?? 'Reset failed. Start over.') }
+    finally { setResetLoading(false) }
+  }
+
+  const handleOtpKey = (i: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !resetOtp[i] && i > 0) otpRefs.current[i - 1]?.focus()
+  }
+  const handleOtpChange = (i: number, val: string) => {
+    const digit = val.replace(/\D/g, '').slice(-1)
+    const next = [...resetOtp]; next[i] = digit; setResetOtp(next)
+    if (digit && i < 5) otpRefs.current[i + 1]?.focus()
+  }
+  const handleOtpPaste = (e: React.ClipboardEvent) => {
+    const digits = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6).split('')
+    if (digits.length === 6) { setResetOtp(digits); otpRefs.current[5]?.focus() }
+  }
 
   const redirect = searchParams.get('redirect') ?? '/account'
   const slotDate = searchParams.get('date')
@@ -74,7 +166,7 @@ function LoginForm() {
   }
 
   function switchTab(next: 'login' | 'signup') {
-    setTab(next); setError(''); setOtpSent(false); setOtp('')
+    setTab(next); setError(''); setOtpSent(false); setOtp(''); setEmailTaken(false)
     setForm(f => ({ ...f, confirmPassword: '' }))
   }
 
@@ -203,7 +295,213 @@ function LoginForm() {
 
         {/* Frosted glass card */}
         <div className="rounded-3xl px-6 py-7 lg:px-8 lg:py-9 flex flex-col"
-          style={{ maxHeight: 'min(82vh, 680px)', backgroundColor: 'rgba(8,8,8,0.6)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 32px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)' }}>
+          style={{ maxHeight: resetMode ? 'none' : 'min(82vh, 680px)', backgroundColor: 'rgba(8,8,8,0.6)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 32px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)' }}>
+
+          {/* ── Forgot password panel ── */}
+          {resetMode ? (
+            <div className="flex flex-col gap-7">
+
+              {/* step progress + back */}
+              <div className="flex items-center justify-between">
+                {resetStep !== 'done' ? (
+                  <button onClick={() => { setResetMode(false); setResetStep('email'); setNewPassword(''); setConfirmPw('') }}
+                    className="flex items-center gap-1.5 text-xs transition-opacity hover:opacity-60"
+                    style={{ color: 'rgba(255,255,255,0.4)' }}>
+                    <ArrowLeft size={13} /> Back
+                  </button>
+                ) : <span />}
+                {resetStep !== 'done' && (
+                  <div className="flex items-center gap-1.5">
+                    {(['email', 'otp', 'password'] as const).map((s, idx) => {
+                      const currentIdx = ['email', 'otp', 'password'].indexOf(resetStep)
+                      return (
+                        <div key={s} className="rounded-full transition-all duration-300"
+                          style={{
+                            width: s === resetStep ? 20 : 6,
+                            height: 6,
+                            backgroundColor: idx <= currentIdx ? 'var(--brand)' : 'rgba(255,255,255,0.15)',
+                          }} />
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* ── step: email ── */}
+              {resetStep === 'email' && (
+                <>
+                  {/* icon */}
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                    style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                    </svg>
+                  </div>
+                  <div className="-mt-2">
+                    <h2 className="text-2xl font-black text-white mb-1.5">Reset your password</h2>
+                    <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                      Enter the email linked to your account and we'll send a 6-digit code.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <div className="relative">
+                      <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                        <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                      </svg>
+                      <input type="email" autoFocus value={resetEmail} onChange={e => setResetEmail(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && resetEmail && sendResetOtp(resetEmail)}
+                        placeholder="your@email.com"
+                        className="w-full rounded-xl pl-10 pr-4 py-3.5 text-sm outline-none text-white placeholder-white/20 [color-scheme:dark]"
+                        style={{ backgroundColor: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}
+                        onFocus={e => e.currentTarget.style.border = '1px solid rgba(var(--brand-rgb),0.6)'}
+                        onBlur={e => e.currentTarget.style.border = '1px solid rgba(255,255,255,0.12)'} />
+                    </div>
+                    <button onClick={() => sendResetOtp(resetEmail)} disabled={resetLoading || !resetEmail}
+                      className="w-full font-bold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-40 transition-opacity"
+                      style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                      {resetLoading ? <><Loader2 size={15} className="animate-spin" /> Sending…</> : 'Send Reset Code'}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* ── step: otp ── */}
+              {resetStep === 'otp' && (
+                <>
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                    style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                  </div>
+                  <div className="-mt-2">
+                    <h2 className="text-2xl font-black text-white mb-1.5">Enter the code</h2>
+                    <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                      We sent a 6-digit code to{' '}
+                      <span className="font-semibold" style={{ color: 'rgba(255,255,255,0.75)' }}>{resetEmail}</span>
+                    </p>
+                  </div>
+                  <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }} onPaste={handleOtpPaste}>
+                    {resetOtp.map((digit, i) => (
+                      <input key={i} ref={el => { otpRefs.current[i] = el }}
+                        type="text" inputMode="numeric" maxLength={1} value={digit}
+                        onChange={e => handleOtpChange(i, e.target.value)}
+                        onKeyDown={e => handleOtpKey(i, e)}
+                        className="w-full h-14 text-center text-2xl font-black rounded-xl outline-none text-white [color-scheme:dark] transition-all"
+                        style={{
+                          backgroundColor: digit ? 'rgba(var(--brand-rgb),0.1)' : 'rgba(255,255,255,0.06)',
+                          border: digit ? '1.5px solid var(--brand)' : '1px solid rgba(255,255,255,0.12)',
+                        }}
+                        onFocus={e => e.currentTarget.style.border = '1.5px solid var(--brand)'}
+                        onBlur={e => e.currentTarget.style.border = digit ? '1.5px solid var(--brand)' : '1px solid rgba(255,255,255,0.12)'} />
+                    ))}
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <button onClick={verifyResetOtp} disabled={resetLoading || resetOtp.join('').length < 6}
+                      className="w-full font-bold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-40 transition-opacity"
+                      style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                      {resetLoading ? <><Loader2 size={15} className="animate-spin" /> Verifying…</> : 'Verify Code'}
+                    </button>
+                    <p className="text-center text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                      {resendCooldown > 0
+                        ? <>Resend available in <span className="tabular-nums" style={{ color: 'rgba(255,255,255,0.5)' }}>{resendCooldown}s</span></>
+                        : <button onClick={() => sendResetOtp(resetEmail)} className="underline underline-offset-2 transition-opacity hover:opacity-70"
+                            style={{ color: 'var(--brand)' }}>Didn't receive it? Resend</button>
+                      }
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {/* ── step: new password ── */}
+              {resetStep === 'password' && (
+                <>
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                    style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                  </div>
+                  <div className="-mt-2">
+                    <h2 className="text-2xl font-black text-white mb-1.5">Create new password</h2>
+                    <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>Must be at least 8 characters long.</p>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <div className="relative">
+                      <input type={showNewPw ? 'text' : 'password'} value={newPassword}
+                        onChange={e => setNewPassword(e.target.value)}
+                        onCopy={e => e.preventDefault()} onPaste={e => e.preventDefault()} onCut={e => e.preventDefault()}
+                        placeholder="New password"
+                        className="w-full rounded-xl px-4 py-3.5 pr-11 text-sm outline-none text-white placeholder-white/20 [color-scheme:dark]"
+                        style={{ backgroundColor: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}
+                        onFocus={e => e.currentTarget.style.border = '1px solid rgba(var(--brand-rgb),0.6)'}
+                        onBlur={e => e.currentTarget.style.border = '1px solid rgba(255,255,255,0.12)'} />
+                      <button type="button" onClick={() => setShowNewPw(v => !v)}
+                        className="absolute right-3.5 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-70"
+                        style={{ color: 'rgba(255,255,255,0.35)' }}>
+                        {showNewPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                    <div>
+                      <div className="relative">
+                        <input type={showConfirmPw ? 'text' : 'password'} value={confirmPw}
+                          onChange={e => setConfirmPw(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && doReset()}
+                          onCopy={e => e.preventDefault()} onPaste={e => e.preventDefault()} onCut={e => e.preventDefault()}
+                          placeholder="Confirm password"
+                          className="w-full rounded-xl px-4 py-3.5 pr-11 text-sm outline-none text-white placeholder-white/20 [color-scheme:dark]"
+                          style={{ backgroundColor: 'rgba(255,255,255,0.07)', border: `1px solid ${confirmPw && newPassword !== confirmPw ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.12)'}` }}
+                          onFocus={e => e.currentTarget.style.border = '1px solid rgba(var(--brand-rgb),0.6)'}
+                          onBlur={e => e.currentTarget.style.border = confirmPw && newPassword !== confirmPw ? '1px solid rgba(239,68,68,0.5)' : '1px solid rgba(255,255,255,0.12)'} />
+                        <button type="button" onClick={() => setShowConfirmPw(v => !v)}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-70"
+                          style={{ color: 'rgba(255,255,255,0.35)' }}>
+                          {showConfirmPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      </div>
+                      {confirmPw && newPassword !== confirmPw && (
+                        <p className="text-[11px] text-red-400 mt-1.5 pl-1">Passwords don't match</p>
+                      )}
+                    </div>
+                    <button onClick={doReset} disabled={resetLoading || !newPassword || !confirmPw || newPassword !== confirmPw}
+                      className="w-full font-bold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-40 transition-opacity mt-1"
+                      style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                      {resetLoading ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : 'Set New Password'}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* ── step: done ── */}
+              {resetStep === 'done' && (
+                <div className="flex flex-col items-center gap-5 py-4 text-center">
+                  {/* layered glow ring */}
+                  <div className="relative flex items-center justify-center">
+                    <div className="absolute w-24 h-24 rounded-full opacity-20 blur-xl"
+                      style={{ backgroundColor: '#10b981' }} />
+                    <div className="relative w-20 h-20 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: 'rgba(16,185,129,0.15)', border: '1.5px solid rgba(16,185,129,0.3)' }}>
+                      <CheckCircle2 size={40} className="text-green-400" />
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-black text-white mb-2">All done!</h2>
+                    <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                      Your password has been updated.<br />You can now sign in with your new password.
+                    </p>
+                  </div>
+                  <div className="w-full pt-2 flex flex-col gap-2.5">
+                    <button onClick={() => { setResetMode(false); setResetStep('email'); setResetEmail(''); setNewPassword(''); setConfirmPw('') }}
+                      className="w-full font-bold py-3.5 rounded-2xl text-sm"
+                      style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                      Sign In
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          ) : (<>
 
           {/* Lang toggle + Heading */}
           <div className="mb-7">
@@ -320,11 +618,20 @@ function LoginForm() {
                 <div>
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: 'rgba(255,255,255,0.6)' }}>{t(lang, 'login.emailAddress')}</label>
                   <input type="email" required placeholder="you@email.com" value={form.email}
-                    onChange={e => setField('email', e.target.value)}
+                    onChange={e => { setField('email', e.target.value); setEmailTaken(false) }}
+                    onBlur={e => { e.currentTarget.style.border = emailTaken ? '1px solid rgba(239,68,68,0.6)' : '1px solid rgba(255,255,255,0.12)'; if (tab === 'signup') checkEmailExists(e.target.value) }}
                     className="w-full rounded-xl px-4 py-3.5 text-sm outline-none transition-all text-white placeholder-white/25 [color-scheme:dark]"
-                    style={{ backgroundColor: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)' }}
-                    onFocus={e => e.currentTarget.style.border = '1px solid rgba(var(--brand-rgb),0.7)'}
-                    onBlur={e => e.currentTarget.style.border = '1px solid rgba(255,255,255,0.12)'} />
+                    style={{ backgroundColor: 'rgba(255,255,255,0.07)', border: `1px solid ${emailTaken && tab === 'signup' ? 'rgba(239,68,68,0.6)' : 'rgba(255,255,255,0.12)'}` }}
+                    onFocus={e => e.currentTarget.style.border = '1px solid rgba(var(--brand-rgb),0.7)'} />
+                  {tab === 'signup' && emailTaken && (
+                    <p className="text-[11px] text-red-400 mt-1.5 flex items-center gap-1">
+                      <span>Email already registered.</span>
+                      <button type="button" onClick={() => switchTab('login')} className="underline hover:text-red-300">Sign in instead?</button>
+                    </p>
+                  )}
+                  {tab === 'signup' && emailChecking && (
+                    <p className="text-[11px] mt-1.5" style={{ color: 'rgba(255,255,255,0.3)' }}>Checking…</p>
+                  )}
                 </div>
 
                 {tab === 'signup' && (
@@ -358,6 +665,15 @@ function LoginForm() {
                     </button>
                   </div>
                 </div>
+
+                {tab === 'login' && (
+                  <button type="button"
+                    onClick={() => { setResetMode(true); setResetStep('email'); setResetEmail(form.email) }}
+                    className="text-xs font-medium transition-colors hover:opacity-80 flex items-center gap-1 -mt-1"
+                    style={{ color: 'var(--brand)' }}>
+                    Forgot password?
+                  </button>
+                )}
 
                 {tab === 'signup' && (
                   <div>
@@ -423,6 +739,8 @@ function LoginForm() {
               {t(lang, 'login.staffAccess')}
             </Link>
           </div>
+
+          </>)}
 
         </div>
       </div>

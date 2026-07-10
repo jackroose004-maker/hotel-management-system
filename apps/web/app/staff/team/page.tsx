@@ -11,7 +11,7 @@ interface StaffRoleOption { id: string; name: string; color: string; permissions
 
 interface StaffMember {
   id: string; name: string; email: string
-  role: 'OWNER' | 'MANAGER' | 'STAFF' | 'CHEF'
+  role: 'OWNER' | 'STAFF'
   isActive: boolean; createdAt: string; avatarUrl?: string | null
   staffRoleId?: string | null
   staffRole?: StaffRoleOption | null
@@ -30,7 +30,7 @@ function initials(name: string) {
 
 // ─── Avatar ──────────────────────────────────────────────────────────────────
 function Avatar({ member, size = 48 }: { member: StaffMember; size?: number }) {
-  const meta = ROLE_META[member.role]
+  const meta = ROLE_META[member.role] ?? ROLE_META.STAFF
   if (member.avatarUrl) {
     return <img src={member.avatarUrl} alt={member.name}
       style={{ width: size, height: size, borderRadius: size * 0.3, objectFit: 'cover', flexShrink: 0 }} />
@@ -53,7 +53,7 @@ function MemberCard({ m, isSelf, isOwner, onEdit, onToggle }: {
   m: StaffMember; isSelf: boolean; isOwner: boolean
   onEdit: () => void; onToggle: () => void
 }) {
-  const meta = ROLE_META[m.role]
+  const meta = ROLE_META[m.role] ?? ROLE_META.STAFF
   const Icon = meta.icon
   const joined = new Date(m.createdAt).toLocaleDateString('en-AE', { day: 'numeric', month: 'short', year: 'numeric' })
 
@@ -104,17 +104,27 @@ function MemberCard({ m, isSelf, isOwner, onEdit, onToggle }: {
         </div>
       </div>
 
-      {/* Role / permissions line */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-        {m.staffRole ? (
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.55 }}>
-            {m.staffRole.permissions.length} module{m.staffRole.permissions.length !== 1 ? 's' : ''}
+      {/* Module permissions chips */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+        {m.role === 'OWNER' ? (
+          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)' }}>Full Access</span>
+        ) : m.staffRole && m.staffRole.permissions.length > 0 ? (
+          <>
+            {m.staffRole.permissions.slice(0, 4).map((p: string) => (
+              <span key={p} style={{
+                fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 20, textTransform: 'capitalize',
+                backgroundColor: `${m.staffRole!.color}18`, color: m.staffRole!.color,
+              }}>{p}</span>
+            ))}
+            {m.staffRole.permissions.length > 4 && (
+              <span style={{ fontSize: 9, color: 'var(--text-muted)', opacity: 0.55 }}>+{m.staffRole.permissions.length - 4}</span>
+            )}
+          </>
+        ) : (
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.45 }}>
+            {m.staffRole ? 'No modules assigned' : 'No role assigned'}
           </span>
-        ) : m.role !== 'OWNER' ? (
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: 0.55 }}>
-            No role assigned
-          </span>
-        ) : null}
+        )}
       </div>
 
       {/* Meta row */}
@@ -186,11 +196,9 @@ function PasswordInput({ value, onChange, placeholder }: { value: string; onChan
 }
 
 // Derive system Role enum from a custom role's permissions
-function deriveRoleEnum(permissions: string[]): 'MANAGER' | 'STAFF' | 'CHEF' {
-  if (permissions.includes('kitchen') && !permissions.some(p => ['orders','tables','bookings','bills','menu','analytics','team','settings'].includes(p)))
-    return 'CHEF'
-  if (permissions.some(p => ['team', 'menu', 'analytics'].includes(p)))
-    return 'MANAGER'
+function deriveRoleEnum(_permissions: string[]): 'STAFF' {
+  // DB Role enum only has OWNER | STAFF. Manager/Chef/Waiter etc. are
+  // custom roles stored in staffRole — the DB field is always STAFF.
   return 'STAFF'
 }
 
@@ -296,6 +304,13 @@ function StaffModal({ member, onClose, onSaved }: {
               : <input value={email} readOnly className={`${inputCls} opacity-60 cursor-not-allowed`}
                   style={{ ...inputStyle, color: 'var(--text-muted)' }} />}
           </Field>
+          {isNew && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
+              style={{ backgroundColor: 'rgba(var(--brand-rgb),0.07)', border: '1px solid rgba(var(--brand-rgb),0.18)', color: 'var(--text-muted)' }}>
+              <span style={{ color: 'var(--brand)', flexShrink: 0 }}>✉</span>
+              <span>A welcome email with login credentials will be sent. Staff must set a new password on first login.</span>
+            </div>
+          )}
 
           {/* Role — single unified picker */}
           {isEditingOwner ? (
@@ -455,7 +470,7 @@ export default function TeamPage() {
   const [modal, setModal] = useState<'create' | StaffMember | null>(null)
   const [confirmMember, setConfirmMember] = useState<StaffMember | null>(null)
   const [toggling, setToggling] = useState(false)
-  const [filter, setFilter] = useState<'ALL' | 'OWNER' | 'MANAGER' | 'STAFF' | 'CHEF'>('ALL')
+  const [filter, setFilter] = useState<string>('ALL')
   const [search, setSearch] = useState('')
 
   const load = useCallback(async () => {
@@ -490,16 +505,26 @@ export default function TeamPage() {
     finally { setToggling(false) }
   }
 
-  const counts = {
-    ALL: members.length,
-    OWNER: members.filter(m => m.role === 'OWNER').length,
-    MANAGER: members.filter(m => m.role === 'MANAGER').length,
-    STAFF: members.filter(m => m.role === 'STAFF').length,
-    CHEF: members.filter(m => m.role === 'CHEF').length,
+  // Build dynamic tab list: All | Owner | <custom role names>
+  const customRoleNames = Array.from(
+    new Set(members.filter(m => m.staffRole?.name).map(m => m.staffRole!.name))
+  ).sort()
+  const filterTabs = ['ALL', 'OWNER', ...customRoleNames]
+
+  const countFor = (tab: string) => {
+    if (tab === 'ALL') return members.length
+    if (tab === 'OWNER') return members.filter(m => m.role === 'OWNER').length
+    return members.filter(m => m.staffRole?.name === tab).length
   }
+
   const activeCount = members.filter(m => m.isActive).length
 
-  const filtered = (filter === 'ALL' ? members : members.filter(m => m.role === filter))
+  const filtered = members
+    .filter(m => {
+      if (filter === 'ALL') return true
+      if (filter === 'OWNER') return m.role === 'OWNER'
+      return m.staffRole?.name === filter
+    })
     .filter(m => !search || m.name.toLowerCase().includes(search.toLowerCase()) || m.email.toLowerCase().includes(search.toLowerCase()))
 
   return (
@@ -511,14 +536,14 @@ export default function TeamPage() {
           <h1 className="text-base font-bold text-gray-900 dark:text-white whitespace-nowrap">Team</h1>
           {/* Role filter tabs inline — desktop */}
           <div className="hidden sm:flex items-center gap-1 ml-2">
-            {(['ALL', 'OWNER', 'MANAGER', 'STAFF', 'CHEF'] as const).map(r => (
-              <button key={r} onClick={() => setFilter(r)}
+            {filterTabs.map(tab => (
+              <button key={tab} onClick={() => setFilter(tab)}
                 className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all"
-                style={filter === r
+                style={filter === tab
                   ? { backgroundColor: 'var(--brand)', color: '#000' }
                   : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
-                {r === 'ALL' ? 'All' : ROLE_META[r].label}
-                <span className="text-[10px] font-bold opacity-70">{counts[r]}</span>
+                {tab === 'ALL' ? 'All' : tab}
+                <span className="text-[10px] font-bold opacity-70">{countFor(tab)}</span>
               </button>
             ))}
           </div>
@@ -549,13 +574,13 @@ export default function TeamPage() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 overflow-x-auto px-4 py-2">
-            {(['ALL', 'OWNER', 'MANAGER', 'STAFF', 'CHEF'] as const).map(r => (
-              <button key={r} onClick={() => setFilter(r)}
+            {filterTabs.map(tab => (
+              <button key={tab} onClick={() => setFilter(tab)}
                 className="flex-shrink-0 flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
-                style={filter === r
+                style={filter === tab
                   ? { backgroundColor: 'var(--brand)', color: '#000' }
                   : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
-                {r === 'ALL' ? 'All' : ROLE_META[r].label} <span className="opacity-60">{counts[r]}</span>
+                {tab === 'ALL' ? 'All' : tab} <span className="opacity-60">{countFor(tab)}</span>
               </button>
             ))}
           </div>

@@ -107,6 +107,7 @@ export interface Order {
   contactPhone?: string
   createdAt: string
   items: OrderItem[]
+  table?: { id: string; tableNumber: number; name?: string }
 }
 
 export interface CreateOrderItemInput {

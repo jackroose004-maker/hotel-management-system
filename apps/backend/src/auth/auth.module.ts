@@ -8,12 +8,15 @@ import { JwtStrategy } from './strategies/jwt.strategy'
 import { GoogleStrategy } from './strategies/google.strategy'
 import { PrismaModule } from '../prisma/prisma.module'
 import { MailModule } from '../mail/mail.module'
-
+import { ActivityLogModule } from '../activity-log/activity-log.module'
+import { UploadModule } from '../upload/upload.module'
 @Module({
   imports: [
     PassportModule,
     PrismaModule,
     MailModule,
+    ActivityLogModule,
+    UploadModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

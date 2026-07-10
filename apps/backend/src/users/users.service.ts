@@ -1,11 +1,14 @@
 import { Injectable, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common'
 import * as bcrypt from 'bcryptjs'
 import { PrismaService } from '../prisma/prisma.service'
+import { MailService } from '../mail/mail.service'
+
+import { ActivityLogService } from '../activity-log/activity-log.service'
 
 const STAFF_SELECT = {
   id: true, name: true, email: true, role: true,
   isActive: true, createdAt: true, avatarUrl: true,
-  staffRoleId: true,
+  staffRoleId: true, mustChangePassword: true,
   staffRole: { select: { id: true, name: true, color: true, permissions: true } },
 } as const
 
@@ -13,7 +16,11 @@ const ALLOWED_ROLES = ['STAFF']
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mail: MailService,
+    private activityLog: ActivityLogService,
+  ) {}
 
   async listStaff() {
     return this.prisma.user.findMany({
@@ -23,19 +30,56 @@ export class UsersService {
     })
   }
 
-  async createStaff(dto: { name: string; email: string; password: string; role: string }) {
+  async createStaff(
+    dto: { name: string; email: string; password: string; role: string; staffRoleId?: string },
+    actorId?: string,
+  ) {
     const exists = await this.prisma.user.findUnique({ where: { email: dto.email } })
     if (exists) throw new ConflictException('Email already in use')
     if (!ALLOWED_ROLES.includes(dto.role)) throw new BadRequestException('Role must be STAFF')
+
     const passwordHash = await bcrypt.hash(dto.password, 10)
-    return this.prisma.user.create({
-      data: { name: dto.name, email: dto.email, passwordHash, role: dto.role as any, isVerified: true },
+
+    let staffRole: { name: string } | null = null
+    if (dto.staffRoleId) {
+      staffRole = await this.prisma.staffRole.findUnique({ where: { id: dto.staffRoleId }, select: { name: true } })
+    }
+
+    const user = await this.prisma.user.create({
+      data: {
+        name: dto.name,
+        email: dto.email,
+        passwordHash,
+        role: dto.role as any,
+        isVerified: true,
+        mustChangePassword: true,
+        staffRoleId: dto.staffRoleId ?? undefined,
+      },
       select: STAFF_SELECT,
     })
+
+    // Send welcome email (non-blocking)
+    const loginUrl = `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/staff/login`
+    this.mail.sendStaffWelcome(dto.email, dto.name, dto.password, staffRole?.name ?? null, loginUrl).catch(() => {})
+
+    this.activityLog.log({
+      actorId: actorId ?? undefined,
+      actorRole: 'OWNER' as any,
+      action: 'STAFF_CREATED' as any,
+      entityType: 'User',
+      entityId: user.id,
+      after: { name: dto.name, email: dto.email, staffRoleId: dto.staffRoleId ?? null },
+    }).catch(() => {})
+
+    return user
   }
 
-  async updateStaff(id: string, dto: { name?: string; role?: string; isActive?: boolean; password?: string; staffRoleId?: string | null }, requesterId: string) {
-    const target = await this.prisma.user.findUnique({ where: { id } })
+  async updateStaff(
+    id: string,
+    dto: { name?: string; role?: string; isActive?: boolean; password?: string; staffRoleId?: string | null },
+    requesterId: string,
+  ) {
+    const target = await this.prisma.user.findUnique({ where: { id }, select: STAFF_SELECT })
     if (!target) throw new BadRequestException('User not found')
 
     if (id === requesterId) {
@@ -69,7 +113,24 @@ export class UsersService {
     if (dto.password) data.passwordHash = await bcrypt.hash(dto.password, 10)
     if ('staffRoleId' in dto) data.staffRoleId = dto.staffRoleId ?? null
 
-    return this.prisma.user.update({ where: { id }, data, select: STAFF_SELECT })
+    const updated = await this.prisma.user.update({ where: { id }, data, select: STAFF_SELECT })
+
+    // Determine action for activity log
+    const action = dto.isActive === false ? 'STAFF_DEACTIVATED'
+      : dto.isActive === true ? 'STAFF_REACTIVATED'
+      : 'STAFF_UPDATED'
+
+    this.activityLog.log({
+      actorId: requesterId,
+      actorRole: 'OWNER' as any,
+      action: action as any,
+      entityType: 'User',
+      entityId: id,
+      before: { name: target.name, isActive: target.isActive, staffRoleId: target.staffRoleId },
+      after: { name: updated.name, isActive: updated.isActive, staffRoleId: updated.staffRoleId },
+    }).catch(() => {})
+
+    return updated
   }
 
   async lookupByEmail(email: string) {
@@ -80,5 +141,4 @@ export class UsersService {
     })
     return user ?? null
   }
-
 }

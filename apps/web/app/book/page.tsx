@@ -17,7 +17,12 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
 interface Slot { time: string; available: number; total: number; isPast: boolean; isFull: boolean }
 
-function formatDate(d: Date) { return d.toISOString().split('T')[0] }
+function formatDate(d: Date) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 function addDays(d: Date, n: number) { const c = new Date(d); c.setDate(c.getDate() + n); return c }
 function slotLabel(time: string) {
   const [h, m] = time.split(':').map(Number)
@@ -35,6 +40,7 @@ export default function BookPage() {
   const { lang, setLang } = useLangStore()
   const ar = lang === 'ar'
   const showLangToggle = useBrandStore(s => s.showLanguageToggle)
+  const brandColor = useBrandStore(s => s.brandColor) || '#f59e0b'
   useEffect(() => { applyLangDir(lang); initBrand() }, [lang])
 
   useEffect(() => {
@@ -158,7 +164,7 @@ export default function BookPage() {
       <table width="100%" cellpadding="0" cellspacing="0">
         <tr><td style="color:#888;font-size:12px;padding:3px 0;">Subtotal</td><td style="text-align:right;font-size:12px;color:#444;">AED ${Number(preOrder.subtotal).toFixed(2)}</td></tr>
         <tr><td style="color:#888;font-size:12px;padding:3px 0;">VAT (5%)</td><td style="text-align:right;font-size:12px;color:#444;">AED ${Number(preOrder.vatAmount).toFixed(2)}</td></tr>
-        <tr><td style="color:#111;font-size:14px;font-weight:800;padding:8px 0 3px;">Total</td><td style="text-align:right;font-size:16px;font-weight:900;color:#c2410c;">AED ${Number(preOrder.total).toFixed(2)}</td></tr>
+        <tr><td style="color:#111;font-size:14px;font-weight:800;padding:8px 0 3px;">Total</td><td style="text-align:right;font-size:16px;font-weight:900;color:${brandColor};">AED ${Number(preOrder.total).toFixed(2)}</td></tr>
       </table>
       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 14px;margin-top:10px;font-size:11px;font-weight:700;color:#15803d;text-align:center;">
         ${preOrder.paymentStatus === 'PAID' ? '✓ Pre-order Paid by Card' : '💵 Pay at Table'}
@@ -173,11 +179,11 @@ export default function BookPage() {
   body{font-family:'Segoe UI',Helvetica,Arial,sans-serif;background:#f2f2f2;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:40px 16px;}
   .page{width:400px;}
   .card{background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.12);}
-  .stripe{height:6px;background:linear-gradient(90deg,#f97316,#ea580c,#c2410c);}
+  .stripe{height:6px;background:${brandColor};}
   .head{background:#111;padding:28px 28px 24px;position:relative;}
   .head-logo{font-size:22px;font-weight:900;color:#fff;letter-spacing:-0.5px;margin-bottom:2px;}
   .head-sub{font-size:11px;color:rgba(255,255,255,0.45);letter-spacing:1px;text-transform:uppercase;}
-  .head-badge{position:absolute;top:28px;right:28px;background:rgba(249,115,22,0.15);border:1px solid rgba(249,115,22,0.5);border-radius:20px;padding:5px 12px;font-size:10px;font-weight:700;color:#f97316;letter-spacing:1px;text-transform:uppercase;}
+  .head-badge{position:absolute;top:28px;right:28px;background:${brandColor}25;border:1px solid ${brandColor}80;border-radius:20px;padding:5px 12px;font-size:10px;font-weight:700;color:${brandColor};letter-spacing:1px;text-transform:uppercase;}
   .body{padding:24px 28px;}
   .ref-row{display:flex;align-items:center;justify-content:space-between;background:#f9f9f9;border:1px solid #eee;border-radius:10px;padding:10px 14px;margin-bottom:20px;}
   .ref-label{font-size:10px;font-weight:700;color:#aaa;letter-spacing:2px;text-transform:uppercase;}
@@ -185,7 +191,7 @@ export default function BookPage() {
   .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;}
   .detail-item .dl{font-size:10px;font-weight:700;color:#bbb;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;}
   .detail-item .dv{font-size:15px;font-weight:700;color:#111;}
-  .detail-item .dv.accent{color:#f97316;font-size:18px;font-weight:900;}
+  .detail-item .dv.accent{color:${brandColor};font-size:18px;font-weight:900;}
   .guest-row{background:#f9f9f9;border-radius:10px;padding:12px 14px;margin-bottom:20px;display:flex;align-items:center;gap:10px;}
   .guest-avatar{width:36px;height:36px;border-radius:50%;background:#111;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900;color:#fff;flex-shrink:0;}
   .guest-name{font-size:14px;font-weight:700;color:#111;}
@@ -280,9 +286,9 @@ export default function BookPage() {
 
           {/* Ticket card */}
           <div ref={ticketRef} className="w-full max-w-sm bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden mb-4">
-            <div className="bg-amber-500 px-5 py-3 flex items-center justify-between">
+            <div className="px-5 py-3 flex items-center justify-between" style={{ backgroundColor: brandColor }}>
               <span className="font-bold text-white">Al Manzil Hotel</span>
-              <span className="text-orange-100 text-sm">Booking confirmed</span>
+              <span className="text-white/80 text-sm">Booking confirmed</span>
             </div>
             <div className="p-5 space-y-3">
               {[
@@ -317,14 +323,15 @@ export default function BookPage() {
 
           {/* Pre-order food prompt — only if no order yet */}
           {!preOrder && booking.table?.id && (
-            <div className="w-full max-w-sm bg-gray-900 border border-amber-500/30 rounded-2xl p-4 mb-4">
+            <div className="w-full max-w-sm bg-gray-900 rounded-2xl p-4 mb-4" style={{ border: `1px solid ${brandColor}40` }}>
               <div className="text-white font-bold text-sm mb-1">🍛 Pre-order your food?</div>
               <p className="text-gray-400 text-xs mb-3 leading-relaxed">
                 Skip the wait — order now and your meal will be ready when you arrive. Card payment required.
               </p>
               <Link
                 href={`/menu?tableId=${booking.table.id}&bookingId=${booking.id}`}
-                className="flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-400 text-white font-bold py-3 rounded-xl text-sm transition-colors">
+                className="flex items-center justify-center gap-2 text-white font-bold py-3 rounded-xl text-sm transition-all hover:opacity-90"
+                style={{ backgroundColor: brandColor }}>
                 Yes, order food now →
               </Link>
             </div>
@@ -333,13 +340,13 @@ export default function BookPage() {
           {/* Print / Download button */}
           <button onClick={printTicket}
             className="w-full max-w-sm flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-white font-semibold py-3.5 rounded-2xl text-sm mb-4 transition-colors">
-            <Printer size={16} className="text-amber-400" />
+            <Printer size={16} style={{ color: brandColor }} />
             Print / Save as PDF
           </button>
 
-          <div className="w-full max-w-sm bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 mb-6 flex gap-2 text-left">
-            <AlertTriangle size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-300 leading-relaxed">Arrive within 15 minutes of your slot. Table may be released after that.</p>
+          <div className="w-full max-w-sm rounded-xl p-3 mb-6 flex gap-2 text-left" style={{ backgroundColor: `${brandColor}18`, border: `1px solid ${brandColor}30` }}>
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" style={{ color: brandColor }} />
+            <p className="text-xs leading-relaxed" style={{ color: brandColor }}>Arrive within 15 minutes of your slot. Table may be released after that.</p>
           </div>
 
           <div className="w-full max-w-sm flex flex-col gap-3">
@@ -348,7 +355,7 @@ export default function BookPage() {
               View &amp; manage my bookings
             </Link>
             <button onClick={() => { setStep('pick'); setSelected(null); setBooking(null); setQrDataUrl(''); setQrText(''); setPreOrder(null) }}
-              className="text-amber-400 text-sm font-medium hover:text-amber-300">
+              className="text-sm font-medium hover:opacity-80 transition-opacity" style={{ color: brandColor }}>
               Make another booking
             </button>
           </div>
@@ -371,15 +378,15 @@ export default function BookPage() {
 
         <div className="flex-1 px-4 py-6 max-w-lg mx-auto w-full space-y-4">
           {/* Selected slot summary */}
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-center gap-3">
-            <div className="w-12 h-12 bg-amber-500 rounded-xl flex items-center justify-center flex-shrink-0">
+          <div className="rounded-2xl p-4 flex items-center gap-3" style={{ backgroundColor: `${brandColor}18`, border: `1px solid ${brandColor}40` }}>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: brandColor }}>
               <CalendarDays size={20} className="text-white" />
             </div>
             <div>
               <div className="font-bold text-white text-sm">
                 {date.toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long' })}
               </div>
-              <div className="text-amber-400 font-semibold">{selected && slotLabel(selected)}</div>
+              <div className="font-semibold" style={{ color: brandColor }}>{selected && slotLabel(selected)}</div>
             </div>
           </div>
 
@@ -390,7 +397,10 @@ export default function BookPage() {
             </div>
             <div className="flex items-center justify-between">
               <button onClick={() => setPartySize(Math.max(1, partySize - 1))}
-                className="w-11 h-11 rounded-full border border-gray-700 flex items-center justify-center text-gray-300 hover:border-amber-500 hover:text-amber-500 transition-colors text-lg font-bold">
+                className="w-11 h-11 rounded-full border border-gray-700 flex items-center justify-center text-gray-300 transition-colors text-lg font-bold hover:text-white"
+                style={{ '--hover-bc': brandColor } as any}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = brandColor; (e.currentTarget as HTMLElement).style.color = brandColor }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = ''; (e.currentTarget as HTMLElement).style.color = '' }}>
                 −
               </button>
               <div className="text-center">
@@ -398,7 +408,9 @@ export default function BookPage() {
                 <div className="text-gray-400 text-xs mt-0.5">{partySize === 1 ? 'guest' : 'guests'}</div>
               </div>
               <button onClick={() => setPartySize(Math.min(12, partySize + 1))}
-                className="w-11 h-11 rounded-full border border-gray-700 flex items-center justify-center text-gray-300 hover:border-amber-500 hover:text-amber-500 transition-colors text-lg font-bold">
+                className="w-11 h-11 rounded-full border border-gray-700 flex items-center justify-center text-gray-300 transition-colors text-lg font-bold"
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = brandColor; (e.currentTarget as HTMLElement).style.color = brandColor }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = ''; (e.currentTarget as HTMLElement).style.color = '' }}>
                 +
               </button>
             </div>
@@ -415,11 +427,10 @@ export default function BookPage() {
                 { key: 'Private', label: 'Private',  icon: <Lock size={14} /> },
               ].map(z => (
                 <button key={z.key} onClick={() => setSeatingPreference(z.key)}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${
-                    seatingPreference === z.key
-                      ? 'bg-amber-500/15 border-amber-500 text-amber-400'
-                      : 'bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-500'
-                  }`}>
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all"
+                  style={seatingPreference === z.key
+                    ? { backgroundColor: `${brandColor}20`, borderColor: brandColor, color: brandColor }
+                    : { backgroundColor: '#1f1f1f', borderColor: '#374151', color: '#9ca3af' }}>
                   {z.icon} {z.label}
                 </button>
               ))}
@@ -434,14 +445,16 @@ export default function BookPage() {
             </div>
             <textarea value={notes} onChange={e => setNotes(e.target.value)}
               placeholder="Birthday celebration, high chair, dietary needs..."
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-sm text-white placeholder-gray-600 resize-none focus:outline-none focus:border-orange-500 transition-colors"
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl p-3 text-sm text-white placeholder-gray-600 resize-none focus:outline-none transition-colors"
+            onFocus={e => { e.currentTarget.style.borderColor = brandColor }}
+            onBlur={e => { e.currentTarget.style.borderColor = '' }}
               rows={3} />
           </div>
 
           {/* 15-min notice */}
-          <div className="flex gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl">
-            <AlertTriangle size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-300 leading-relaxed">
+          <div className="flex gap-2 p-3 rounded-xl" style={{ backgroundColor: `${brandColor}15`, border: `1px solid ${brandColor}30` }}>
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" style={{ color: brandColor }} />
+            <p className="text-xs leading-relaxed" style={{ color: brandColor }}>
               <strong>Please arrive within 15 minutes</strong> of your slot. After that, your table may be given to other guests.
             </p>
           </div>
@@ -451,7 +464,8 @@ export default function BookPage() {
           )}
 
           <button onClick={confirmBooking} disabled={submitting}
-            className="w-full bg-amber-500 hover:bg-amber-400 text-white font-bold py-4 rounded-2xl text-base disabled:opacity-50 transition-colors shadow-xl shadow-orange-500/20">
+            className="w-full text-white font-bold py-4 rounded-2xl text-base disabled:opacity-50 transition-all hover:opacity-90"
+            style={{ backgroundColor: brandColor, boxShadow: `0 8px 24px ${brandColor}30` }}>
             {submitting ? 'Reserving your table...' : `Confirm for ${partySize} ${partySize === 1 ? 'guest' : 'guests'}`}
           </button>
         </div>
@@ -503,12 +517,11 @@ export default function BookPage() {
             const isToday = formatDate(d) === formatDate(today)
             return (
               <button key={i} onClick={() => setDate(d)}
-                className={`flex-shrink-0 w-14 py-2.5 rounded-xl flex flex-col items-center gap-0.5 transition-all border ${
-                  isSelected
-                    ? 'bg-amber-500 border-orange-500 shadow-lg shadow-amber-500/30'
-                    : 'bg-gray-900 border-gray-800 hover:border-gray-600'
-                }`}>
-                <span className={`text-[10px] font-medium ${isSelected ? 'text-orange-100' : 'text-gray-500'}`}>
+                className="flex-shrink-0 w-14 py-2.5 rounded-xl flex flex-col items-center gap-0.5 transition-all border"
+                style={isSelected
+                  ? { backgroundColor: brandColor, borderColor: brandColor, boxShadow: `0 4px 12px ${brandColor}40` }
+                  : { backgroundColor: '#111', borderColor: '#1f2937' }}>
+                <span className={`text-[10px] font-medium ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
                   {isToday ? 'Today' : dayLabel(d)}
                 </span>
                 <span className={`text-base font-bold ${isSelected ? 'text-white' : 'text-gray-300'}`}>
@@ -524,7 +537,7 @@ export default function BookPage() {
       <div className="flex-1 px-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-white text-sm flex items-center gap-2">
-            <Clock size={14} className="text-amber-400" />
+            <Clock size={14} style={{ color: brandColor }} />
             {date.toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'short' })}
           </h2>
           {!loading && availableCount > 0 && (
@@ -577,17 +590,22 @@ export default function BookPage() {
                         ? 'bg-purple-500/8 border-purple-500/20 opacity-60 cursor-not-allowed'
                         : slot.isFull
                         ? 'bg-gray-900/50 border-gray-800 opacity-40 cursor-not-allowed'
-                        : slot.available <= 2
-                        ? 'bg-amber-500/10 border-amber-500/30 hover:border-amber-400 hover:bg-amber-500/20 cursor-pointer'
-                        : 'bg-green-500/10 border-green-500/20 hover:border-green-400 hover:bg-green-500/20 cursor-pointer'
-                    }`}>
+                        : 'cursor-pointer'
+                    }`}
+                    style={
+                      !isPeak && !slot.isFull
+                        ? selected === slot.time
+                          ? { borderColor: brandColor, backgroundColor: `${brandColor}25` }
+                          : { borderColor: `${brandColor}40`, backgroundColor: `${brandColor}10` }
+                        : undefined
+                    }>
                     <div className={`text-sm font-bold ${
-                      isPeak ? 'text-purple-400' : slot.isFull ? 'text-gray-600' : slot.available <= 2 ? 'text-amber-300' : 'text-green-300'
-                    }`}>
+                      isPeak ? 'text-purple-400' : slot.isFull ? 'text-gray-600' : ''
+                    }`} style={!isPeak && !slot.isFull ? { color: selected === slot.time ? brandColor : `${brandColor}cc` } : undefined}>
                       {slotLabel(slot.time)}
                     </div>
                     <div className={`text-[10px] mt-0.5 font-medium ${
-                      isPeak ? 'text-purple-500' : slot.isFull ? 'text-gray-700' : slot.available <= 2 ? 'text-amber-500' : 'text-green-500'
+                      isPeak ? 'text-purple-500' : slot.isFull ? 'text-gray-700' : slot.available <= 2 ? 'text-green-400' : 'text-green-500'
                     }`}>
                       {isPeak ? 'Walk-in only' : slot.isFull ? 'Full' : slot.available <= 2 ? `${slot.available} left!` : `${slot.available} free`}
                     </div>
@@ -601,22 +619,22 @@ export default function BookPage() {
         {/* Info cards below slots */}
         <div className="mt-6 grid grid-cols-2 gap-3 pb-8">
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <UtensilsCrossed size={18} className="text-amber-400 mb-2" />
+            <UtensilsCrossed size={18} className="mb-2" style={{ color: brandColor }} />
             <div className="text-white font-semibold text-sm">Kerala Cuisine</div>
             <div className="text-gray-500 text-xs mt-0.5 leading-relaxed">Authentic South Indian dishes made fresh daily</div>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <Clock size={18} className="text-amber-400 mb-2" />
+            <Clock size={18} className="mb-2" style={{ color: brandColor }} />
             <div className="text-white font-semibold text-sm">Table Held</div>
             <div className="text-gray-500 text-xs mt-0.5 leading-relaxed">We hold your table for 15 minutes after slot time</div>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <Users size={18} className="text-amber-400 mb-2" />
+            <Users size={18} className="mb-2" style={{ color: brandColor }} />
             <div className="text-white font-semibold text-sm">Up to 12 Guests</div>
             <div className="text-gray-500 text-xs mt-0.5 leading-relaxed">Groups welcome — mention it in special requests</div>
           </div>
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <CalendarDays size={18} className="text-amber-400 mb-2" />
+            <CalendarDays size={18} className="mb-2" style={{ color: brandColor }} />
             <div className="text-white font-semibold text-sm">Free to Cancel</div>
             <div className="text-gray-500 text-xs mt-0.5 leading-relaxed">Cancel anytime from your account before the slot</div>
           </div>

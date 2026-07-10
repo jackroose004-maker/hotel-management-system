@@ -43,7 +43,7 @@ export default function OtpScreen() {
   return (
     <GlassBackground>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 70, paddingBottom: insets.bottom + 24 }]}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 70, paddingBottom: insets.bottom + 24 }]}>
           <GlassCard>
             <View style={styles.codeBanner}>
               <Text style={styles.codeBannerLabel}>Code sent to</Text>

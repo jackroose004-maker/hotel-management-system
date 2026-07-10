@@ -17,7 +17,7 @@
     "android": {
       "package": "com.almanzil.app.dev",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -41,7 +41,17 @@
           "cameraPermission": "Al Manzil needs camera access to scan table QR codes to start your order."
         }
       ],
-      "expo-image"
+      "expo-image",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 260,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ],
+      "expo-video"
     ],
     "extra": {
       "apiUrl": "http://10.30.55.251:3001/api/v1",

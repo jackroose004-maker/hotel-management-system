@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Image } from 'expo-image'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import * as menuApi from '../../../../src/api/menu.api'
 import { useCartStore, type SelectedModifier } from '../../../../src/stores/cart.store'
 import type { MenuItem } from '../../../../src/api/types'
-import { Button } from '../../../../src/components/Button'
-import { colors } from '../../../../src/theme/colors'
+import { GlassButton } from '../../../../src/components/GlassButton'
+import { order } from '../../../../src/theme/colors'
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -16,7 +17,15 @@ export default function ItemDetailScreen() {
   const [notes, setNotes] = useState('')
 
   useEffect(() => {
-    menuApi.getItem(id).then(setItem)
+    menuApi.getItem(id).then((data) => {
+      setItem(data)
+      const defaults: Record<string, string[]> = {}
+      data.modifierGroups?.forEach((g) => {
+        const def = g.options.find((o) => o.isDefault) ?? g.options[0]
+        if (def) defaults[g.id] = [def.id]
+      })
+      setSelected(defaults)
+    })
   }, [id])
 
   const selectedModifiers: SelectedModifier[] = useMemo(() => {
@@ -40,7 +49,7 @@ export default function ItemDetailScreen() {
         return { ...prev, [groupId]: current[0] === optionId ? [] : [optionId] }
       }
       const exists = current.includes(optionId)
-      const next = exists ? current.filter((id) => id !== optionId) : [...current, optionId].slice(0, maxSelect)
+      const next = exists ? current.filter((oid) => oid !== optionId) : [...current, optionId].slice(0, maxSelect)
       return { ...prev, [groupId]: next }
     })
   }
@@ -53,26 +62,28 @@ export default function ItemDetailScreen() {
   if (!item) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={colors.brand} />
+        <ActivityIndicator color={order.brand} />
       </View>
     )
   }
 
-  const previewPrice = item.price + selectedModifiers.reduce((s, m) => s + m.priceAdd, 0)
+  const previewPrice = (item.price + selectedModifiers.reduce((s, m) => s + m.priceAdd, 0)) * 1.05
 
   return (
     <View style={styles.container}>
-      <ScrollView>
-        {item.imageUrl && <Image source={{ uri: item.imageUrl }} style={styles.image} />}
+      <ScrollView style={{ flex: 1 }}>
+        {item.imageUrl && <Image source={{ uri: item.imageUrl }} style={styles.image} contentFit="cover" />}
         <View style={styles.body}>
           <Text style={styles.name}>{item.name}</Text>
           {item.description ? <Text style={styles.description}>{item.description}</Text> : null}
-          <Text style={styles.price}>AED {previewPrice.toFixed(2)} (incl. VAT)</Text>
+          <Text style={styles.price}>
+            AED {previewPrice.toFixed(2)} <Text style={styles.priceHint}>incl. VAT</Text>
+          </Text>
 
           {item.modifierGroups?.map((group) => (
             <View key={group.id} style={styles.group}>
               <Text style={styles.groupTitle}>
-                {group.name} {group.required ? '(required)' : '(optional)'}
+                {group.name} <Text style={styles.groupHint}>{group.required ? '· required' : '· optional'}</Text>
               </Text>
               {group.options.map((opt) => {
                 const isSelected = (selected[group.id] ?? []).includes(opt.id)
@@ -82,7 +93,7 @@ export default function ItemDetailScreen() {
                     style={[styles.option, isSelected && styles.optionSelected]}
                     onPress={() => toggleOption(group.id, opt.id, group.maxSelect)}
                   >
-                    <Text style={styles.optionText}>{opt.name}</Text>
+                    <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{opt.name}</Text>
                     <Text style={styles.optionPrice}>{opt.priceAdd > 0 ? `+AED ${opt.priceAdd.toFixed(2)}` : 'Free'}</Text>
                   </Pressable>
                 )
@@ -96,13 +107,14 @@ export default function ItemDetailScreen() {
             value={notes}
             onChangeText={setNotes}
             placeholder="e.g. no onions"
+            placeholderTextColor={order.textFaint}
             multiline
           />
         </View>
       </ScrollView>
 
       <View style={styles.footer}>
-        <Button
+        <GlassButton
           title="Add to Cart"
           disabled={missingRequiredGroup()}
           onPress={() => {
@@ -123,37 +135,42 @@ export default function ItemDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
-  image: { width: '100%', height: 220 },
-  body: { padding: 16, gap: 4 },
-  name: { fontSize: 22, fontWeight: '800', color: colors.textPrimary },
-  description: { fontSize: 14, color: colors.textMuted, marginTop: 4 },
-  price: { fontSize: 17, fontWeight: '700', color: colors.brandDark, marginTop: 8 },
-  group: { marginTop: 20 },
-  groupTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: order.pageBg },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: order.pageBg },
+  image: { width: '100%', height: 240 },
+  body: { padding: 18, gap: 4 },
+  name: { fontSize: 22, fontWeight: '900', color: order.textPrimary },
+  description: { fontSize: 14, color: order.textSecondary, marginTop: 4, lineHeight: 20 },
+  price: { fontSize: 18, fontWeight: '900', color: order.brand, marginTop: 10 },
+  priceHint: { fontSize: 10, fontWeight: '400', color: 'rgba(252,211,77,0.7)' },
+  group: { marginTop: 22 },
+  groupTitle: { fontSize: 13, fontWeight: '800', color: order.textPrimary, marginBottom: 10 },
+  groupHint: { fontWeight: '400', color: order.textMuted, fontSize: 11 },
   option: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 13,
     paddingHorizontal: 14,
-    borderRadius: 10,
+    borderRadius: 12,
+    backgroundColor: order.cardBg,
     borderWidth: 1,
-    borderColor: colors.cardBorder,
+    borderColor: order.border,
     marginBottom: 8,
   },
-  optionSelected: { borderColor: colors.brand, backgroundColor: colors.brandLight },
-  optionText: { fontSize: 14, color: colors.textPrimary },
-  optionPrice: { fontSize: 13, color: colors.textMuted },
+  optionSelected: { borderColor: order.brand, backgroundColor: `rgba(${order.brandRgb},0.08)` },
+  optionText: { fontSize: 14, color: order.textSecondary },
+  optionTextSelected: { color: order.textPrimary, fontWeight: '700' },
+  optionPrice: { fontSize: 12, color: order.textMuted },
   notesInput: {
     borderWidth: 1,
-    borderColor: colors.cardBorder,
-    borderRadius: 10,
-    padding: 12,
+    borderColor: order.border,
+    borderRadius: 12,
+    padding: 14,
     minHeight: 60,
     textAlignVertical: 'top',
-    backgroundColor: colors.inputBg,
+    backgroundColor: order.pillBg,
+    color: order.textPrimary,
   },
-  footer: { padding: 16, borderTopWidth: 1, borderTopColor: colors.headerBorder, backgroundColor: colors.cardBg },
+  footer: { padding: 16, borderTopWidth: 1, borderTopColor: order.borderFaint, backgroundColor: order.pageBg },
 })

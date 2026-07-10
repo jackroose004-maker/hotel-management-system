@@ -167,6 +167,26 @@ export class MailService {
     }
   }
 
+  async sendPasswordResetOtp(to: string, name: string, code: string, expiry: Date) {
+    const { base, enabled, fromName, fromAddr, replyTo } = await this.tpl('otp')
+    if (!enabled) return
+    const expiresAt = expiry.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true })
+    try {
+      await Promise.resolve().then(() => this.mailer.sendMail({
+        to,
+        subject: `Password reset code — ${base.restaurantName}`,
+        from: this.buildFrom(fromName, fromAddr),
+        replyTo,
+        template: 'password-reset',
+        context: { ...base, isArabic: false, footerNoReplyText: base.footerNoReply, name, code, expiresAt },
+      }))
+      this.logger.log(`Password reset OTP email → ${to}`)
+    } catch (err: any) {
+      this.logger.error(`Password reset OTP email failed → ${to}: ${err?.message}`)
+      throw new Error('Failed to send reset email. Please try again.')
+    }
+  }
+
   async sendWelcome(to: string, name: string) {
     const { base, enabled, fromName, fromAddr, replyTo, subject } = await this.tpl('welcome')
     if (!enabled) return
@@ -209,6 +229,20 @@ export class MailService {
     }
   }
 
+  async sendStaffWelcome(to: string, name: string, tempPassword: string, roleName: string | null, loginUrl: string) {
+    try {
+      await Promise.resolve().then(() => this.mailer.sendMail({
+        to,
+        subject: 'Welcome to Al Manzil — Your Staff Account',
+        template: 'staff-welcome',
+        context: { name, email: to, tempPassword, roleName, loginUrl, year: new Date().getFullYear() },
+      }))
+      this.logger.log(`Staff welcome email → ${to}`)
+    } catch (err: any) {
+      this.logger.error(`Staff welcome email failed → ${to}: ${err?.message}`)
+    }
+  }
+
   async sendBookingCancellation(to: string, name: string, details: { ref: string; slotDate: string; slotTime: string; isStaff: boolean }) {
     const { base, enabled, fromName, fromAddr, replyTo, subject } = await this.tpl('booking_cancelled')
     if (!enabled) return
@@ -224,6 +258,31 @@ export class MailService {
       this.logger.log(`Booking cancellation email → ${to} (ref: ${details.ref}, byStaff: ${details.isStaff})`)
     } catch (err: any) {
       this.logger.error(`Booking cancellation email failed → ${to}: ${err?.message}`)
+    }
+  }
+
+  async sendStaffBookingCancellationAlert(details: { ref: string; guestName: string; guestEmail: string; slotDate: string; slotTime: string }) {
+    const base = await this.brand()
+    const supportEmail = base.supportEmail
+    if (!supportEmail) return
+    const subject = `⚠️ Booking Cancelled by Guest — Ref #${details.ref}`
+    try {
+      await this.mailer.sendMail({
+        to: supportEmail,
+        subject,
+        from: this.buildFrom(base.restaurantName, undefined),
+        html: `<p>A guest has cancelled their booking.</p>
+          <ul>
+            <li><strong>Ref:</strong> #${details.ref}</li>
+            <li><strong>Guest:</strong> ${details.guestName} (${details.guestEmail})</li>
+            <li><strong>Date:</strong> ${details.slotDate}</li>
+            <li><strong>Time:</strong> ${details.slotTime}</li>
+          </ul>
+          <p>If a pre-order was paid, it has been flagged for refund and will appear in Pending Refunds.</p>`,
+      })
+      this.logger.log(`Staff booking-cancel alert → ${supportEmail} (ref: ${details.ref})`)
+    } catch (err: any) {
+      this.logger.error(`Staff cancel alert failed: ${err?.message}`)
     }
   }
 
@@ -257,11 +316,14 @@ export class MailService {
       let pdfBuffer: Buffer | undefined
       try {
         pdfBuffer = await this.pdf.generateBookingTicket({
-          ref, guestName: booking.customer.name, slotDate, slotTime, tableNumber, zone,
+          ref,
+          guestName: booking.customer.name, slotDate, slotTime, tableNumber, zone,
           partySize: booking.partySize, graceMin,
           brandColor: base.brandColor, restaurantName: base.restaurantName, logoUrl: base.logoUrl,
           hasPreOrder, preOrderItems, preOrderTotal,
+          // QR encodes the booking UUID so staff-checkin endpoint can look it up directly
           frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+          qrRef: bookingId,
         })
       } catch (pdfErr: any) {
         this.logger.warn(`PDF generation failed for booking ${bookingId}: ${pdfErr?.message}`)

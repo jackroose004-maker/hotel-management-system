@@ -1,13 +1,16 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
-import { Table2, Check, X, QrCode, Printer, Users, RefreshCw, Clock, Receipt, CreditCard, Banknote, CheckCircle2, Plus, Minus, ShoppingBag } from 'lucide-react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { Table2, Check, X, QrCode, Printer, Users, RefreshCw, Clock, Receipt, CreditCard, Banknote, CheckCircle2, Plus, Minus, ShoppingBag, LogIn, Settings, ScanLine, Loader2 } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
 import { useAuthStore } from '@/store/auth'
+import { useRouter } from 'next/navigation'
+import BillReceipt, { DEFAULT_BILL_CONFIG } from '@/components/ui/BillReceipt'
+import type { BillConfig, ReceiptData } from '@/components/ui/BillReceipt'
 
 interface UpcomingBooking { id: string; slotTime: string; status: string; partySize: number; customer: { name: string } | null }
-interface Table { id: string; tableNumber: number; name: string | null; capacity: number; zone: string; status: string; isActive: boolean; qrCode?: string; updatedAt?: string; upcomingBooking?: UpcomingBooking | null }
+interface Table { id: string; tableNumber: number; name: string | null; capacity: number; zone: string; status: string; isActive: boolean; isReservable: boolean; qrCode?: string; updatedAt?: string; upcomingBooking?: UpcomingBooking | null }
 
 interface BillOrder {
   id: string; status: string; paymentStatus: string; paymentMethod?: string
@@ -57,8 +60,11 @@ type Status = typeof STATUSES[number]
 
 export default function TablesPage() {
   const { user } = useAuthStore()
+  const router = useRouter()
   const isOwner = user?.role === 'OWNER'
   const [tables, setTables]       = useState<Table[]>([])
+  const [restaurantCfg, setRestaurantCfg] = useState<any>(null)
+  const billReceiptRef = useRef<HTMLDivElement>(null)
   const [qrModal, setQrModal]         = useState<Table | null>(null)
   const [qrRegenConfirm, setQrRegenConfirm] = useState(false)
   const [forceAvailableConfirm, setForceAvailableConfirm] = useState<string | null>(null)
@@ -72,11 +78,99 @@ export default function TablesPage() {
   const [addingOrder, setAddingOrder]     = useState(false)
   const [tableSessions, setTableSessions] = useState<{ sessionId: string; label: string }[]>([])
   const [selectedSession, setSelectedSession] = useState<string>('') // '' = new session
-  const [filter, setFilter]               = useState<Status | 'ALL'>('ALL')
+  const [filter, setFilter]               = useState<Status | 'ALL' | 'RESERVED'>('ALL')
+  const [checkingIn, setCheckingIn]        = useState<string | null>(null) // bookingId being checked in
   const now = useNow(30000)
 
+  // QR scanner state
+  const [scannerOpen, setScannerOpen]     = useState(false)
+  const [scanResult, setScanResult]       = useState<{ state: 'scanning' | 'processing' | 'done' | 'error'; msg?: string; detail?: string } >({ state: 'scanning' })
+  const videoRef                          = useRef<HTMLVideoElement>(null)
+  const streamRef                         = useRef<MediaStream | null>(null)
+  const rafRef                            = useRef<number>(0)
+
   const load = useCallback(() => api.get('/tables').then(r => setTables(r.data)), [])
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    api.get('/settings').then(r => setRestaurantCfg(r.data)).catch(() => {})
+  }, [])
+
+  const stopScanner = () => {
+    cancelAnimationFrame(rafRef.current)
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+  }
+
+  const closeScanner = () => {
+    stopScanner()
+    setScannerOpen(false)
+    setScanResult({ state: 'scanning' })
+  }
+
+  const openScanner = async () => {
+    setScanResult({ state: 'scanning' })
+    setScannerOpen(true)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+        tickScan()
+      }
+    } catch (err: any) {
+      const denied = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError'
+      setScanResult({
+        state: 'error',
+        msg: denied ? 'Camera permission denied' : 'Camera not available',
+        detail: denied ? 'camera_permission' : err?.message ?? 'Could not access camera.',
+      })
+    }
+  }
+
+  const tickScan = () => {
+    const video = videoRef.current
+    if (!video || video.readyState < 2) { rafRef.current = requestAnimationFrame(tickScan); return }
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(video, 0, 0)
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    import('jsqr').then(({ default: jsQR }) => {
+      const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' })
+      if (code?.data) {
+        handleQrData(code.data)
+      } else {
+        rafRef.current = requestAnimationFrame(tickScan)
+      }
+    })
+  }
+
+  const handleQrData = async (data: string) => {
+    stopScanner()
+    setScanResult({ state: 'processing' })
+    // Extract booking ref from URL: /book/arrive/{ref}
+    const match = data.match(/\/book\/arrive\/([^/?#]+)/)
+    const ref = match?.[1]
+    if (!ref) {
+      setScanResult({ state: 'error', msg: 'Invalid QR code', detail: 'This QR code is not a valid booking ticket.' })
+      return
+    }
+    try {
+      const r = await api.post(`/bookings/${ref}/staff-checkin`)
+      // Fetch booking details to show guest name + table
+      const details = await api.get(`/bookings/${ref}/public`).catch(() => ({ data: null }))
+      const d = details.data
+      const guestName = d?.guestName ?? 'Guest'
+      const tableInfo = d?.table ? `Table ${d.table.number}${d.table.zone ? ` · ${d.table.zone}` : ''}` : ''
+      setScanResult({ state: 'done', msg: `${guestName} checked in`, detail: tableInfo || undefined })
+      load()
+    } catch (e: any) {
+      setScanResult({ state: 'error', msg: e?.response?.data?.message ?? e?.message ?? 'Check-in failed', detail: 'Tap retry to scan again.' })
+    }
+  }
 
   const openAddOrder = async (table: Table) => {
     setCart({})
@@ -134,42 +228,13 @@ export default function TablesPage() {
       setBillLoading(false) }
   }
 
-  const printBill = (table: Table, bill: TableBill) => {
-    const name = table.name ?? `Table ${table.tableNumber}`
-    const now  = new Date().toLocaleString('en-AE', { dateStyle: 'medium', timeStyle: 'short' })
-    const rows = bill.orders.flatMap(o => o.items.map(i => ({
-      name: i.menuItem.name, qty: i.quantity, unit: Number(i.unitPrice), total: i.quantity * Number(i.unitPrice),
-    })))
+  const printBill = (_table: Table, _bill: TableBill) => {
+    const el = billReceiptRef.current
+    if (!el) return
     const w = window.open('', '_blank'); if (!w) return
-    w.document.write(`<!DOCTYPE html><html><head><title>Bill – ${name}</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Helvetica Neue',sans-serif;max-width:360px;margin:32px auto;padding:24px;color:#111}
-h1{font-size:22px;font-weight:800;color:#f97316}h2{font-size:13px;font-weight:400;color:#666;margin-top:2px}
-.meta{font-size:11px;color:#999;margin:16px 0 8px;padding-top:16px;border-top:1px solid #eee}
-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
-th{text-align:left;font-weight:600;color:#666;padding:4px 0;border-bottom:1px solid #eee}
-td{padding:5px 0;border-bottom:1px solid #f5f5f5}
-td:last-child,th:last-child{text-align:right}
-.totals{margin-top:12px;font-size:13px}.totals tr:last-child{font-size:16px;font-weight:800}
-.totals td{padding:3px 0}.totals td:last-child{text-align:right}
-.badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;margin-top:4px}
-.paid{background:#dcfce7;color:#15803d}.unpaid{background:#fef9c3;color:#854d0e}
-.footer{font-size:10px;color:#999;text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid #eee}
-</style></head><body>
-<h1>Al Manzil</h1><h2>Kerala & South Indian Cuisine</h2>
-<p class="meta">${name} &nbsp;·&nbsp; ${now}</p>
-<table><tr><th>Item</th><th>Qty</th><th>AED</th></tr>
-${rows.map(r => `<tr><td>${r.name}</td><td>${r.qty}</td><td>${r.total.toFixed(2)}</td></tr>`).join('')}
-</table>
-<table class="totals" style="margin-top:16px">
-<tr><td style="color:#666">Subtotal</td><td>AED ${Number(bill.summary.subtotal).toFixed(2)}</td></tr>
-<tr><td style="color:#666">VAT (5%)</td><td>AED ${Number(bill.summary.vatAmount).toFixed(2)}</td></tr>
-<tr><td style="padding-top:8px">Total</td><td style="padding-top:8px">AED ${Number(bill.summary.total).toFixed(2)}</td></tr>
-</table>
-<div style="margin-top:12px">
-<span class="badge ${bill.summary.allPaid ? 'paid' : 'unpaid'}">${bill.summary.allPaid ? '✓ PAID' : 'PAYMENT PENDING'}</span>
-</div>
-<p class="footer">Thank you for dining with us<br>الشكر لتناول الطعام معنا</p>
-<script>window.onload=()=>{window.print();window.close()}<\/script></body></html>`)
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#fff}@media print{@page{margin:0}}</style>
+</head><body>${el.outerHTML}<script>window.onload=()=>{window.print();window.close()}<\/script></body></html>`)
     w.document.close()
   }
 
@@ -199,14 +264,133 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
     notify.success(status === 'EMPTY' ? 'Table marked available' : 'Table status updated')
   }
 
-const countBy = (s: string) => tables.filter(t => t.status === s).length
-  const visible = filter === 'ALL' ? tables : tables.filter(t => t.status === filter)
+  const checkInGuest = async (bookingId: string, tableId: string) => {
+    setCheckingIn(bookingId)
+    try {
+      await api.post(`/orders/booking/${bookingId}/check-in`)
+      setTables(p => p.map(t => t.id === tableId ? { ...t, status: 'OCCUPIED' } : t))
+      notify.success('Guest checked in — table is now seated')
+    } catch {
+      notify.error('Check-in failed')
+    } finally {
+      setCheckingIn(null)
+    }
+  }
+
+  const countBy = (s: string) => tables.filter(t => t.status === s).length
+  const countReserved = tables.filter(t => t.status === 'EMPTY' && !!t.upcomingBooking).length
+  const visible = filter === 'ALL' ? tables
+    : filter === 'RESERVED' ? tables.filter(t => t.status === 'EMPTY' && !!t.upcomingBooking)
+    : tables.filter(t => t.status === filter)
 
   return (
     <div className="flex flex-col flex-1">
 
       {/* Hidden QR canvases */}
       <div className="hidden">{tables.map(t => t.qrCode && <QRCodeCanvas key={t.id} id={`qr-${t.id}`} value={getQrUrl(t)} size={200} />)}</div>
+
+      {/* QR Scanner Modal */}
+      {scannerOpen && (
+        <div className="fixed inset-0 z-[60] bg-black flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 pt-safe-top pt-4 pb-3">
+            <div>
+              <p className="text-white font-bold text-base">Scan Guest QR</p>
+              <p className="text-white/40 text-xs">Point camera at guest&apos;s booking ticket</p>
+            </div>
+            <button onClick={closeScanner} className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center">
+              <X size={18} className="text-white" />
+            </button>
+          </div>
+
+          {/* Camera / result area */}
+          <div className="flex-1 relative flex items-center justify-center overflow-hidden">
+            {/* Video feed */}
+            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
+
+            {/* Dark overlay with cutout */}
+            {scanResult.state === 'scanning' && (
+              <div className="relative z-10 flex flex-col items-center">
+                <div className="w-64 h-64 relative">
+                  {/* Corner brackets */}
+                  {[['top-0 left-0', 'border-t-2 border-l-2 rounded-tl-xl'],
+                    ['top-0 right-0', 'border-t-2 border-r-2 rounded-tr-xl'],
+                    ['bottom-0 left-0', 'border-b-2 border-l-2 rounded-bl-xl'],
+                    ['bottom-0 right-0', 'border-b-2 border-r-2 rounded-br-xl'],
+                  ].map(([pos, cls]) => (
+                    <div key={pos} className={`absolute w-8 h-8 ${pos} ${cls}`}
+                      style={{ borderColor: 'var(--brand)' }} />
+                  ))}
+                  {/* Scan line animation */}
+                  <div className="absolute inset-x-2 h-0.5 animate-scan-line" style={{ background: 'var(--brand)', boxShadow: '0 0 8px var(--brand)' }} />
+                </div>
+                <p className="text-white/60 text-sm mt-5">Align QR within the frame</p>
+              </div>
+            )}
+
+            {/* Processing */}
+            {scanResult.state === 'processing' && (
+              <div className="relative z-10 flex flex-col items-center gap-3">
+                <Loader2 size={44} className="text-white animate-spin" />
+                <p className="text-white font-semibold">Checking in guest…</p>
+                <p className="text-white/40 text-sm">Seating table · firing kitchen</p>
+              </div>
+            )}
+
+            {/* Success */}
+            {scanResult.state === 'done' && (
+              <div className="relative z-10 flex flex-col items-center gap-3 px-8 text-center">
+                <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center mb-1">
+                  <CheckCircle2 size={44} className="text-green-400" />
+                </div>
+                <p className="text-white text-xl font-bold">{scanResult.msg}</p>
+                {scanResult.detail && <p className="text-white/50 text-sm">{scanResult.detail}</p>}
+                <button onClick={closeScanner}
+                  className="mt-4 px-8 py-3 rounded-2xl font-bold text-sm text-white"
+                  style={{ background: 'var(--brand)' }}>
+                  Done
+                </button>
+                <button onClick={() => { setScanResult({ state: 'scanning' }); openScanner() }}
+                  className="text-white/40 text-xs underline underline-offset-2">
+                  Scan another
+                </button>
+              </div>
+            )}
+
+            {/* Error */}
+            {scanResult.state === 'error' && (
+              <div className="relative z-10 flex flex-col items-center gap-3 px-8 text-center max-w-xs">
+                <div className="w-20 h-20 rounded-full bg-red-500/15 flex items-center justify-center mb-1">
+                  <X size={40} className="text-red-400" />
+                </div>
+                <p className="text-white text-lg font-bold">{scanResult.msg}</p>
+                {scanResult.detail === 'camera_permission' ? (
+                  <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-left space-y-2 w-full">
+                    <p className="text-white/50 text-xs font-semibold uppercase tracking-widest mb-3">How to enable camera</p>
+                    {[
+                      'Tap the lock / info icon in your browser address bar',
+                      'Find "Camera" and set it to Allow',
+                      'Reload this page, then tap Scan QR again',
+                    ].map((step, i) => (
+                      <div key={i} className="flex items-start gap-2.5">
+                        <span className="w-5 h-5 rounded-full bg-white/10 text-white/60 text-xs flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                        <p className="text-white/50 text-sm">{step}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-white/40 text-sm">{scanResult.detail}</p>
+                )}
+                <button onClick={() => { setScanResult({ state: 'scanning' }); openScanner() }}
+                  className="mt-2 px-8 py-3 rounded-2xl font-bold text-sm text-white"
+                  style={{ background: 'var(--brand)' }}>
+                  Try Again
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* QR Modal */}
       {qrModal && (
@@ -348,6 +532,14 @@ const countBy = (s: string) => tables.filter(t => t.status === s).length
                 }`}>
                   {billModal.bill.summary.allPaid ? '✓ Settled' : billModal.bill.summary.anyUnpaid ? 'Awaiting Payment' : 'Paid'}
                 </span>
+                {isOwner && (
+                  <button
+                    onClick={() => { setBillModal(null); router.push('/staff/settings?section=bill') }}
+                    className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400"
+                    title="Bill & Receipt settings">
+                    <Settings size={15} />
+                  </button>
+                )}
                 <button onClick={() => setBillModal(null)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400">
                   <X size={16} />
                 </button>
@@ -419,6 +611,47 @@ const countBy = (s: string) => tables.filter(t => t.status === s).length
               </button>
             </div>
           </div>
+
+          {/* Hidden BillReceipt — used as print source */}
+          {(() => {
+            const cfg: BillConfig = { ...DEFAULT_BILL_CONFIG, ...(restaurantCfg?.billConfig ?? {}) }
+            const receiptData: ReceiptData = {
+              sessionId: billModal.bill.sessionId ?? '',
+              table: { name: billModal.table.name ?? undefined, tableNumber: billModal.table.tableNumber },
+              orders: billModal.bill.orders.map(o => ({
+                id: o.id,
+                createdAt: o.createdAt,
+                user: o.user,
+                items: o.items.map(i => ({
+                  menuItem: { name: i.menuItem.name },
+                  quantity: i.quantity,
+                  unitPrice: Number(i.unitPrice),
+                  total: i.quantity * Number(i.unitPrice),
+                })),
+              })),
+              summary: {
+                subtotal: Number(billModal.bill.summary.subtotal),
+                vatAmount: Number(billModal.bill.summary.vatAmount),
+                total: Number(billModal.bill.summary.total),
+              },
+              restaurant: {
+                restaurantName: restaurantCfg?.restaurantName ?? 'Al Manzil',
+                tagline: restaurantCfg?.tagline ?? null,
+                address: restaurantCfg?.address ?? null,
+                phone: restaurantCfg?.phone ?? null,
+                logoUrl: restaurantCfg?.logoUrl ?? null,
+                vatNumber: restaurantCfg?.vatNumber ?? cfg.vatNumber ?? null,
+                vatRate: restaurantCfg?.vatRate ?? 0.05,
+                currency: restaurantCfg?.currency ?? 'AED',
+                currencySymbol: restaurantCfg?.currencySymbol ?? 'AED',
+              },
+            }
+            return (
+              <div className="hidden">
+                <BillReceipt ref={billReceiptRef} data={receiptData} config={cfg} receiptNumber={String(Date.now()).slice(-8)} />
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -548,13 +781,25 @@ const countBy = (s: string) => tables.filter(t => t.status === s).length
         <button onClick={load} className="p-1 rounded-lg flex-shrink-0" style={{ color: 'var(--text-muted)' }} title="Refresh">
           <RefreshCw size={12} />
         </button>
+        <button onClick={openScanner}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white flex-shrink-0 transition-all active:scale-95"
+          style={{ background: 'var(--brand)' }}>
+          <ScanLine size={13} />
+          Scan QR
+        </button>
         {/* Filter tabs inline */}
         <div className="hidden sm:flex items-center gap-1 ml-2 overflow-x-auto">
-          {([['ALL', 'All', 'All', tables.length], ...STATUSES.map(s => [s, S[s as Status].label, S[s as Status].labelShort, countBy(s)])] as [string, string, string, number][]).map(([key, label, labelShort, count]) => (
-            <button key={key} onClick={() => setFilter(key as Status | 'ALL')}
+          {([
+            ['ALL', 'All', 'All', tables.length],
+            ['RESERVED', 'Reserved', 'Rsvd', countReserved],
+            ...STATUSES.map(s => [s, S[s as Status].label, S[s as Status].labelShort, countBy(s)]),
+          ] as [string, string, string, number][]).map(([key, label, , count]) => (
+            <button key={key} onClick={() => setFilter(key as any)}
               className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all"
               style={filter === key
-                ? { backgroundColor: 'var(--brand)', color: '#000' }
+                ? key === 'RESERVED'
+                  ? { backgroundColor: '#f59e0b', color: '#000' }
+                  : { backgroundColor: 'var(--brand)', color: '#000' }
                 : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
               {label}
               <span className="text-[10px] font-bold opacity-70">{count}</span>
@@ -565,11 +810,17 @@ const countBy = (s: string) => tables.filter(t => t.status === s).length
 
       {/* Mobile filter tabs */}
       <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto px-4 py-2 border-b border-gray-200 dark:border-[var(--card-border)] bg-[var(--header-bg)] flex-shrink-0">
-        {([['ALL', 'All', tables.length], ...STATUSES.map(s => [s, S[s as Status].labelShort, countBy(s)])] as [string, string, number][]).map(([key, label, count]) => (
-          <button key={key} onClick={() => setFilter(key as Status | 'ALL')}
+        {([
+          ['ALL', 'All', tables.length],
+          ['RESERVED', 'Rsvd', countReserved],
+          ...STATUSES.map(s => [s, S[s as Status].labelShort, countBy(s)]),
+        ] as [string, string, number][]).map(([key, label, count]) => (
+          <button key={key} onClick={() => setFilter(key as any)}
             className="flex-shrink-0 flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-all"
             style={filter === key
-              ? { backgroundColor: 'var(--brand)', color: '#000' }
+              ? key === 'RESERVED'
+                ? { backgroundColor: '#f59e0b', color: '#000' }
+                : { backgroundColor: 'var(--brand)', color: '#000' }
               : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
             {label} <span className="opacity-60">{count}</span>
           </button>
@@ -580,9 +831,9 @@ const countBy = (s: string) => tables.filter(t => t.status === s).length
       <div className="p-4 sm:p-6">
         {visible.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 gap-4 bg-[var(--card-bg)] rounded-2xl"
-            style={{ border: '1px dashed rgba(var(--brand-rgb),0.3)' }}>
+            style={{ border: '1px dashed var(--card-border)' }}>
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center"
-              style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)' }}>
+              style={{ backgroundColor: 'var(--muted-bg)' }}>
               <Table2 size={28} style={{ color: 'var(--brand)' }} />
             </div>
             <div className="text-center">
@@ -600,18 +851,24 @@ const countBy = (s: string) => tables.filter(t => t.status === s).length
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {visible.map(table => {
-            const isReserved = table.status === 'EMPTY' && !!table.upcomingBooking
-            const cfg = S[table.status as Status] ?? S.EMPTY
+            const isReserved  = table.status === 'EMPTY' && !!table.upcomingBooking
+            const isWalkIn    = !table.isReservable
+            const cfg         = S[table.status as Status] ?? S.EMPTY
             const displayName = table.name ?? `Table ${table.tableNumber}`
-            const isOccupied = table.status === 'OCCUPIED' || table.status === 'BILL_PENDING'
+            const isOccupied  = table.status === 'OCCUPIED' || table.status === 'BILL_PENDING'
+            const modeColor   = isWalkIn ? '#6366f1' : '#10b981'
+            const modeLabel   = isWalkIn ? 'Walk-in' : 'Online'
 
             return (
               <div key={table.id}
                 className="rounded-2xl border overflow-hidden flex flex-col transition-all hover:shadow-md"
-                style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-bg)' }}>
+                style={{ borderColor: isWalkIn ? '#6366f133' : 'var(--card-border)', backgroundColor: 'var(--card-bg)' }}>
 
-                {/* Colour bar */}
-                <div className="h-1 flex-shrink-0" style={{ backgroundColor: isReserved ? '#f59e0b' : cfg.color }} />
+                {/* dual-tone top bar: left = booking mode, right = table status */}
+                <div className="h-1 flex-shrink-0 flex">
+                  <div className="w-1/3" style={{ backgroundColor: modeColor }} />
+                  <div className="flex-1" style={{ backgroundColor: isReserved ? '#f59e0b' : cfg.color }} />
+                </div>
 
                 {/* Body */}
                 <div className="p-3 flex flex-col flex-1 gap-2">
@@ -630,16 +887,21 @@ const countBy = (s: string) => tables.filter(t => t.status === s).length
                     </span>
                   </div>
 
-                  {/* Name + seats + zone */}
+                  {/* Name + seats + zone + booking mode */}
                   <div>
                     <p className="font-bold text-sm truncate leading-tight" style={{ color: 'var(--text-primary)' }}>{displayName}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[11px] flex items-center gap-0.5" style={{ color: 'var(--text-muted)' }}>
-                        <Users size={9} />{table.capacity} seats
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span className="text-[10px] flex items-center gap-0.5" style={{ color: 'var(--text-muted)' }}>
+                        <Users size={9} />{table.capacity}p
                       </span>
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
                         style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
                         {table.zone ?? 'Indoor'}
+                      </span>
+                      {/* booking mode badge */}
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none"
+                        style={{ backgroundColor: `${modeColor}18`, color: modeColor }}>
+                        {modeLabel}
                       </span>
                     </div>
                   </div>
@@ -713,6 +975,16 @@ const countBy = (s: string) => tables.filter(t => t.status === s).length
                       </button>
                     )}
 
+                    {table.status === 'EMPTY' && isReserved && table.upcomingBooking && (
+                      <button
+                        onClick={() => checkInGuest(table.upcomingBooking!.id, table.id)}
+                        disabled={checkingIn === table.upcomingBooking.id}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-colors active:scale-[0.98] disabled:opacity-60"
+                        style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                        <LogIn size={13} />
+                        {checkingIn === table.upcomingBooking.id ? 'Checking in…' : 'Check In Guest'}
+                      </button>
+                    )}
                     {table.status === 'EMPTY' && table.qrCode && (
                       <button onClick={() => { setQrModal(table); setQrRegenConfirm(false) }}
                         className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold border transition-colors hover:bg-[var(--muted-bg)]"

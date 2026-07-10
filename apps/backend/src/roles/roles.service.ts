@@ -26,8 +26,10 @@ export class RolesService {
   async remove(id: string) {
     const role = await this.findOne(id)
     if (role.isSystem) throw new ConflictException('Cannot delete a system role')
-    // Unassign role from all users first
-    await this.prisma.user.updateMany({ where: { staffRoleId: id }, data: { staffRoleId: null } })
+    const count = await this.prisma.user.count({ where: { staffRoleId: id } })
+    if (count > 0) {
+      throw new ConflictException(`${count} staff member${count > 1 ? 's are' : ' is'} assigned to this role. Reassign them before deleting.`)
+    }
     return this.prisma.staffRole.delete({ where: { id } })
   }
 

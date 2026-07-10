@@ -69,6 +69,54 @@ interface Order {
   items: { quantity: number; notes?: string | null; unitPrice: number; menuItem: { name: string } }[]
 }
 
+function buildStripeAppearance(dark: boolean, brandColor: string): import('@stripe/stripe-js').Appearance {
+  return dark ? {
+    theme: 'night',
+    variables: {
+      colorPrimary:         brandColor,
+      colorBackground:      '#111111',
+      colorText:            '#ededed',
+      colorTextSecondary:   '#888888',
+      colorTextPlaceholder: '#555555',
+      colorDanger:          '#f87171',
+      fontFamily:           'system-ui, -apple-system, sans-serif',
+      fontSizeBase:         '14px',
+      borderRadius:         '10px',
+      spacingUnit:          '4px',
+    },
+    rules: {
+      '.Input':         { backgroundColor: '#0d0d0d', border: '1px solid #2a2a2a', boxShadow: 'none', color: '#ededed', padding: '12px 14px' },
+      '.Input:focus':   { border: `1px solid ${brandColor}`, boxShadow: 'none', outline: 'none' },
+      '.Input--invalid':{ border: '1px solid rgba(248,113,113,0.6)' },
+      '.Label':         { color: '#666', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' },
+      '.Error':         { color: '#f87171', fontSize: '12px' },
+      '.Block':         { backgroundColor: '#0d0d0d', border: '1px solid #2a2a2a' },
+      '.CheckboxInput': { backgroundColor: '#0d0d0d', border: '1px solid #2a2a2a' },
+    },
+  } : {
+    theme: 'stripe',
+    variables: {
+      colorPrimary:         brandColor,
+      colorBackground:      '#ffffff',
+      colorText:            '#1a1714',
+      colorTextSecondary:   '#6b6560',
+      colorTextPlaceholder: '#9ca3af',
+      colorDanger:          '#dc2626',
+      fontFamily:           'system-ui, -apple-system, sans-serif',
+      fontSizeBase:         '14px',
+      borderRadius:         '10px',
+      spacingUnit:          '4px',
+    },
+    rules: {
+      '.Input':         { backgroundColor: '#ffffff', border: '1px solid #e5e1d9', boxShadow: 'none', color: '#1a1714', padding: '12px 14px' },
+      '.Input:focus':   { border: `1px solid ${brandColor}`, boxShadow: 'none', outline: 'none' },
+      '.Input--invalid':{ border: '1px solid rgba(220,38,38,0.6)' },
+      '.Label':         { color: '#6b6560', fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' },
+      '.Error':         { color: '#dc2626', fontSize: '12px' },
+    },
+  }
+}
+
 function StripeCheckout({ clientSecret, order, brandColor, onSuccess, onCancel }: {
   clientSecret: string
   order: Order
@@ -78,74 +126,8 @@ function StripeCheckout({ clientSecret, order, brandColor, onSuccess, onCancel }
 }) {
   const [stripe, setStripe] = useState<Stripe | null | undefined>(undefined)
   useEffect(() => { getStripe().then(s => setStripe(s)) }, [])
-
-  const appearance: import('@stripe/stripe-js').Appearance = {
-    theme: 'night',
-    variables: {
-      colorPrimary:          brandColor,
-      colorBackground:       '#111111',
-      colorText:             '#ededed',
-      colorTextSecondary:    '#888888',
-      colorTextPlaceholder:  '#555555',
-      colorDanger:           '#f87171',
-      colorIconTab:          '#888888',
-      colorIconTabSelected:  brandColor,
-      fontFamily:            'system-ui, -apple-system, sans-serif',
-      fontSizeBase:          '14px',
-      borderRadius:          '10px',
-      spacingUnit:           '4px',
-    },
-    rules: {
-      '.Input': {
-        backgroundColor: '#0d0d0d',
-        border:          '1px solid #2a2a2a',
-        boxShadow:       'none',
-        color:           '#ededed',
-        padding:         '12px 14px',
-      },
-      '.Input:focus': {
-        border:     `1px solid ${brandColor}`,
-        boxShadow:  'none',
-        outline:    'none',
-      },
-      '.Input--invalid': {
-        border: '1px solid rgba(248,113,113,0.6)',
-      },
-      '.Label': {
-        color:          '#666666',
-        fontSize:       '11px',
-        fontWeight:     '600',
-        textTransform:  'uppercase',
-        letterSpacing:  '0.06em',
-        marginBottom:   '6px',
-      },
-      '.Error': {
-        color:     '#f87171',
-        fontSize:  '12px',
-      },
-      '.Tab': {
-        backgroundColor: '#0d0d0d',
-        border:          '1px solid #2a2a2a',
-        boxShadow:       'none',
-      },
-      '.Tab:hover': {
-        backgroundColor: '#161616',
-      },
-      '.Tab--selected': {
-        backgroundColor: '#161616',
-        border:          `1px solid ${brandColor}`,
-        boxShadow:       'none',
-      },
-      '.Block': {
-        backgroundColor: '#0d0d0d',
-        border:          '1px solid #2a2a2a',
-      },
-      '.CheckboxInput': {
-        backgroundColor: '#0d0d0d',
-        border:          '1px solid #2a2a2a',
-      },
-    },
-  }
+  const dark = useThemeStore(s => s.dark)
+  const appearance = buildStripeAppearance(dark, brandColor)
 
   if (stripe === undefined) {
     return (
@@ -360,6 +342,7 @@ function MenuPageInner() {
   const [categories, setCategories] = useState<Category[]>([])
   const [categoryPages, setCategoryPages] = useState<Record<string, CategoryPageState>>({})
   const [activeCategory, setActiveCategory] = useState('')
+  const pendingScrollCat = useRef<string | null>(null)
   // Single order kept for payment flow only; multi-order tracking uses activeOrders
   const [order, setOrder] = useState<Order | null>(null)
   const [activeOrders, setActiveOrders] = useState<Order[]>([])
@@ -854,6 +837,7 @@ function MenuPageInner() {
 
   // ─── REFS & SCROLL HOOKS (must be above any early returns) ────────────────
   const mainRef = useRef<HTMLElement>(null)
+  const headerRef = useRef<HTMLDivElement>(null)
   const catTabsRef = useRef<HTMLDivElement>(null)
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({})
   const loadMoreRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -862,6 +846,14 @@ function MenuPageInner() {
   const scrollObserverReady = useRef(false)
   const categoryPagesRef = useRef(categoryPages)
   categoryPagesRef.current = categoryPages
+
+  const scrollToSection = useCallback((el: HTMLElement) => {
+    const headerH = headerRef.current?.getBoundingClientRect().height ?? 110
+    const y = el.getBoundingClientRect().top + window.scrollY - headerH - 8
+    scrollingProgrammatically.current = true
+    window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
+    setTimeout(() => { scrollingProgrammatically.current = false }, 900)
+  }, [])
 
   // Scroll-spy: watch all category sections, update active pill
   // root: null = viewport (window scrolls, not the <main> element)
@@ -890,7 +882,22 @@ function MenuPageInner() {
     if (categories.length === 0) return
     // Delay activating scroll-based loading so the initial explicit load (first category
     // or urlOpenItem category) isn't drowned out by all sentinels firing at mount time
-    const t = setTimeout(() => { scrollObserverReady.current = true }, 800)
+    scrollObserverReady.current = false
+    const t = setTimeout(() => {
+      scrollObserverReady.current = true
+      // Sentinel elements that were already in the viewport during the 800ms guard window
+      // won't re-fire the observer — scan them manually now.
+      categories.forEach(cat => {
+        const el = loadMoreRefs.current[cat.id]
+        if (!el) return
+        const rect = el.getBoundingClientRect()
+        const inView = rect.top < window.innerHeight + 200
+        if (!inView) return
+        const state = categoryPagesRef.current[cat.id]
+        if (state?.loading || state?.loaded) return
+        loadCategoryItems(cat.id)
+      })
+    }, 800)
     const observer = new IntersectionObserver(
       entries => {
         if (!scrollObserverReady.current) return
@@ -914,7 +921,7 @@ function MenuPageInner() {
       if (el) observer.observe(el)
     })
     return () => { clearTimeout(t); observer.disconnect() }
-  }, [categories, categoryPages, loadCategoryItems])
+  }, [categories, loadCategoryItems])
 
   // Auto-scroll the category pill into view when activeCategory changes
   useEffect(() => {
@@ -922,17 +929,33 @@ function MenuPageInner() {
     pill?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
   }, [activeCategory])
 
-  const scrollToCategory = useCallback((id: string) => {
-    setActiveCategory(id)
+  // Fire scroll AFTER React has committed items to DOM.
+  // categoryPages changing means a load just completed → check if we have a pending scroll.
+  useEffect(() => {
+    const id = pendingScrollCat.current
+    if (!id) return
+    const state = categoryPages[id]
+    if (!state?.loaded) return  // still loading
+    pendingScrollCat.current = null
     const el = sectionRefs.current[id]
     if (!el) return
-    // Header is ~112px (brand row 56px + pill rail ~56px)
-    const headerOffset = 120
-    const top = el.getBoundingClientRect().top + window.scrollY - headerOffset
-    scrollingProgrammatically.current = true
-    window.scrollTo({ top, behavior: 'smooth' })
-    setTimeout(() => { scrollingProgrammatically.current = false }, 800)
-  }, [])
+    scrollToSection(el)
+  }, [categoryPages, scrollToSection])
+
+  const scrollToCategory = useCallback((id: string) => {
+    setActiveCategory(id)
+    const state = categoryPagesRef.current[id]
+    if (state?.loaded) {
+      // Items already in DOM — scroll immediately
+      const el = sectionRefs.current[id]
+      if (!el) return
+      scrollToSection(el)
+    } else {
+      // Mark pending; the useEffect above will scroll once load commits to DOM
+      pendingScrollCat.current = id
+      if (!state?.loading) loadCategoryItems(id)
+    }
+  }, [loadCategoryItems, scrollToSection])
 
   // ─── PAYMENT VIEW ─────────────────────────────────────────────────────────
   // ─── PAYMENT CONFIRMED VIEW ───────────────────────────────────────────────
@@ -1590,9 +1613,9 @@ function MenuPageInner() {
       <ForceDark />
 
       {/* ── Sticky header: brand + category rail ── */}
-      <div className="sticky top-0 z-20" style={{ backgroundColor: 'rgba(8,8,8,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <div ref={headerRef} className="sticky top-0 z-20" style={{ backgroundColor: 'rgba(8,8,8,0.95)', backdropFilter: 'blur(20px)' }}>
         {/* Brand + cart row — dir="ltr" so DOM order controls position regardless of html dir */}
-        <div dir="ltr" className="px-4 sm:px-8 flex items-center gap-3 h-12 sm:h-14">
+        <div dir="ltr" className="px-4 sm:px-8 flex items-center gap-2.5 h-12" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           {(() => {
             const backBtn = (
               <Link href="/" className="text-gray-600 hover:text-white transition-colors flex-shrink-0">
@@ -1602,14 +1625,14 @@ function MenuPageInner() {
             const logoEl = brandLogoUrl ? (
               <Link href="/" className="flex-shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={brandLogoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover" />
+                <img src={brandLogoUrl} alt={brandName} className="w-8 h-8 rounded-lg object-cover" />
               </Link>
             ) : null
             const tableLabel = qrTableName || (tableNum ? `🪑 Table ${tableNum}` : null)
             const nameEl = (
               <Link href="/" className="flex-1 min-w-0">
-                <div className={`font-black text-sm text-white tracking-wide leading-none ${ar ? 'text-right' : ''}`}>{(ar && brandNameAr) ? brandNameAr : (brandName || 'AL MANZIL')}</div>
-                <div className={`text-[9px] tracking-widest uppercase truncate ${ar ? 'text-right' : ''}`} style={{ color: tableLabel ? 'var(--brand)' : 'var(--brand)' }}>
+                <div className={`font-black text-[13px] text-white tracking-wide leading-none ${ar ? 'text-right' : ''}`}>{(ar && brandNameAr) ? brandNameAr : (brandName || 'AL MANZIL')}</div>
+                <div className={`text-[9px] tracking-widest uppercase truncate mt-1 ${ar ? 'text-right' : ''}`} style={{ color: 'var(--brand)' }}>
                   {tableLabel || ((ar && brandTaglineAr) ? brandTaglineAr : (brandTagline || 'Restaurant'))}
                 </div>
               </Link>
@@ -1642,13 +1665,15 @@ function MenuPageInner() {
         </div>
 
         {/* Category pill rail */}
-        <div ref={catTabsRef} dir={ar ? 'rtl' : 'ltr'} className="flex gap-1.5 overflow-x-auto scrollbar-hide px-4 sm:px-8 pb-2.5">
+        <div ref={catTabsRef} dir={ar ? 'rtl' : 'ltr'}
+          className="flex gap-2 overflow-x-auto px-4 sm:px-8 py-2"
+          style={{ scrollbarWidth: 'none', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           {allCatPills.map(c => (
             <button key={c.id} data-cat={c.id} onClick={() => scrollToCategory(c.id)}
-              className="flex-shrink-0 px-3.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap"
+              className="flex-shrink-0 px-4 py-1.5 rounded-full text-[11px] font-bold transition-all whitespace-nowrap"
               style={activeCategory === c.id
                 ? { backgroundColor: 'var(--brand)', color: '#000' }
-                : { backgroundColor: 'rgba(255,255,255,0.06)', color: '#888' }}>
+                : { backgroundColor: 'rgba(255,255,255,0.07)', color: '#666', border: '1px solid rgba(255,255,255,0.08)' }}>
               {ar && (c as any).nameAr ? (c as any).nameAr : c.name}
             </button>
           ))}
@@ -1677,7 +1702,7 @@ function MenuPageInner() {
 
         {/* Favourites */}
         {isLoggedIn && favItems.length > 0 && (
-          <section ref={el => { sectionRefs.current[FAV_ID] = el }} id={`cat-${FAV_ID}`} className="pt-10 px-5 sm:px-8">
+          <section ref={el => { sectionRefs.current[FAV_ID] = el }} id={`cat-${FAV_ID}`} className="pt-6 px-5 sm:px-8">
             <div className="flex items-center gap-3 mb-6">
               <Heart size={14} className="text-red-400 fill-red-400 flex-shrink-0" />
               <h2 className="text-2xl font-black text-white tracking-tight">Favourites</h2>
@@ -1700,7 +1725,7 @@ function MenuPageInner() {
         {/* All categories */}
         {categories.map((cat) => (
           <section key={cat.id} ref={el => { sectionRefs.current[cat.id] = el }} id={`cat-${cat.id}`}
-            className="pt-10 px-5 sm:px-8">
+            className="pt-6 px-5 sm:px-8">
             {/* Section header */}
             <div className="flex items-center gap-4 mb-6">
               <div>

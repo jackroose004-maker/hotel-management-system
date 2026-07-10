@@ -9,9 +9,23 @@ export interface StaffRole { id: string; name: string; color: string; permission
 
 interface User {
   id: string; name: string; email: string; role: string
-  avatarUrl?: string; googleId?: string
+  avatarUrl?: string | null; googleId?: string | null
   staffRoleId?: string | null
   staffRole?: StaffRole | null
+}
+
+// Only the fields the UI actually needs — never write DB internals to localStorage
+function sanitizeUser(raw: any): User {
+  return {
+    id:          raw.id,
+    name:        raw.name,
+    email:       raw.email,
+    role:        raw.role,
+    avatarUrl:   raw.avatarUrl ?? null,
+    googleId:    raw.googleId ?? null,
+    staffRoleId: raw.staffRoleId ?? null,
+    staffRole:   raw.staffRole ?? null,
+  }
 }
 
 function getPermissions(user: User | null): Permission[] {
@@ -26,15 +40,9 @@ function getPermissions(user: User | null): Permission[] {
   return defaults[user.role] ?? []
 }
 
-interface AuthStore {
-  user: User | null
-  token: string | null
-  permissions: Permission[]
-  setAuth: (user: User, token: string) => void
-  updatePermissions: (staffRole: StaffRole | null) => void
-  logout: () => void
-  init: () => void
-}
+const STAFF_ROLES = ['OWNER', 'MANAGER', 'STAFF', 'CHEF']
+// Keys that only make sense for the customer-facing menu — clear on staff login
+const CUSTOMER_KEYS = ['almanzil-cart', 'almanzil_order_ids', 'almanzil_guest_order_count', 'almanzil-lang']
 
 async function claimGuestOrders(token: string) {
   try {
@@ -47,25 +55,41 @@ async function claimGuestOrders(token: string) {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ orderIds }),
     })
-    // Keep localStorage IDs in place — menu/orders deduplicates against /orders/mine.
-    // Removing them here races with the page's fetchOrders and causes blank order lists.
   } catch {}
+}
+
+interface AuthStore {
+  user: User | null
+  token: string | null
+  permissions: Permission[]
+  setAuth: (user: User, token: string) => void
+  updatePermissions: (staffRole: StaffRole | null) => void
+  logout: () => void
+  init: () => void
 }
 
 export const useAuthStore = create<AuthStore>(set => ({
   user: null,
   token: null,
   permissions: [],
-  setAuth: (user, token) => {
+  setAuth: (rawUser, token) => {
+    const user = sanitizeUser(rawUser)
     localStorage.setItem('token', token)
     localStorage.setItem('user', JSON.stringify(user))
     set({ user, token, permissions: getPermissions(user) })
-    claimGuestOrders(token)
+
+    if (STAFF_ROLES.includes(user.role)) {
+      // Staff portal: clear any customer-side keys that don't belong here
+      CUSTOMER_KEYS.forEach(k => localStorage.removeItem(k))
+    } else {
+      // Customer login: claim any guest orders made before login
+      claimGuestOrders(token)
+    }
   },
   updatePermissions: (staffRole) => {
     set(state => {
       if (!state.user) return {}
-      const updated = { ...state.user, staffRole }
+      const updated = sanitizeUser({ ...state.user, staffRole })
       localStorage.setItem('user', JSON.stringify(updated))
       return { user: updated, permissions: getPermissions(updated) }
     })
@@ -80,7 +104,7 @@ export const useAuthStore = create<AuthStore>(set => ({
     const userStr = localStorage.getItem('user')
     if (token && userStr && userStr !== 'undefined' && userStr !== 'null') {
       try {
-        const user = JSON.parse(userStr)
+        const user = sanitizeUser(JSON.parse(userStr))
         set({ token, user, permissions: getPermissions(user) })
       } catch {}
     }

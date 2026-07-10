@@ -16,6 +16,7 @@ import { ReportsModule } from './reports/reports.module'
 import { UsersModule } from './users/users.module'
 import { RolesModule } from './roles/roles.module'
 import { ShiftsModule } from './shifts/shifts.module'
+import { UploadModule } from './upload/upload.module'
 import { LoggerMiddleware } from './common/middleware/logger.middleware'
 
 @Module({
@@ -37,6 +38,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware'
     UsersModule,
     RolesModule,
     ShiftsModule,
+    UploadModule,
   ],
 })
 export class AppModule implements NestModule {

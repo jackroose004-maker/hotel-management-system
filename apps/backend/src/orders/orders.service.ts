@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common'
+import { Cron, CronExpression } from '@nestjs/schedule'
 import { PrismaService } from '../prisma/prisma.service'
 import { OrdersGateway } from '../websocket/orders.gateway'
 import { PaymentsService } from '../payments/payments.service'
@@ -23,6 +24,35 @@ export class OrdersService {
     private settings: SettingsService,
     private mail: MailService,
   ) {}
+
+  // Every 5 minutes: fire PRE_ORDER orders to kitchen when within the lead-time window.
+  // The table is NOT marked OCCUPIED here — that only happens when staff explicitly check
+  // the guest in via the "Check In" action (which also fires the pre-order if not yet done).
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async releasePreOrdersToKitchen() {
+    const cfg = await this.settings.get()
+    const leadMins = (cfg as any).preOrderLeadMins ?? 30
+    const now = new Date()
+    const windowEnd = new Date(now.getTime() + leadMins * 60_000)
+
+    const preOrders = await this.prisma.order.findMany({
+      where: { status: 'PRE_ORDER', booking: { status: { in: ['CONFIRMED', 'PENDING'] } } },
+      include: { booking: { select: { id: true, slotDate: true, slotTime: true } } },
+    })
+
+    for (const po of preOrders) {
+      if (!po.booking) continue
+      const [h, m] = po.booking.slotTime.split(':').map(Number)
+      const slotDatetime = new Date(po.booking.slotDate)
+      slotDatetime.setHours(h, m, 0, 0)
+      if (slotDatetime <= windowEnd) {
+        this.logger.log(`Auto-releasing pre-order ${po.id} to kitchen (slot ${po.booking.slotTime}, lead ${leadMins}m)`)
+        await this.firePreOrderToKitchen(po.booking.id).catch(e =>
+          this.logger.error(`Failed to auto-release pre-order for booking ${po.booking!.id}: ${e?.message}`)
+        )
+      }
+    }
+  }
 
   async create(dto: CreateOrderDto, userId?: string, clientIp?: string) {
     // Fetch all menu items to calculate prices server-side
@@ -253,7 +283,9 @@ export class OrdersService {
     const order = await this.getById(id)
 
     const auditData: Record<string, unknown> = {}
-    if (dto.status === 'ACCEPTED') {
+    // ACCEPTED or PENDING→READY (skip-kitchen-stages mode) both count as "accepted"
+    const isAcceptEvent = dto.status === 'ACCEPTED' || (dto.status === 'READY' && order.status === 'PENDING')
+    if (isAcceptEvent) {
       auditData.approvedById = actingUserId ?? null
       auditData.approvedAt   = new Date()
       // Calculate expected ready time from the slowest item in the order
@@ -297,8 +329,22 @@ export class OrdersService {
     if (dto.status === 'READY') this.gateway.emitOrderReady(updated)
     else this.gateway.emitOrderUpdated(updated)
 
-    if (dto.status === 'ACCEPTED') {
-      this.kitchenPrint.printKOT(updated).catch(() => {})
+    if (isAcceptEvent) {
+      const cfg = await this.settings.get()
+      if ((cfg as any).thermalEnabled) {
+        // Thermal is on: print KOT then auto-advance to PREPARING so it skips the KDS "Start" tap
+        this.kitchenPrint.printKOT(updated).catch(() => {})
+        await this.prisma.order.update({
+          where: { id: updated.id },
+          data: {
+            status: 'PREPARING',
+            statusHistory: { create: { fromStatus: updated.status, toStatus: 'PREPARING', changedById: actingUserId ?? null } },
+          },
+        }).catch(() => {})
+        this.gateway.emitOrderUpdated({ ...updated, status: 'PREPARING' })
+      } else {
+        this.kitchenPrint.printKOT(updated).catch(() => {})
+      }
     }
 
     // Email customer when staff cancels their order
@@ -323,7 +369,7 @@ export class OrdersService {
     if (remaining > 0) return // guests still actively ordering — leave status alone
 
     const unpaid = await this.prisma.order.count({
-      where: { tableId, status: 'DELIVERED', paymentStatus: 'UNPAID' },
+      where: { tableId, paymentStatus: 'UNPAID', status: { notIn: ['CANCELLED', 'PRE_ORDER'] } },
     })
     const tableStatus = unpaid > 0 ? 'BILL_PENDING' : 'DIRTY'
     await this.prisma.restaurantTable.update({ where: { id: tableId }, data: { status: tableStatus } })
@@ -393,6 +439,21 @@ export class OrdersService {
     }
 
     return updated
+  }
+
+  async getPublicReviews(limit = 12) {
+    const rows = await this.prisma.feedback.findMany({
+      where: { rating: { gte: 4 }, comment: { not: null }, AND: [{ comment: { not: '' } }] },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { user: { select: { name: true } } },
+    })
+    return rows.map(r => ({
+      rating: r.rating,
+      comment: r.comment,
+      name: r.user?.name ?? 'Verified guest',
+      createdAt: r.createdAt,
+    }))
   }
 
   async submitFeedback(orderId: string, data: { rating: number; comment?: string; tags?: string }, userId?: string) {
@@ -725,13 +786,14 @@ export class OrdersService {
         include: {
           items: { include: { menuItem: true } },
           user: { select: { id: true, name: true } },
+          settledBy: { select: { id: true, name: true } },
           table: true,
         },
         orderBy: { createdAt: 'asc' },
       })
       if (!orders.length || !orders[0].table) return null
       const table = orders[0].table
-      const closedAt = orders[orders.length - 1].updatedAt
+      const closedAt = orders[orders.length - 1].settledAt ?? orders[orders.length - 1].updatedAt
       return { table, sessionId: tableSessionId, orders, summary: this.buildSessionSummary(orders), closedAt }
     }))
 
@@ -958,7 +1020,7 @@ export class OrdersService {
 
   // ── Pre-order: save items against a booking, held until guest arrives ──────
 
-  async createPreOrder(bookingId: string, dto: CreateOrderDto, staffId: string, tempPassword?: string) {
+  async createPreOrder(bookingId: string, dto: CreateOrderDto, staffId: string, tempPassword?: string, deferred?: boolean) {
     const booking = await this.prisma.booking.findUnique({
       where: { id: bookingId },
       include: { table: true },
@@ -968,8 +1030,16 @@ export class OrdersService {
       throw new BadRequestException('Cannot add pre-order to a cancelled/no-show booking')
 
     const itemIds = dto.items.map(i => i.menuItemId)
-    const menuItems = await this.prisma.menuItem.findMany({ where: { id: { in: itemIds } } })
-    if (menuItems.length !== itemIds.length) throw new BadRequestException('One or more menu items not found')
+    // Deduplicate: the same item can appear multiple times with different modifiers.
+    // findMany({ id: { in: [...] } }) returns unique records, so compare against unique IDs.
+    const uniqueItemIds = [...new Set(itemIds)]
+    const menuItems = await this.prisma.menuItem.findMany({ where: { id: { in: uniqueItemIds } } })
+    if (menuItems.length !== uniqueItemIds.length) {
+      const foundIds = new Set(menuItems.map(m => m.id))
+      const missingIds = uniqueItemIds.filter(id => !foundIds.has(id))
+      this.logger.error(`Pre-order validation failed — requested ${uniqueItemIds.length} unique items, found ${menuItems.length}. Missing IDs: [${missingIds.join(', ')}]`)
+      throw new BadRequestException(`Menu item(s) no longer available. Please go back and reselect your food items.`)
+    }
     const menuMap = new Map(menuItems.map(m => [m.id, m]))
 
     // Prefetch all modifier options so we can snapshot name + priceAdd at order time
@@ -987,9 +1057,6 @@ export class OrdersService {
     const vatAmount = Math.round(subtotal * VAT_RATE * 100) / 100
     const total = Math.round((subtotal + vatAmount) * 100) / 100
 
-    // Cancel existing pre-order + create new one atomically.
-    // If tempPassword is set, this is a brand-new booking — roll back the booking and
-    // optionally the customer on failure so staff can start fresh.
     let order: any
     try {
       order = await this.prisma.$transaction(async tx => {
@@ -1025,17 +1092,21 @@ export class OrdersService {
           include: { items: { include: { menuItem: true, modifiers: true } } },
         })
       })
-    } catch (err) {
-      // If email was deferred (new booking flow), cancel the booking so staff can retry cleanly.
-      if (tempPassword !== undefined) {
-        this.logger.warn(`Pre-order failed for booking ${bookingId} — cancelling booking for retry`)
-        await this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'CANCELLED' } })
-          .catch(e => this.logger.error(`Failed to cancel booking ${bookingId} during rollback: ${e?.message}`))
-        if (booking.customerId) {
-          const others = await this.prisma.booking.count({ where: { customerId: booking.customerId, id: { not: bookingId } } }).catch(() => 1)
+    } catch (err: any) {
+      // deferred=true means this pre-order was called immediately after staff-create with skipEmail:true.
+      // On failure we MUST delete the booking (not cancel — @@unique([tableId, slotDate, slotTime])
+      // applies to all statuses, so even a CANCELLED row blocks the slot on retry).
+      if (deferred) {
+        this.logger.warn(`Pre-order failed for booking ${bookingId} (${err?.message}) — deleting booking so slot is freed for retry`)
+        const customerId = booking.customerId
+        await this.prisma.booking.delete({ where: { id: bookingId } })
+          .catch(e => this.logger.error(`Failed to delete booking ${bookingId} during rollback: ${e?.message}`))
+        // If this was a brand-new customer with no other bookings, clean them up too
+        if (customerId && tempPassword) {
+          const others = await this.prisma.booking.count({ where: { customerId, id: { not: bookingId } } }).catch(() => 1)
           if (others === 0) {
-            await this.prisma.user.delete({ where: { id: booking.customerId } })
-              .catch(e => this.logger.error(`Failed to delete new customer ${booking.customerId} during rollback: ${e?.message}`))
+            await this.prisma.user.delete({ where: { id: customerId } })
+              .catch(e => this.logger.error(`Failed to delete new customer ${customerId} during rollback: ${e?.message}`))
           }
         }
       }
@@ -1098,16 +1169,62 @@ export class OrdersService {
         include: { items: { include: { menuItem: true, modifiers: true } }, table: true },
       })
 
-      if (preOrder.tableId) {
-        await tx.restaurantTable.update({ where: { id: preOrder.tableId }, data: { status: 'OCCUPIED' } })
-      }
-
+      // Table stays EMPTY (Reserved badge computed from upcomingBooking) until
+      // staff explicitly check in the guest via the Check In action.
       return updated
     })
 
     this.logger.log(`Pre-order ${fired.id} → ACCEPTED (token #${tokenNumber}) | table ${fired.table?.tableNumber ?? 'N/A'} | ${fired.items.length} item(s)`)
 
     this.gateway.emitNewOrder(fired)
+
+    // Mirror the thermal-printer flow from updateStatus: if thermal is enabled, print the KOT
+    // and auto-advance to PREPARING so the kitchen display doesn't sit waiting for a "Start" tap.
+    const cfg = await this.settings.get()
+    if ((cfg as any).thermalEnabled) {
+      this.kitchenPrint.printKOT(fired).catch(() => {})
+      await this.prisma.order.update({
+        where: { id: fired.id },
+        data: {
+          status: 'PREPARING',
+          statusHistory: { create: { fromStatus: 'ACCEPTED', toStatus: 'PREPARING', changedById: null } },
+        },
+      }).catch(() => {})
+      this.logger.log(`Pre-order ${fired.id} → PREPARING (thermal KOT printed)`)
+    }
+
     return fired
+  }
+
+  // Called when staff taps "Check In Guest" on a Reserved table card.
+  // Marks the table OCCUPIED and fires the pre-order to kitchen if it hasn't been sent yet.
+  async checkInGuest(bookingId: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { id: true, tableId: true, status: true },
+    })
+    if (!booking) throw new NotFoundException('Booking not found')
+    if (!booking.tableId) throw new BadRequestException('Booking has no table assigned')
+    if (['CANCELLED', 'NO_SHOW'].includes(booking.status)) {
+      throw new BadRequestException('Cannot check in a cancelled/no-show booking')
+    }
+
+    // Fire pre-order to kitchen if it hasn't been sent yet (still in PRE_ORDER status)
+    const pendingPreOrder = await this.prisma.order.findFirst({
+      where: { bookingId, status: 'PRE_ORDER' },
+      select: { id: true },
+    })
+    if (pendingPreOrder) {
+      await this.firePreOrderToKitchen(bookingId)
+    }
+
+    // Mark table as OCCUPIED — guest is now physically seated
+    await this.prisma.restaurantTable.update({
+      where: { id: booking.tableId },
+      data: { status: 'OCCUPIED' },
+    })
+
+    this.logger.log(`Guest checked in for booking ${bookingId} — table ${booking.tableId} → OCCUPIED`)
+    return { success: true, bookingId, tableId: booking.tableId }
   }
 }

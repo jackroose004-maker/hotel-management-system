@@ -149,11 +149,19 @@ export class OrdersController {
   @Post('booking/:bookingId/pre-order')
   createPreOrder(
     @Param('bookingId') bookingId: string,
-    @Body() body: CreateOrderDto & { tempPassword?: string },
+    @Body() body: CreateOrderDto & { tempPassword?: string; deferred?: boolean },
     @Request() req,
   ) {
-    const { tempPassword, ...dto } = body
-    return this.orders.createPreOrder(bookingId, dto, req.user.id, tempPassword)
+    const { tempPassword, deferred, ...dto } = body
+    return this.orders.createPreOrder(bookingId, dto, req.user.id, tempPassword, deferred)
+  }
+
+  // Guest has physically arrived — mark table OCCUPIED and fire pre-order to kitchen if not yet sent
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post('booking/:bookingId/check-in')
+  checkInGuest(@Param('bookingId') bookingId: string) {
+    return this.orders.checkInGuest(bookingId)
   }
 
   // Get current pre-order for a booking
@@ -178,6 +186,12 @@ export class OrdersController {
   @Patch(':id/reassign-session')
   reassignSession(@Param('id') id: string, @Body('sessionId') sessionId: string) {
     return this.orders.reassignOrderSession(id, sessionId)
+  }
+
+  // Public: recent 4-5 star reviews with comments — no auth required
+  @Get('reviews/public')
+  getPublicReviews(@Query('limit') limit?: string) {
+    return this.orders.getPublicReviews(limit ? Math.min(parseInt(limit), 20) : 12)
   }
 
   // Guest submits feedback after order is delivered — no auth required

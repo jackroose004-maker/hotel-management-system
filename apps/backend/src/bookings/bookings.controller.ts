@@ -31,10 +31,24 @@ export class BookingsController {
     return this.bookings.createBooking(req.user.id, dto)
   }
 
-  // Public — QR scan on arrival: mark booking as ARRIVED
+  // Public — fetch booking details for QR ticket display (no auth required)
+  @Get(':id/public')
+  getPublicDetails(@Param('id') id: string) {
+    return this.bookings.getPublicBookingDetails(id)
+  }
+
+  // Public — mark booking ARRIVED (idempotent)
   @Post(':id/arrive')
   arriveByQr(@Param('id') id: string) {
     return this.bookings.markArrived(id)
+  }
+
+  // Staff — full automated check-in: ARRIVED + table OCCUPIED + fire kitchen
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('STAFF', 'OWNER')
+  @Post(':id/staff-checkin')
+  staffCheckIn(@Param('id') id: string) {
+    return this.bookings.staffCheckIn(id)
   }
 
   // Customer — view own bookings

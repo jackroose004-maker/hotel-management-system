@@ -1,5 +1,14 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api'
 
+function handle401() {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem('token')
+  localStorage.removeItem('user')
+  // Let the cross-tab sync pick it up too
+  import('@/lib/crossTabAuth').then(m => m.broadcastLogout()).catch(() => {})
+  window.location.href = '/staff/login'
+}
+
 interface ApiResponse<T = any> {
   success: boolean
   data?: T
@@ -21,6 +30,11 @@ export async function apiFetch<T = any>(
       ...(extraHeaders ?? {}),
     },
   })
+
+  if (res.status === 401) {
+    handle401()
+    throw new Error('Session expired. Please log in again.')
+  }
 
   const json: ApiResponse<T> = await res.json()
 

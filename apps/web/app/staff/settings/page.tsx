@@ -1,5 +1,6 @@
 'use client'
 import React, { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Store, Clock, Table2, ShoppingBag, CalendarDays,
   Save, Loader2, CheckCircle2,
@@ -37,12 +38,13 @@ export type RestaurantTable = { id: string; tableNumber: number; name: string | 
 
 export default function SettingsPage() {
   const { token } = useAuthStore()
+  const searchParams = useSearchParams()
   const [cfg, setCfg]           = useState<Cfg | null>(null)
   const [original, setOriginal] = useState<Cfg | null>(null)
   const [saving, setSaving]     = useState(false)
   const [saved, setSaved]       = useState(false)
   const [loadErr, setLoadErr]   = useState(false)
-  const [section, setSection]   = useState<SectionId>('restaurant')
+  const [section, setSection]   = useState<SectionId>((searchParams.get('section') as SectionId) ?? 'restaurant')
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [tables, setTables]     = useState<RestaurantTable[]>([])
   const [videoUploading, setVideoUploading] = useState(false)

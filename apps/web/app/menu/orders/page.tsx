@@ -499,6 +499,15 @@ function OrderTrackCard({ o, lang, onCancel }: { o: Order; lang: Lang; onCancel:
                 AED {Number(o.total).toFixed(2)}
               </p>
               <p className="text-[9px] mt-0.5" style={{ color: '#555' }}>{totalQty} item{totalQty !== 1 ? 's' : ''}</p>
+              {/* Payment badge — only shown once order is delivered */}
+              {o.status === 'DELIVERED' && (
+                <span className="inline-flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-full mt-1"
+                  style={o.paymentStatus === 'PAID'
+                    ? { background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.25)' }
+                    : { background: 'rgba(234,179,8,0.12)', color: '#eab308', border: '1px solid rgba(234,179,8,0.25)' }}>
+                  {o.paymentStatus === 'PAID' ? '✓ Paid' : '💵 Pay at exit'}
+                </span>
+              )}
             </div>
           </div>
 

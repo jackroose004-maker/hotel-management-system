@@ -36,7 +36,7 @@ export default function StaffLoginScreen() {
   return (
     <GlassBackground>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 70, paddingBottom: insets.bottom + 24 }]}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 70, paddingBottom: insets.bottom + 24 }]}>
           <GlassCard>
             <Text style={styles.heading}>Staff Portal</Text>
             <Text style={styles.subheading}>Sign in with your staff account to manage orders, kitchen, and tables.</Text>

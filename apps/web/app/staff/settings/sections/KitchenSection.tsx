@@ -163,7 +163,7 @@ export default function KitchenSection({ cfg, set, openPanel, setOpenPanel }: Pr
       </div>
 
       <SectionLabel text="Thermal Printer (KOT)" />
-      <Row label="Thermal Printer" desc="Print a kitchen order ticket when an order is accepted">
+      <Row label="Thermal Printer" desc="Print a kitchen order ticket when an order is accepted. Enables skip-kitchen-stages mode — Accept jumps straight to Ready with no KDS clicks needed.">
         <Toggle checked={cfg.thermalEnabled ?? false} onChange={v => set('thermalEnabled', v)} />
       </Row>
 

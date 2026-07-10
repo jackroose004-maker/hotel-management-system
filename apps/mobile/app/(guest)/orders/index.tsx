@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
+import { Receipt } from 'lucide-react-native'
 import * as ordersApi from '../../../src/api/orders.api'
 import { getOrCreateTabToken } from '../../../src/stores/guestSession.store'
 import { useAuthStore } from '../../../src/stores/auth.store'
 import { StatusBadge } from '../../../src/components/StatusBadge'
 import type { Order } from '../../../src/api/types'
-import { colors } from '../../../src/theme/colors'
+import { order as theme } from '../../../src/theme/colors'
 
 export default function MyOrdersScreen() {
   const router = useRouter()
@@ -34,9 +35,16 @@ export default function MyOrdersScreen() {
       style={styles.container}
       data={orders}
       keyExtractor={(o) => o.id}
-      contentContainerStyle={{ padding: 16, gap: 10 }}
-      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-      ListEmptyComponent={!loading ? <Text style={styles.empty}>No orders yet</Text> : null}
+      contentContainerStyle={{ padding: 16, gap: 10, flexGrow: 1 }}
+      refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={theme.brand} />}
+      ListEmptyComponent={
+        !loading ? (
+          <View style={styles.empty}>
+            <Receipt size={32} color={theme.textMuted} />
+            <Text style={styles.emptyText}>No orders yet</Text>
+          </View>
+        ) : null
+      }
       renderItem={({ item }) => (
         <Pressable style={styles.card} onPress={() => router.push(`/(guest)/orders/track/${item.id}`)}>
           <View style={styles.cardHeader}>
@@ -53,10 +61,11 @@ export default function MyOrdersScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  empty: { textAlign: 'center', color: colors.textMuted, marginTop: 40 },
-  card: { backgroundColor: colors.cardBg, borderRadius: 12, borderWidth: 1, borderColor: colors.cardBorder, padding: 14, gap: 6 },
+  container: { flex: 1, backgroundColor: theme.pageBg },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingTop: 80 },
+  emptyText: { color: theme.textMuted, fontSize: 14 },
+  card: { backgroundColor: theme.cardBg, borderRadius: 14, borderWidth: 1, borderColor: theme.border, padding: 15, gap: 6 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  tokenNumber: { fontSize: 16, fontWeight: '800', color: colors.textPrimary },
-  meta: { fontSize: 13, color: colors.textMuted },
+  tokenNumber: { fontSize: 16, fontWeight: '900', color: theme.textPrimary },
+  meta: { fontSize: 13, color: theme.textMuted },
 })
