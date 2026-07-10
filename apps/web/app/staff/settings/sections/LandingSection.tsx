@@ -6,21 +6,7 @@ import ImageUpload from '@/components/ui/ImageUpload'
 import toast from 'react-hot-toast'
 import { BilingualField, Inp, inputCls } from './_controls'
 import type { Cfg, HeroConfig, MenuItem } from './_types'
-
-const CLOUD  = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME!
-const PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET!
-
-async function uploadVideo(file: File): Promise<string> {
-  if (!CLOUD || !PRESET) throw new Error('Cloudinary env vars not set')
-  const fd = new FormData()
-  fd.append('file', file)
-  fd.append('upload_preset', PRESET)
-  fd.append('folder', 'almanzil/hero')
-  fd.append('public_id', `hero-video-${Date.now()}`)
-  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD}/video/upload`, { method: 'POST', body: fd })
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error?.message ?? 'Upload failed') }
-  return (await res.json()).secure_url as string
-}
+import { uploadVideo } from '@/lib/upload'
 
 interface Props {
   cfg: Cfg
@@ -153,7 +139,7 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
                     onChange={async e => {
                       const file = e.target.files?.[0]; if (!file) return
                       setVideoUploading(true)
-                      try { const url = await uploadVideo(file); setHc('videoUrl', url); toast.success('Video uploaded!') }
+                      try { const url = await uploadVideo(file, 'backgrounds'); setHc('videoUrl', url); toast.success('Video uploaded!') }
                       catch (err: any) { toast.error(err.message ?? 'Upload failed') }
                       finally { setVideoUploading(false) }
                     }} />
@@ -173,7 +159,7 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
                         onChange={async e => {
                           const file = e.target.files?.[0]; if (!file) return
                           setVideoUploading(true)
-                          try { const url = await uploadVideo(file); setHc('videoUrl', url); toast.success('Video uploaded!') }
+                          try { const url = await uploadVideo(file, 'backgrounds'); setHc('videoUrl', url); toast.success('Video uploaded!') }
                           catch (err: any) { toast.error(err.message ?? 'Upload failed') }
                           finally { setVideoUploading(false) }
                         }} />

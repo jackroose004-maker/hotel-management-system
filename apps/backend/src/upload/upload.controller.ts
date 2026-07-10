@@ -26,22 +26,27 @@ export class UploadController {
     @Query('folder') folder?: string,
   ) {
     if (!file) throw new BadRequestException('No file provided')
-
     const uploadFolder: UploadFolder =
       VALID_FOLDERS.includes(folder as UploadFolder) ? (folder as UploadFolder) : 'general'
-
     const result = await this.uploadService.uploadImage(file, uploadFolder)
+    return { success: true, data: { url: result.url, publicId: result.publicId, width: result.width, height: result.height, bytes: result.bytes, format: result.format } }
+  }
 
-    return {
-      success: true,
-      data: {
-        url:      result.url,
-        publicId: result.publicId,
-        width:    result.width,
-        height:   result.height,
-        bytes:    result.bytes,
-        format:   result.format,
-      },
-    }
+  @Post('video')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 100 * 1024 * 1024 },
+    }),
+  )
+  async uploadVideo(
+    @UploadedFile() file: Express.Multer.File,
+    @Query('folder') folder?: string,
+  ) {
+    if (!file) throw new BadRequestException('No file provided')
+    const uploadFolder: UploadFolder =
+      VALID_FOLDERS.includes(folder as UploadFolder) ? (folder as UploadFolder) : 'general'
+    const result = await this.uploadService.uploadVideo(file, uploadFolder)
+    return { success: true, data: { url: result.url, publicId: result.publicId, bytes: result.bytes, format: result.format } }
   }
 }

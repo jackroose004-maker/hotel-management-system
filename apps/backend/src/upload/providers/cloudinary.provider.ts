@@ -23,8 +23,10 @@ export class CloudinaryProvider implements IStorageProvider {
     buffer: Buffer,
     options: { folder: string; filename: string; mimeType: string },
   ): Promise<UploadedFile> {
+    const isVideo = options.mimeType.startsWith('video/')
+    const resourceType = isVideo ? 'video' : 'image'
     const publicId = `${this.rootFolder}/${options.folder}/${options.filename}`
-    const url = `https://api.cloudinary.com/v1_1/${this.cloudName}/image/upload`
+    const url = `https://api.cloudinary.com/v1_1/${this.cloudName}/${resourceType}/upload`
 
     const form = new FormData()
     form.append('file', Readable.from(buffer), { filename: options.filename, contentType: options.mimeType })

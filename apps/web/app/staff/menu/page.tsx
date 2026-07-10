@@ -137,7 +137,7 @@ function VideoUpload({ value, onChange }: { value: string; onChange: (url: strin
     if (!file.type.startsWith('video/')) { toast.error('Please pick a video file'); return }
     setUploading(true)
     try {
-      const url = await uploadVideo(file, 'almanzil/menu-videos')
+      const url = await uploadVideo(file, 'menu')
       onChange(url)
       toast.success('Video uploaded')
     } catch (e: any) {
