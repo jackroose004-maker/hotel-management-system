@@ -25,7 +25,9 @@ export class CloudinaryProvider implements IStorageProvider {
   ): Promise<UploadedFile> {
     const isVideo = options.mimeType.startsWith('video/')
     const resourceType = isVideo ? 'video' : 'image'
-    const publicId = `${this.rootFolder}/${options.folder}/${options.filename}`
+    // Cloudinary appends the format extension automatically — strip it from public_id to avoid double extension
+    const nameWithoutExt = options.filename.replace(/\.[^.]+$/, '')
+    const publicId = `${this.rootFolder}/${options.folder}/${nameWithoutExt}`
     const url = `https://api.cloudinary.com/v1_1/${this.cloudName}/${resourceType}/upload`
 
     const form = new FormData()

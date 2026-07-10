@@ -31,7 +31,7 @@ export class UploadController {
   ) {
     if (!file) throw new BadRequestException('No file provided')
     const result = await this.uploadService.uploadImage(file, resolveFolder(folder))
-    return { success: true, data: { url: result.url, publicId: result.publicId, width: result.width, height: result.height, bytes: result.bytes, format: result.format } }
+    return { url: result.url, publicId: result.publicId, width: result.width, height: result.height, bytes: result.bytes, format: result.format }
   }
 
   @Post('video')
@@ -47,6 +47,6 @@ export class UploadController {
   ) {
     if (!file) throw new BadRequestException('No file provided')
     const result = await this.uploadService.uploadVideo(file, resolveFolder(folder))
-    return { success: true, data: { url: result.url, publicId: result.publicId, bytes: result.bytes, format: result.format } }
+    return { url: result.url, publicId: result.publicId, bytes: result.bytes, format: result.format }
   }
 }
