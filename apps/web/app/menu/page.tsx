@@ -22,6 +22,7 @@ import { useLangStore, applyLangDir, t, syncLangToServer, type Lang } from '@/st
 import StripePaymentForm from '@/components/StripePaymentForm'
 import ForceDark from '@/components/ForceDark'
 import { getStripe, isStripeConfigured } from '@/lib/stripe'
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
 
 const ITEMS_PAGE_SIZE = 12
 
@@ -368,15 +369,19 @@ function MenuPageInner() {
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({})  // groupId → optionId
   const [drawerNotes, setDrawerNotes] = useState('')
   const [showCashConfirm, setShowCashConfirm] = useState(false)
+  useBodyScrollLock(!!drawerItem || !!notesOpen || showCashConfirm)
 
   // Dine-in table selection
-  const [allTables, setAllTables]     = useState<{id:string; tableNumber:number; name:string|null; capacity:number; status:string}[]>([])
+  const [allTables, setAllTables]     = useState<{id:string; tableNumber:number; name:string|null; capacity:number; status:string; isReservable:boolean}[]>([])
   const [tableInput, setTableInput]   = useState('')
   const [tableId, setTableId]         = useState(urlTableId)
   const [tableNum, setTableNum]       = useState<number | null>(null)
   const [tableError, setTableError]   = useState('')
   const [qrTableName, setQrTableName] = useState('')
   const [qrTableStatus, setQrTableStatus] = useState('')
+  const [qrTableReservationOnly, setQrTableReservationOnly] = useState(false)
+  const [reservationPopupDismissed, setReservationPopupDismissed] = useState(false)
+  const [bookingsEnabled, setBookingsEnabled] = useState(true)
 
   // Staff session picker — when staff orders for a table that has multiple guests
   const [tableSessions, setTableSessions] = useState<{ sessionId: string; label: string; orderCount: number; itemCount: number; total: number; itemSummary: string[]; firstOrderAt: string | null }[]>([])
@@ -531,6 +536,7 @@ function MenuPageInner() {
         loadCategoryItems(cats[0].id)
       }
     })
+    api.get('/settings').then(r => setBookingsEnabled(r.data?.bookingsEnabled !== false)).catch(() => {})
     api.get('/tables').then(r => {
       setAllTables(r.data ?? [])
       // If coming from booking, resolve tableId → tableNumber
@@ -543,11 +549,16 @@ function MenuPageInner() {
     if (urlQr) {
       api.get(`/tables/qr/${urlQr}`).then(r => {
         if (r.data) {
-          setTableId(r.data.id)
-          setTableNum(r.data.tableNumber)
           setQrTableName(r.data.name ?? `Table ${r.data.tableNumber}`)
           setQrTableStatus(r.data.status ?? '')
-          cart.setTableId(r.data.id)
+          setQrTableReservationOnly(!!r.data.isReservable)
+          if (!r.data.isReservable) {
+            // Walk-in table: pre-fill from QR as normal
+            setTableId(r.data.id)
+            setTableNum(r.data.tableNumber)
+            cart.setTableId(r.data.id)
+          }
+          // Reservation table: don't attach to cart — guest must pick a walk-in table to order
         }
       }).catch(() => {})
     }
@@ -1050,7 +1061,8 @@ function MenuPageInner() {
   // ─── CART VIEW ────────────────────────────────────────────────────────────
   if (view === 'cart') {
     // QR guests: block until table resolves; direct guests: need explicit table pick
-    const canOrder = cart.orderType === 'TAKEAWAY' || !!tableId
+    const phoneOk = cart.orderType !== 'TAKEAWAY' || contactPhone.trim().length > 5
+    const canOrder = (cart.orderType === 'TAKEAWAY' && phoneOk) || (cart.orderType === 'DINE_IN' && !!tableId)
     return (
       <>
       <div className="min-h-screen flex flex-col animate-[fadeIn_0.3s_ease_forwards]" style={{ backgroundColor: '#080808' }}>
@@ -1088,8 +1100,8 @@ function MenuPageInner() {
               </div>
             )}
 
-            {/* Table: QR scan locks to that table — no picker needed */}
-            {cart.orderType === 'DINE_IN' && !fromBooking && fromQr && (
+            {/* Table: QR scan on a walk-in table locks to that table */}
+            {cart.orderType === 'DINE_IN' && !fromBooking && fromQr && !qrTableReservationOnly && (
               <div className="mt-3">
                 {tableId ? (
                   <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-xl px-3 py-2.5">
@@ -1106,23 +1118,9 @@ function MenuPageInner() {
               </div>
             )}
 
-            {/* Table selected — locked tile with change option */}
-            {cart.orderType === 'DINE_IN' && !fromBooking && !fromQr && tableId && (
-              <div className="mt-3 flex items-center gap-2 rounded-xl px-3 py-2.5"
-                style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', border: '1.5px solid rgba(var(--brand-rgb),0.5)' }}>
-                <Table2 size={14} className="flex-shrink-0" style={{ color: 'var(--brand)' }} />
-                <span className="text-sm font-bold" style={{ color: 'var(--brand)' }}>
-                  {allTables.find(tb => tb.id === tableId)?.name ?? `Table ${tableNum}`}
-                </span>
-                <span className="text-[10px] text-green-400 ml-1">{t(lang, 'cart.selected')}</span>
-                <button onClick={() => { setTableId(''); setTableNum(null); setTableInput('') }}
-                  className="ml-auto text-[10px] text-gray-500 underline">{t(lang, 'cart.change')}</button>
-              </div>
-            )}
-
-            {/* Table picker — guests can pick any table except ones being cleaned */}
-            {cart.orderType === 'DINE_IN' && !fromBooking && !fromQr && !tableId && (() => {
-              const selectable = allTables.filter(t => t.status !== 'DIRTY')
+            {/* Table picker — walk-in tables only; also shown when browsing from a reservation QR */}
+            {cart.orderType === 'DINE_IN' && !fromBooking && (!fromQr || qrTableReservationOnly) && (() => {
+              const selectable = allTables.filter(t => !t.isReservable && t.status !== 'DIRTY')
               return (
               <div className="mt-3">
                 <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
@@ -1134,26 +1132,24 @@ function MenuPageInner() {
                   </p>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
-                    {selectable.map(tbl => (
-                      <button key={tbl.id} onClick={() => { setTableId(tbl.id); setTableNum(tbl.tableNumber); cart.setTableId(tbl.id) }}
-                          style={tableId === tbl.id
-                          ? { backgroundColor: 'var(--brand)', border: '1px solid var(--brand)', boxShadow: '0 4px 12px rgba(var(--brand-rgb),0.2)' }
-                          : { backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}
-                        className="rounded-xl py-3 px-2 text-center transition-all">
-                        <div className={`font-bold text-sm ${tableId === tbl.id ? 'text-black' : 'text-white'}`}>
-                          {tbl.name ?? `T${tbl.tableNumber}`}
-                        </div>
-                        <div className={`text-[10px] mt-0.5 ${tableId === tbl.id ? 'text-amber-100' : 'text-gray-400'}`}>
-                          {tbl.status === 'EMPTY' ? `${tbl.capacity} ${t(lang, 'cart.seats')}` : tbl.status === 'OCCUPIED' ? t(lang, 'cart.seated') : t(lang, 'cart.billing')}
-                        </div>
-                      </button>
-                    ))}
+                    {selectable.map(tbl => {
+                      const selected = tableId === tbl.id
+                      return (
+                        <button key={tbl.id} onClick={() => { setTableId(tbl.id); setTableNum(tbl.tableNumber); cart.setTableId(tbl.id) }}
+                          style={selected
+                            ? { backgroundColor: 'var(--brand)', border: '1px solid var(--brand)', boxShadow: '0 4px 12px rgba(var(--brand-rgb),0.2)' }
+                            : { backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}
+                          className="rounded-xl py-3 px-2 text-center transition-all">
+                          <div className={`font-bold text-sm ${selected ? 'text-black' : 'text-white'}`}>
+                            {tbl.name ?? `T${tbl.tableNumber}`}
+                          </div>
+                          <div className={`text-[10px] mt-0.5 ${selected ? 'text-black/70' : 'text-gray-400'}`}>
+                            {selected ? '✓ Selected' : tbl.status === 'EMPTY' ? `${tbl.capacity} ${t(lang, 'cart.seats')}` : tbl.status === 'OCCUPIED' ? t(lang, 'cart.seated') : t(lang, 'cart.billing')}
+                          </div>
+                        </button>
+                      )
+                    })}
                   </div>
-                )}
-                {tableId && (
-                  <p className="text-green-500 text-xs mt-2 flex items-center gap-1">
-                    ✓ {allTables.find(t => t.id === tableId)?.name ?? `Table ${tableNum}`} selected
-                  </p>
                 )}
               </div>
               )
@@ -1302,7 +1298,9 @@ function MenuPageInner() {
                 className="w-full rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none"
                 style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}
               />
-              <p className="text-[11px] text-gray-500 mt-1.5">We'll call/SMS you when your order is ready for pickup</p>
+              <p className="text-[11px] mt-1.5" style={{ color: contactPhone.trim().length > 5 ? '#555' : 'var(--brand)' }}>
+                {contactPhone.trim().length > 5 ? "We'll call/SMS you when your order is ready for pickup" : '⚠ Phone number required to place takeaway order'}
+              </p>
             </div>
           )}
 
@@ -1336,19 +1334,20 @@ function MenuPageInner() {
                     </button>
                   )
                 }
-                if (cart.orderType === 'TAKEAWAY') {
-                  const cashLabel = hasDineInSession
-                    ? `Add to My Table Bill · AED ${cart.total().toFixed(2)}`
-                    : `${t(lang,'cart.payAtCounter')} · AED ${cart.total().toFixed(2)}`
+                if (cart.orderType === 'TAKEAWAY' && hasDineInSession) {
+                  // Guest already dining in: offer to merge takeaway into their table bill
                   return (
                     <button onClick={() => setShowCashConfirm(true)}
                       disabled={placingCash || placingCard || !canOrder}
                       className="w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-40"
                       style={{ backgroundColor: '#16a34a', color: '#fff' }}>
                       {placingCash ? <Loader2 size={18} className="animate-spin" /> : <Banknote size={16} />}
-                      {cashLabel}
+                      Add to My Table Bill · AED {cart.total().toFixed(2)}
                     </button>
                   )
+                }
+                if (cart.orderType === 'TAKEAWAY') {
+                  return null  // Pure takeaway: card only
                 }
               })()}
               {/* Card payment */}
@@ -1363,11 +1362,7 @@ function MenuPageInner() {
                 <p className="text-center text-[11px] text-gray-600">{t(lang, 'cart.mostGuestsPay')}</p>
               )}
               {!fromBooking && cart.orderType === 'TAKEAWAY' && (
-                <p className="text-center text-[11px] text-gray-600">
-                  {activeOrders.some(o => o.type === 'DINE_IN') && tableId
-                    ? t(lang, 'cart.bagReadyLeaving')
-                    : t(lang, 'cart.payAtCounterCollect')}
-                </p>
+                <p className="text-center text-[11px] text-gray-600">Pay securely by card · your order will be ready for pickup</p>
               )}
               {fromBooking && (
                 <p className="text-center text-xs text-gray-600">{t(lang, 'cart.preOrderBooking')}</p>
@@ -1612,8 +1607,21 @@ function MenuPageInner() {
     <div style={{ minHeight: '100vh', backgroundColor: '#080808' }}>
       <ForceDark />
 
+      {/* Reservation-only banner — sits above the sticky header so it pushes everything down */}
+      {fromQr && qrTableReservationOnly && reservationPopupDismissed && (
+        <div className="sticky top-0 z-30 px-4 py-2 flex items-center justify-between gap-3"
+          style={{ backgroundColor: 'rgba(var(--brand-rgb),0.14)', borderBottom: '1px solid rgba(var(--brand-rgb),0.2)', backdropFilter: 'blur(8px)' }}>
+          <p className="text-[11px] font-semibold" style={{ color: 'var(--brand)' }}>
+            🔖 Reservation table — browsing only. Speak to staff to order.
+          </p>
+          {bookingsEnabled && (
+            <a href="/book" className="text-[11px] font-black flex-shrink-0" style={{ color: 'var(--brand)' }}>Book →</a>
+          )}
+        </div>
+      )}
+
       {/* ── Sticky header: brand + category rail ── */}
-      <div ref={headerRef} className="sticky top-0 z-20" style={{ backgroundColor: 'rgba(8,8,8,0.95)', backdropFilter: 'blur(20px)' }}>
+      <div ref={headerRef} className={`sticky z-20 ${fromQr && qrTableReservationOnly && reservationPopupDismissed ? 'top-[36px]' : 'top-0'}`} style={{ backgroundColor: 'rgba(8,8,8,0.95)', backdropFilter: 'blur(20px)' }}>
         {/* Brand + cart row — dir="ltr" so DOM order controls position regardless of html dir */}
         <div dir="ltr" className="px-4 sm:px-8 flex items-center gap-2.5 h-12" style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
           {(() => {
@@ -1681,7 +1689,7 @@ function MenuPageInner() {
       </div>
 
       {/* Table notice */}
-      {fromQr && (qrTableStatus === 'DIRTY' || qrTableStatus === 'BILL_PENDING') && (
+      {fromQr && !qrTableReservationOnly && (qrTableStatus === 'DIRTY' || qrTableStatus === 'BILL_PENDING') && (
         <div className="px-5 py-2.5 text-xs font-semibold flex items-center gap-2"
           style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)', borderBottom: '1px solid rgba(var(--brand-rgb),0.15)', color: 'var(--brand)' }}>
           <span>{qrTableStatus === 'DIRTY' ? '🧹' : '🧾'}</span>
@@ -1796,6 +1804,49 @@ function MenuPageInner() {
 
       {/* Item drawer portal */}
       {ItemDrawer}
+
+      {/* ── Reservation-only table popup ── */}
+      {fromQr && qrTableReservationOnly && !reservationPopupDismissed && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)' }}>
+          <div className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl overflow-hidden"
+            style={{ backgroundColor: '#111', border: '1px solid #222' }}>
+            <div className="h-1 w-full" style={{ background: 'var(--brand)' }} />
+            <div className="px-6 pt-6 pb-2 text-center">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
+                style={{ background: 'rgba(var(--brand-rgb),0.1)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
+                <span className="text-3xl">🔖</span>
+              </div>
+              <h2 className="text-lg font-black text-white mb-1">Reservation-Only Table</h2>
+              <p className="text-sm text-gray-400 leading-relaxed mb-1">
+                <strong style={{ color: 'var(--brand)' }}>{qrTableName}</strong> is reserved exclusively for guests with a confirmed booking.
+              </p>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Walk-in ordering is not available at this table. Please speak to our staff to be seated, or book online.
+              </p>
+            </div>
+            <div className="px-6 py-5 space-y-2.5">
+              {bookingsEnabled ? (
+                <a href="/book"
+                  className="w-full py-3 rounded-xl text-sm font-black text-center flex items-center justify-center transition-all"
+                  style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                  Book a Table
+                </a>
+              ) : (
+                <div className="w-full py-3 rounded-xl text-sm text-center"
+                  style={{ background: 'rgba(var(--brand-rgb),0.06)', border: '1px solid rgba(var(--brand-rgb),0.15)', color: 'rgba(var(--brand-rgb),0.5)' }}>
+                  Online booking is currently unavailable — please speak to our staff
+                </div>
+              )}
+              <button onClick={() => setReservationPopupDismissed(true)}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:text-gray-300 transition-colors">
+                Browse menu only
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* ── Cancel order confirmation sheet ── */}
     </div>

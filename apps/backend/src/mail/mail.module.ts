@@ -5,12 +5,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { join } from 'path'
 import { MailService } from './mail.service'
 import { PrismaModule } from '../prisma/prisma.module'
-import { PdfModule } from '../pdf/pdf.module'
+import { BookingTicketModule } from '../pdf/booking-ticket.module'
 
 @Module({
   imports: [
     PrismaModule,
-    PdfModule,
+    BookingTicketModule,
     MailerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

@@ -15,6 +15,7 @@ import { useCartStore } from '@/store/cart'
 import { useBrandStore } from '@/store/brand'
 import { useLangStore, applyLangDir, t } from '@/store/lang'
 import { StatusBadge, bookingStatusVariant } from '@/components/ui/StatusBadge'
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import toast from 'react-hot-toast'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
@@ -162,6 +163,7 @@ function AccountContent() {
   const avatarInputRef  = useRef<HTMLInputElement>(null)
   const cropImgRef      = useRef<HTMLImageElement>(null)
   const [cropSrc,  setCropSrc]  = useState<string | null>(null)
+  useBodyScrollLock(editingProfile || !!cropSrc)
   const [crop,     setCrop]     = useState<Crop>()
   const [completedCrop, setCompletedCrop] = useState<Crop>()
   const [cancellingId,   setCancellingId]   = useState<string | null>(null)
@@ -1152,92 +1154,6 @@ function AccountContent() {
               </div>
             )}
 
-            {/* ── Edit profile bottom sheet ── */}
-            {editingProfile && (
-              <div className="fixed inset-0 z-50 flex items-end" style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(6px)' }}
-                onClick={() => { setEditingProfile(false); setProfileName(user.name) }}>
-                <div className="w-full rounded-t-3xl flex flex-col"
-                  style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e', maxHeight: '85vh' }}
-                  onClick={e => e.stopPropagation()}>
-                  {/* drag handle */}
-                  <div className="flex justify-center pt-3 pb-1">
-                    <div className="w-10 h-1 rounded-full" style={{ backgroundColor: '#333' }} />
-                  </div>
-                  <div className="overflow-y-auto px-5 pt-3 pb-8 flex flex-col gap-5">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-lg font-black text-white">Edit Profile</h2>
-                      <button onClick={() => { setEditingProfile(false); setProfileName(user.name) }}
-                        className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#1a1a1a' }}>
-                        <X size={14} className="text-gray-400" />
-                      </button>
-                    </div>
-
-                    {/* avatar inside sheet */}
-                    <div className="flex items-center gap-4">
-                      <button onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}
-                        className="relative w-16 h-16 rounded-2xl flex-shrink-0 overflow-hidden group"
-                        style={{ border: '2px solid var(--brand)' }}>
-                        {user.avatarUrl
-                          ? <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          : <div className="w-full h-full flex items-center justify-center font-black text-2xl"
-                              style={{ background: 'linear-gradient(135deg, var(--brand), #d97706)', color: '#000' }}>
-                              {user.name.charAt(0).toUpperCase()}
-                            </div>
-                        }
-                        <div className="absolute inset-0 flex items-center justify-center transition-opacity rounded-2xl opacity-0 group-hover:opacity-100"
-                          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
-                          {uploadingAvatar ? <Loader2 size={16} className="text-white animate-spin" /> : <Camera size={16} className="text-white" />}
-                        </div>
-                      </button>
-                      <div>
-                        <p className="text-sm font-semibold text-white mb-0.5">Profile photo</p>
-                        <p className="text-[11px] mb-2" style={{ color: '#555' }}>JPG, PNG or WebP · Max 5 MB</p>
-                        <button onClick={() => avatarInputRef.current?.click()} disabled={uploadingAvatar}
-                          className="text-[11px] font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-50"
-                          style={{ backgroundColor: 'rgba(var(--brand-rgb),0.12)', color: 'var(--brand)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
-                          <Camera size={11} /> {uploadingAvatar ? 'Uploading…' : 'Change photo'}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* name field */}
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest mb-1.5 block" style={{ color: '#555' }}>
-                        {t(lang, 'account.name')}
-                      </label>
-                      <input value={profileName} onChange={e => setProfileName(e.target.value)}
-                        className="w-full text-white text-sm px-4 py-3 rounded-2xl focus:outline-none transition-colors"
-                        style={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}
-                        onFocus={e => e.currentTarget.style.borderColor = 'rgba(var(--brand-rgb),0.5)'}
-                        onBlur={e => e.currentTarget.style.borderColor = '#2a2a2a'}
-                        placeholder={t(lang, 'account.yourNamePlaceholder')} />
-                    </div>
-
-                    {/* email — read only in sheet */}
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-widest mb-1.5 block" style={{ color: '#555' }}>
-                        {t(lang, 'account.email')}
-                      </label>
-                      <div className="flex items-center gap-2 px-4 py-3 rounded-2xl" style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
-                        <Mail size={13} style={{ color: '#444' }} />
-                        <span className="text-sm" style={{ color: '#555' }}>{user.email}</span>
-                        <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
-                          {t(lang, 'account.verified')}
-                        </span>
-                      </div>
-                    </div>
-
-                    <button onClick={async () => { await saveProfile(); setEditingProfile(false) }}
-                      disabled={savingProfile || !profileName.trim()}
-                      className="w-full font-bold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-40"
-                      style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
-                      {savingProfile ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><Save size={14} /> Save Changes</>}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Personal info — read-only card */}
             <FadeIn delay={0}>
               <div className="rounded-2xl p-4" style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
@@ -1354,6 +1270,60 @@ function AccountContent() {
         )}
         </div>{/* end tab content */}
       </div>{/* end desktop layout */}
+
+      {/* ── Edit profile bottom sheet — rendered at root to avoid stacking context issues ── */}
+      {editingProfile && (
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center sm:justify-center sm:p-6" style={{ backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)' }}
+          onClick={() => { setEditingProfile(false); setProfileName(user.name) }}>
+          <div className="w-full sm:max-w-md sm:rounded-3xl" onClick={e => e.stopPropagation()}>
+            {/* drag handle — mobile only */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden">
+              <div className="w-10 h-1 rounded-full" style={{ backgroundColor: '#333' }} />
+            </div>
+            <div className="w-full sm:rounded-3xl flex flex-col rounded-t-3xl"
+              style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
+              <div className="px-5 pt-5 pb-[max(32px,env(safe-area-inset-bottom))] sm:pb-6 flex flex-col gap-5">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-black text-white">Edit Profile</h2>
+                  <button onClick={() => { setEditingProfile(false); setProfileName(user.name) }}
+                    className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: '#1a1a1a' }}>
+                    <X size={14} className="text-gray-400" />
+                  </button>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest mb-1.5 block" style={{ color: '#555' }}>
+                    {t(lang, 'account.name')}
+                  </label>
+                  <input value={profileName} onChange={e => setProfileName(e.target.value)}
+                    className="w-full text-white text-sm px-4 py-3 rounded-2xl focus:outline-none transition-colors"
+                    style={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}
+                    onFocus={e => e.currentTarget.style.borderColor = 'rgba(var(--brand-rgb),0.5)'}
+                    onBlur={e => e.currentTarget.style.borderColor = '#2a2a2a'}
+                    placeholder={t(lang, 'account.yourNamePlaceholder')} />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-widest mb-1.5 block" style={{ color: '#555' }}>
+                    {t(lang, 'account.email')}
+                  </label>
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-2xl" style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }}>
+                    <Mail size={13} style={{ color: '#444' }} />
+                    <span className="text-sm" style={{ color: '#555' }}>{user.email}</span>
+                    <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
+                      {t(lang, 'account.verified')}
+                    </span>
+                  </div>
+                </div>
+                <button onClick={async () => { await saveProfile(); setEditingProfile(false) }}
+                  disabled={savingProfile || !profileName.trim()}
+                  className="w-full font-bold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 disabled:opacity-40"
+                  style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                  {savingProfile ? <><Loader2 size={15} className="animate-spin" /> Saving…</> : <><Save size={14} /> Save Changes</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -26,6 +26,11 @@ export default function StripePaymentForm({ orderId, total, onSuccess, onCancel 
     const { error: stripeError, paymentIntent } = await stripe.confirmPayment({
       elements,
       redirect: 'if_required',
+      confirmParams: {
+        payment_method_data: {
+          billing_details: { name: 'Guest', email: undefined, phone: undefined, address: undefined },
+        },
+      },
     })
 
     if (stripeError) {

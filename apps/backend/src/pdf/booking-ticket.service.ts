@@ -3,7 +3,7 @@ import puppeteer from 'puppeteer'
 import * as QRCode from 'qrcode'
 
 @Injectable()
-export class PdfService {
+export class BookingTicketService {
 
   async generateBookingTicket(params: {
     ref: string

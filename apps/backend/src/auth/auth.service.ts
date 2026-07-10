@@ -123,7 +123,8 @@ export class AuthService {
     this.logger.log(`Customer login: ${user.email} (${user.id})`)
     const { passwordHash: _, ...result } = user
     const token = this.signToken(user.id, user.email, user.role)
-    this.gateway.emitForceLogout(user.id)
+    // Owners and managers may use multiple devices simultaneously
+    if (!['OWNER', 'MANAGER'].includes(user.role)) this.gateway.emitForceLogout(user.id)
     this.activityLog.log({ actorId: user.id, actorRole: user.role as any, action: 'LOGIN', entityType: 'User', entityId: user.id, after: { email: user.email, role: user.role } }).catch(() => {})
     return { user: result, token }
   }
@@ -144,7 +145,8 @@ export class AuthService {
     this.logger.log(`Staff login: ${user.email} role=${user.role} (${user.id})`)
     const { passwordHash: _, ...result } = user
     const token = this.signToken(user.id, user.email, user.role)
-    this.gateway.emitForceLogout(user.id)
+    // Owners and managers may use multiple devices simultaneously
+    if (!['OWNER', 'MANAGER'].includes(user.role)) this.gateway.emitForceLogout(user.id)
     this.activityLog.log({ actorId: user.id, actorRole: user.role as any, action: 'STAFF_LOGIN', entityType: 'User', entityId: user.id, after: { email: user.email, role: user.role } }).catch(() => {})
     return { user: result, token, mustChangePassword: user.mustChangePassword ?? false }
   }

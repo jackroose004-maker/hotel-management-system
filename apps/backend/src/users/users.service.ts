@@ -1,5 +1,6 @@
 import { Injectable, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common'
 import * as bcrypt from 'bcryptjs'
+import { randomBytes } from 'crypto'
 import { PrismaService } from '../prisma/prisma.service'
 import { MailService } from '../mail/mail.service'
 
@@ -76,7 +77,7 @@ export class UsersService {
 
   async updateStaff(
     id: string,
-    dto: { name?: string; role?: string; isActive?: boolean; password?: string; staffRoleId?: string | null },
+    dto: { name?: string; email?: string; role?: string; isActive?: boolean; password?: string; staffRoleId?: string | null },
     requesterId: string,
   ) {
     const target = await this.prisma.user.findUnique({ where: { id }, select: STAFF_SELECT })
@@ -105,6 +106,16 @@ export class UsersService {
       if (!name) throw new BadRequestException('Name is required')
       data.name = name
     }
+    let newEmailTempPassword: string | null = null
+    if (dto.email !== undefined && dto.email.trim() && dto.email.trim() !== target.email) {
+      const newEmail = dto.email.trim().toLowerCase()
+      const conflict = await this.prisma.user.findUnique({ where: { email: newEmail } })
+      if (conflict) throw new ConflictException('That email is already in use')
+      newEmailTempPassword = randomBytes(6).toString('hex') // 12-char hex temp password
+      data.email = newEmail
+      data.passwordHash = await bcrypt.hash(newEmailTempPassword, 10)
+      data.mustChangePassword = true
+    }
     if (dto.role !== undefined) {
       if (!ALLOWED_ROLES.includes(dto.role)) throw new BadRequestException('Role must be STAFF')
       data.role = dto.role
@@ -114,6 +125,13 @@ export class UsersService {
     if ('staffRoleId' in dto) data.staffRoleId = dto.staffRoleId ?? null
 
     const updated = await this.prisma.user.update({ where: { id }, data, select: STAFF_SELECT })
+
+    // Send welcome email to new address if email was changed
+    if (newEmailTempPassword && data.email) {
+      const staffRole = updated.staffRole?.name ?? null
+      const loginUrl = `${process.env.FRONTEND_URL ?? 'http://localhost:3000'}/staff/login`
+      this.mail.sendStaffWelcome(data.email, updated.name, newEmailTempPassword, staffRole, loginUrl).catch(() => {})
+    }
 
     // Determine action for activity log
     const action = dto.isActive === false ? 'STAFF_DEACTIVATED'

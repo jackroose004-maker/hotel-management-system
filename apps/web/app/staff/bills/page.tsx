@@ -9,6 +9,7 @@ import {
 import api from '@/lib/api'
 import { notify } from '@/lib/notify'
 import { useAuthStore } from '@/store/auth'
+import { ModalBackdrop } from '@/components/ModalBackdrop'
 import { useBrandStore } from '@/store/brand'
 import { useShallow } from 'zustand/react/shallow'
 import { StatusBadge } from '@/components/ui/StatusBadge'
@@ -115,9 +116,7 @@ function RefundModal({ orderId, amount, onClose, onDone }: {
   }
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center px-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(6px)' }}
-      onClick={onClose}>
+    <ModalBackdrop onClick={onClose} className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
       <div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 space-y-4"
         style={{ backgroundColor: 'var(--card-bg)', border: '1px solid rgba(239,68,68,0.3)' }}
         onClick={e => e.stopPropagation()}>
@@ -180,7 +179,7 @@ function RefundModal({ orderId, amount, onClose, onDone }: {
           Cancel
         </button>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
@@ -252,9 +251,7 @@ function SettleModal({ amount, items, onConfirm, onClose, busy, isManager, error
   )
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}
-      onClick={onClose}>
+    <ModalBackdrop onClick={onClose} style={{ backgroundColor: 'rgba(0,0,0,0.75)' }}>
       <div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 space-y-4"
         style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
         onClick={e => e.stopPropagation()}>
@@ -605,7 +602,7 @@ function SettleModal({ amount, items, onConfirm, onClose, busy, isManager, error
           </div>
         )}
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
@@ -1168,8 +1165,7 @@ ${rows.map(r => `<tr><td>${r.name}</td><td>${r.qty}</td><td>${r.total.toFixed(2)
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+    <ModalBackdrop style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}>
       <div className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col max-h-[85vh]"
         style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
 
@@ -1365,7 +1361,7 @@ ${rows.map(r => `<tr><td>${r.name}</td><td>${r.qty}</td><td>${r.total.toFixed(2)
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
@@ -1409,9 +1405,7 @@ function TransferModal({ sessionId, currentTableName, onClose, onDone }: {
   const statusLabel = (s: string) => s === 'OCCUPIED' ? 'Occupied' : s === 'BILL_PENDING' ? 'Bill Pending' : 'Empty'
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center px-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(6px)' }}
-      onClick={onClose}>
+    <ModalBackdrop onClick={onClose} className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
       <div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 space-y-4"
         style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
         onClick={e => e.stopPropagation()}>
@@ -1497,7 +1491,7 @@ function TransferModal({ sessionId, currentTableName, onClose, onDone }: {
           Cancel
         </button>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
@@ -1528,8 +1522,7 @@ function ReceiptPromptModal({ sessionId, total, method, onClose }: {
   const methodLabel = method === 'CARD' ? 'Card' : method === 'SPLIT' ? 'Split' : 'Cash'
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center px-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }}>
+    <ModalBackdrop className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.75)' }}>
       <div className="w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 space-y-4"
         style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
 
@@ -1581,7 +1574,7 @@ function ReceiptPromptModal({ sessionId, total, method, onClose }: {
           No thanks — Done
         </button>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 

@@ -1,4 +1,4 @@
-import { Controller, Post, Patch, Body, Get, Param, UseGuards, Request, Res, Query, Delete, UploadedFile, UseInterceptors, BadRequestException } from '@nestjs/common'
+import { Controller, Post, Patch, Body, Get, Param, UseGuards, Request, Res, Query, Delete, UploadedFile, UseInterceptors, BadRequestException, Logger, InternalServerErrorException } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
 import type { Response } from 'express'
 import { ConfigService } from '@nestjs/config'
@@ -12,6 +12,7 @@ import { UploadService } from '../upload/upload.service'
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name)
   constructor(private auth: AuthService, private config: ConfigService, private upload: UploadService) {}
 
   // Step 1: request OTP (checks email uniqueness + sends code)
@@ -83,8 +84,13 @@ export class AuthController {
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
   async uploadAvatar(@Request() req, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('No file provided')
-    const result = await this.upload.uploadImage(file, 'avatars')
-    return this.auth.updateMe(req.user.id, { avatarUrl: result.url } as any)
+    try {
+      const result = await this.upload.uploadImage(file, 'avatars')
+      return this.auth.updateMe(req.user.id, { avatarUrl: result.url } as any)
+    } catch (err: any) {
+      this.logger.error(`Avatar upload failed for user ${req.user.id}: ${err?.message}`, err?.stack)
+      throw new InternalServerErrorException(err?.message ?? 'Upload failed. Check Cloudinary credentials.')
+    }
   }
 
   @UseGuards(JwtAuthGuard)

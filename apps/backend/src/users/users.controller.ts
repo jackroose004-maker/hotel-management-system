@@ -38,7 +38,7 @@ export class UsersController {
   @Patch('staff/:id')
   updateStaff(
     @Param('id') id: string,
-    @Body() body: { name?: string; role?: string; isActive?: boolean; password?: string; staffRoleId?: string | null },
+    @Body() body: { name?: string; email?: string; role?: string; isActive?: boolean; password?: string; staffRoleId?: string | null },
     @Request() req,
   ) {
     return this.users.updateStaff(id, body, req.user.id)

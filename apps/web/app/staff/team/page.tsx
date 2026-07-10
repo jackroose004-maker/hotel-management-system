@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
+import { ModalBackdrop } from '@/components/ModalBackdrop'
 import {
   Users, Plus, X, Loader2, Shield, ChefHat, UserCheck, UserX,
   KeyRound, Edit2, Check, AlertTriangle, Search, Mail, Calendar, Eye, EyeOff,
@@ -212,6 +213,7 @@ function StaffModal({ member, onClose, onSaved }: {
 
   const [name, setName]               = useState(member?.name ?? '')
   const [email, setEmail]             = useState(member?.email ?? '')
+  const [emailChanged, setEmailChanged] = useState(false)
   const [password, setPassword]       = useState('')
   const [confirmPw, setConfirmPw]     = useState('')
   const [showPass, setShowPass]       = useState(false)
@@ -255,7 +257,11 @@ function StaffModal({ member, onClose, onSaved }: {
         : await api.patch(`/users/staff/${member!.id}`,
             {
               name: name.trim(),
-              ...(isEditingOwner ? {} : { role: derivedRole, staffRoleId }),
+              ...(isEditingOwner ? {} : {
+                role: derivedRole,
+                staffRoleId,
+                ...(emailChanged ? { email: email.trim() } : {}),
+              }),
               ...(showPass && password ? { password } : {}),
             },
             { headers: { Authorization: `Bearer ${token}` } })
@@ -268,8 +274,7 @@ function StaffModal({ member, onClose, onSaved }: {
   const inputStyle = { backgroundColor: 'var(--input-bg)', borderColor: 'var(--card-border)', color: 'var(--text-primary)' }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }} onClick={onClose}>
+    <ModalBackdrop onClick={onClose}>
       <div className="w-full max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden" style={{ backgroundColor: 'var(--card-bg)' }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -298,11 +303,23 @@ function StaffModal({ member, onClose, onSaved }: {
 
           {/* Email */}
           <Field label="Email">
-            {isNew
-              ? <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="ahmed@almanzil.ae"
-                  className={inputCls} style={inputStyle} />
-              : <input value={email} readOnly className={`${inputCls} opacity-60 cursor-not-allowed`}
-                  style={{ ...inputStyle, color: 'var(--text-muted)' }} />}
+            {isNew ? (
+              <input value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="ahmed@almanzil.ae"
+                className={inputCls} style={inputStyle} />
+            ) : isEditingOwner ? (
+              <input value={email} readOnly className={`${inputCls} opacity-60 cursor-not-allowed`}
+                style={{ ...inputStyle, color: 'var(--text-muted)' }} />
+            ) : (
+              <>
+                <input value={email} onChange={e => { setEmail(e.target.value); setEmailChanged(e.target.value !== member!.email) }}
+                  type="email" className={inputCls} style={inputStyle} />
+                {emailChanged && (
+                  <p className="text-[11px] mt-1.5 px-1" style={{ color: '#fb923c' }}>
+                    ⚠ A new temp password will be emailed to this address and they must change it on next login.
+                  </p>
+                )}
+              </>
+            )}
           </Field>
           {isNew && (
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
@@ -417,7 +434,7 @@ function StaffModal({ member, onClose, onSaved }: {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
@@ -426,8 +443,7 @@ function ConfirmDeactivate({ member, onClose, onConfirm, saving }: {
   member: StaffMember; onClose: () => void; onConfirm: () => void; saving: boolean
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)' }} onClick={onClose}>
+    <ModalBackdrop onClick={onClose}>
       <div className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden" style={{ backgroundColor: 'var(--card-bg)' }} onClick={e => e.stopPropagation()}>
         <div className="px-6 py-6 text-center">
           <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center"
@@ -455,7 +471,7 @@ function ConfirmDeactivate({ member, onClose, onConfirm, saving }: {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 

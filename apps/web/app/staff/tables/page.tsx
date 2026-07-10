@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Table2, Check, X, QrCode, Printer, Users, RefreshCw, Clock, Receipt, CreditCard, Banknote, CheckCircle2, Plus, Minus, ShoppingBag, LogIn, Settings, ScanLine, Loader2 } from 'lucide-react'
+import { Table2, Check, X, QrCode, Printer, Users, RefreshCw, Clock, Receipt, CreditCard, Banknote, CheckCircle2, Plus, Minus, ShoppingBag, LogIn, Settings, ScanLine, Loader2, Search, Trash2 } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
@@ -23,7 +23,10 @@ interface TableBill {
   orders: BillOrder[]
   summary: { subtotal: number; vatAmount: number; total: number; allPaid: boolean; anyUnpaid: boolean; orderCount: number }
 }
-interface MenuItem { id: string; name: string; price: number; category?: { name: string } }
+interface ModOption { id: string; name: string; priceAdd: number; isDefault: boolean }
+interface ModGroup { id: string; name: string; required: boolean; minSelect: number; maxSelect: number; options: ModOption[] }
+interface MenuItem { id: string; name: string; price: number; categoryId?: string; category?: { name: string }; isAvailable: boolean; modifierGroups?: ModGroup[] }
+interface CartEntry { menuItemId: string; quantity: number; optionIds: string[]; label: string }
 
 function useNow(intervalMs = 30000) {
   const [now, setNow] = useState(() => Date.now())
@@ -68,13 +71,20 @@ export default function TablesPage() {
   const [qrModal, setQrModal]         = useState<Table | null>(null)
   const [qrRegenConfirm, setQrRegenConfirm] = useState(false)
   const [forceAvailableConfirm, setForceAvailableConfirm] = useState<string | null>(null)
+  const [forceAvailableBill, setForceAvailableBill] = useState<{ orderCount: number; total: number; anyUnpaid: boolean } | null>(null)
+  const [forceAvailableLoading, setForceAvailableLoading] = useState(false)
   const [qrRegening, setQrRegening]   = useState(false)
   const [billModal, setBillModal]     = useState<{ table: Table; bill: TableBill } | null>(null)
   const [billLoading, setBillLoading] = useState(false)
   // Staff "Add to Bill" modal
   const [addOrderModal, setAddOrderModal] = useState<Table | null>(null)
   const [menuItems, setMenuItems]         = useState<MenuItem[]>([])
-  const [cart, setCart]                   = useState<Record<string, number>>({})
+  const [menuCategories, setMenuCategories] = useState<{ id: string; name: string }[]>([])
+  const [menuLoading, setMenuLoading]     = useState(false)
+  const [cart, setCart]                   = useState<CartEntry[]>([])
+  const [menuSearch, setMenuSearch]       = useState('')
+  const [activeCatId, setActiveCatId]     = useState<string | null>(null)
+  const [modSheet, setModSheet]           = useState<{ item: MenuItem; selections: Record<string, string[]> } | null>(null)
   const [addingOrder, setAddingOrder]     = useState(false)
   const [tableSessions, setTableSessions] = useState<{ sessionId: string; label: string }[]>([])
   const [selectedSession, setSelectedSession] = useState<string>('') // '' = new session
@@ -173,47 +183,101 @@ export default function TablesPage() {
   }
 
   const openAddOrder = async (table: Table) => {
-    setCart({})
+    setCart([])
+    setMenuSearch('')
+    setModSheet(null)
     setTableSessions([])
     setSelectedSession('')
     setAddOrderModal(table)
-    if (menuItems.length === 0) {
-      const r = await api.get('/menu/items')
-      setMenuItems(r.data.filter((m: any) => m.isAvailable !== false))
-    }
-    // Load existing sessions at this table so staff can pick which guest to add to
+    setMenuLoading(true)
     try {
-      const { data: sessions } = await api.get(`/orders/table/${table.id}/sessions`)
-      if (sessions?.length > 0) {
-        const mapped = sessions.map((s: any, i: number) => ({
+      const [catRes, itemRes, sessRes] = await Promise.allSettled([
+        api.get('/menu/categories'),
+        api.get('/menu/items?includeUnavailable=false'),
+        api.get(`/orders/table/${table.id}/sessions`),
+      ])
+      if (catRes.status === 'fulfilled') {
+        const cats = catRes.value.data?.data ?? catRes.value.data ?? []
+        setMenuCategories(cats)
+        setActiveCatId(cats[0]?.id ?? null)
+      }
+      if (itemRes.status === 'fulfilled') {
+        const all = itemRes.value.data?.data ?? itemRes.value.data ?? []
+        setMenuItems(all.filter((m: MenuItem) => m.isAvailable !== false))
+      }
+      if (sessRes.status === 'fulfilled' && sessRes.value.data?.length > 0) {
+        const mapped = sessRes.value.data.map((s: any, i: number) => ({
           sessionId: s.sessionId,
           label: s.userName ? s.userName.split(' ')[0] : `Guest ${i + 1}`,
         }))
         setTableSessions(mapped)
         setSelectedSession(mapped[0].sessionId)
       }
-    } catch {}
+    } finally { setMenuLoading(false) }
   }
 
-  const cartQty = (id: string) => cart[id] ?? 0
-  const adjustCart = (id: string, delta: number) =>
-    setCart(p => { const n = Math.max(0, (p[id] ?? 0) + delta); const next = { ...p }; if (n === 0) delete next[id]; else next[id] = n; return next })
+  const cartCount = cart.reduce((s, e) => s + e.quantity, 0)
+  const cartTotal = cart.reduce((s, e) => {
+    const item = menuItems.find(i => i.id === e.menuItemId)
+    if (!item) return s
+    const modExtra = (item.modifierGroups ?? []).flatMap(g => g.options).filter(o => e.optionIds.includes(o.id)).reduce((a, o) => a + Number(o.priceAdd), 0)
+    return s + (Number(item.price) + modExtra) * e.quantity
+  }, 0)
+
+  function cartAddSimple(item: MenuItem) {
+    setCart(c => [...c, { menuItemId: item.id, quantity: 1, optionIds: [], label: '' }])
+  }
+  function cartRemoveEntry(idx: number) {
+    setCart(c => { const n = [...c]; if (n[idx].quantity > 1) { n[idx] = { ...n[idx], quantity: n[idx].quantity - 1 }; return n } n.splice(idx, 1); return n })
+  }
+  function cartAddEntry(idx: number) {
+    setCart(c => { const n = [...c]; n[idx] = { ...n[idx], quantity: n[idx].quantity + 1 }; return n })
+  }
+  function openModSheet(item: MenuItem) {
+    const defaults: Record<string, string[]> = {}
+    for (const g of item.modifierGroups ?? []) defaults[g.id] = g.options.filter(o => o.isDefault).map(o => o.id)
+    setModSheet({ item, selections: defaults })
+  }
+  function confirmModSheet() {
+    if (!modSheet) return
+    const { item, selections } = modSheet
+    const optionIds = Object.values(selections).flat()
+    const labelParts: string[] = []
+    for (const g of item.modifierGroups ?? []) {
+      const chosen = g.options.filter(o => selections[g.id]?.includes(o.id))
+      if (chosen.length) labelParts.push(chosen.map(o => o.name).join(', '))
+    }
+    setCart(c => [...c, { menuItemId: item.id, quantity: 1, optionIds, label: labelParts.join(' · ') }])
+    setModSheet(null)
+  }
+  function toggleModOption(groupId: string, optionId: string, maxSelect: number) {
+    setModSheet(s => {
+      if (!s) return s
+      const prev = s.selections[groupId] ?? []
+      const next = prev.includes(optionId) ? prev.filter(id => id !== optionId) : maxSelect === 1 ? [optionId] : prev.length < maxSelect ? [...prev, optionId] : prev
+      return { ...s, selections: { ...s.selections, [groupId]: next } }
+    })
+  }
 
   const submitStaffOrder = async () => {
-    if (!addOrderModal) return
-    const items = Object.entries(cart).map(([menuItemId, quantity]) => ({ menuItemId, quantity }))
-    if (!items.length) { notify.error('Add at least one item'); return }
+    if (!addOrderModal || !cart.length) { notify.error('Add at least one item'); return }
     setAddingOrder(true)
     try {
+      const items = cart.map(e => {
+        const item = menuItems.find(i => i.id === e.menuItemId)!
+        const allOpts = (item.modifierGroups ?? []).flatMap(g => g.options)
+        const modifiers = e.optionIds.map(oid => { const opt = allOpts.find(o => o.id === oid)!; return { optionId: oid, name: opt.name, priceAdd: Number(opt.priceAdd) } })
+        return { menuItemId: e.menuItemId, quantity: e.quantity, ...(modifiers.length ? { modifiers } : {}) }
+      })
       await api.post(`/orders/table/${addOrderModal.id}/staff-order`, {
-        type: 'DINE_IN', tableId: addOrderModal.id, items, paymentMethod: 'CASH',
+        type: 'DINE_IN', tableId: addOrderModal.id, items,
         ...(selectedSession ? { guestTabToken: selectedSession } : {}),
       })
       notify.success('Order added to the bill')
       setAddOrderModal(null)
-      setCart({})
+      setCart([])
     } catch (e: any) {
-      notify.error(e?.message ?? 'Could not place order')
+      notify.error(e?.response?.data?.message ?? e?.message ?? 'Could not place order')
     } finally { setAddingOrder(false) }
   }
 
@@ -673,66 +737,119 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
               </button>
             </div>
 
-            {/* Menu items */}
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-              {menuItems.length === 0 && (
+            {/* Search + category tabs + items */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+              {menuLoading ? (
                 <div className="flex items-center justify-center py-12">
-                  <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--brand)', borderTopColor: 'transparent' }} />
+                  <Loader2 size={20} className="animate-spin text-gray-400" />
                 </div>
-              )}
-              {/* Group by category */}
-              {Array.from(new Set(menuItems.map(m => m.category?.name ?? 'Other'))).map(cat => {
-                const items = menuItems.filter(m => (m.category?.name ?? 'Other') === cat)
-                return (
-                  <div key={cat}>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-1 mb-1.5">{cat}</p>
-                    {items.map(item => (
-                      <div key={item.id} className="flex items-center justify-between py-2.5 px-3 rounded-xl brand-hover transition-colors">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{item.name}</p>
-                          <p className="text-xs text-gray-400">AED {Number(item.price).toFixed(2)}</p>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                          {cartQty(item.id) > 0 ? (
-                            <>
-                              <button onClick={() => adjustCart(item.id, -1)}
-                                className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                                <Minus size={12} />
-                              </button>
-                              <span className="text-sm font-bold text-gray-900 dark:text-white w-5 text-center">{cartQty(item.id)}</span>
-                              <button onClick={() => adjustCart(item.id, 1)}
-                                className="w-7 h-7 rounded-full text-white flex items-center justify-center transition-colors"
-                                style={{ backgroundColor: 'var(--brand, #f97316)' }}>
-                                <Plus size={12} />
-                              </button>
-                            </>
-                          ) : (
-                            <button onClick={() => adjustCart(item.id, 1)}
-                              className="w-7 h-7 rounded-full text-white flex items-center justify-center transition-colors"
-                              style={{ backgroundColor: 'var(--brand, #f97316)' }}>
-                              <Plus size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+              ) : (
+                <>
+                  {/* Search */}
+                  <div className="relative">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
+                    <input value={menuSearch}
+                      onChange={e => { setMenuSearch(e.target.value); if (e.target.value) setActiveCatId(null) }}
+                      placeholder="Search dishes…"
+                      className="w-full pl-8 pr-3 py-2 rounded-xl text-sm outline-none bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-200 dark:border-[var(--card-border)]" />
                   </div>
-                )
-              })}
+
+                  {/* Category tabs */}
+                  {!menuSearch && (
+                    <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+                      {menuCategories.map(cat => (
+                        <button key={cat.id} type="button" onClick={() => setActiveCatId(cat.id)}
+                          className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                            activeCatId === cat.id ? 'text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400'
+                          }`}
+                          style={activeCatId === cat.id ? { backgroundColor: 'var(--brand)' } : undefined}>
+                          {cat.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Item list */}
+                  <div className="space-y-2">
+                    {(() => {
+                      const q = menuSearch.trim().toLowerCase()
+                      const visible = q
+                        ? menuItems.filter(i => i.name.toLowerCase().includes(q))
+                        : menuItems.filter(i => i.categoryId === activeCatId)
+                      if (!visible.length) return (
+                        <p className="text-center text-sm py-6 text-gray-400">
+                          {menuSearch ? `No results for "${menuSearch}"` : 'No items in this category'}
+                        </p>
+                      )
+                      return visible.map(item => {
+                        const hasModifiers = (item.modifierGroups ?? []).length > 0
+                        const itemEntries = cart.filter(e => e.menuItemId === item.id)
+                        const totalQty = itemEntries.reduce((s, e) => s + e.quantity, 0)
+                        return (
+                          <div key={item.id}
+                            className="rounded-xl overflow-hidden cursor-pointer active:opacity-80 transition-opacity border"
+                            style={{ borderColor: totalQty > 0 ? 'rgba(var(--brand-rgb),0.4)' : undefined }}
+                            onClick={() => hasModifiers ? openModSheet(item) : cartAddSimple(item)}>
+                            <div className="flex items-center gap-3 px-3 py-3 bg-white dark:bg-[var(--card-bg)]">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold truncate text-gray-900 dark:text-white">{item.name}</p>
+                                <p className="text-xs mt-0.5 text-gray-400">
+                                  AED {Number(item.price).toFixed(2)}{hasModifiers && <span className="ml-1 opacity-60">· customisable</span>}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                {hasModifiers ? (
+                                  <button type="button" onClick={() => openModSheet(item)}
+                                    className="px-3 h-7 rounded-full text-xs font-semibold text-white"
+                                    style={{ backgroundColor: 'var(--brand)' }}>+ Add</button>
+                                ) : totalQty > 0 ? (
+                                  <>
+                                    <button type="button"
+                                      onClick={() => { const idx = cart.findLastIndex(e => e.menuItemId === item.id); if (idx >= 0) cartRemoveEntry(idx) }}
+                                      className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center font-bold text-sm text-gray-700 dark:text-gray-300">−</button>
+                                    <span className="w-5 text-center text-sm font-bold text-gray-900 dark:text-white">{totalQty}</span>
+                                    <button type="button" onClick={() => cartAddSimple(item)}
+                                      className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm text-white"
+                                      style={{ backgroundColor: 'var(--brand)' }}>+</button>
+                                  </>
+                                ) : (
+                                  <button type="button" onClick={() => cartAddSimple(item)}
+                                    className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center font-bold text-sm text-gray-500">+</button>
+                                )}
+                              </div>
+                            </div>
+                            {hasModifiers && itemEntries.length > 0 && (
+                              <div className="px-3 pb-2 space-y-1 bg-white dark:bg-[var(--card-bg)]">
+                                {itemEntries.map((e, idx) => {
+                                  const globalIdx = cart.indexOf(e)
+                                  return (
+                                    <div key={idx} className="flex items-center gap-2 text-xs text-gray-400">
+                                      <span className="flex-1 truncate">{e.label || 'No extras'} ×{e.quantity}</span>
+                                      <button type="button" onClick={() => cartRemoveEntry(globalIdx)} className="text-red-400"><Trash2 size={11} /></button>
+                                      <button type="button" onClick={() => cartAddEntry(globalIdx)} className="font-bold" style={{ color: 'var(--brand)' }}>+1</button>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })
+                    })()}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Cart summary + submit */}
-            {Object.keys(cart).length > 0 && (
+            {cartCount > 0 && (
               <div className="border-t border-gray-100 dark:border-[var(--card-border)] px-5 py-4 flex-shrink-0 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-500">
-                    {Object.values(cart).reduce((a, b) => a + b, 0)} item{Object.values(cart).reduce((a, b) => a + b, 0) !== 1 ? 's' : ''}
+                    {cartCount} item{cartCount !== 1 ? 's' : ''}
                   </span>
                   <span className="text-sm font-bold text-gray-900 dark:text-white">
-                    AED {Object.entries(cart).reduce((s, [id, qty]) => {
-                      const m = menuItems.find(x => x.id === id)
-                      return s + (m ? Number(m.price) * qty : 0)
-                    }, 0).toFixed(2)}
+                    AED {cartTotal.toFixed(2)}
                   </span>
                 </div>
 
@@ -766,9 +883,65 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                   style={{ backgroundColor: 'var(--brand, #f97316)' }}>
                   {addingOrder
                     ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    : <><ShoppingBag size={15} /> Add to Bill</>
+                    : <><ShoppingBag size={15} /> Add to Bill · {cartCount} item{cartCount !== 1 ? 's' : ''}</>
                   }
                 </button>
+              </div>
+            )}
+
+            {/* Modifier bottom sheet */}
+            {modSheet && (
+              <div className="absolute inset-0 z-20 flex flex-col justify-end bg-black/50 rounded-3xl"
+                onClick={e => { if (e.target === e.currentTarget) setModSheet(null) }}>
+                <div className="rounded-t-2xl overflow-hidden flex flex-col max-h-[80%] bg-white dark:bg-[var(--card-bg)] border border-gray-200 dark:border-[var(--card-border)]">
+                  <div className="px-5 py-4 border-b border-gray-100 dark:border-[var(--card-border)] flex items-center gap-3 flex-shrink-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm truncate text-gray-900 dark:text-white">{modSheet.item.name}</p>
+                      <p className="text-xs mt-0.5 text-gray-400">AED {Number(modSheet.item.price).toFixed(2)}</p>
+                    </div>
+                    <button type="button" onClick={() => setModSheet(null)} className="text-lg font-bold text-gray-400">×</button>
+                  </div>
+                  <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+                    {(modSheet.item.modifierGroups ?? []).map(group => (
+                      <div key={group.id}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <p className="text-sm font-bold text-gray-900 dark:text-white">{group.name}</p>
+                          {group.required && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)' }}>Required</span>}
+                          {group.maxSelect > 1 && <span className="text-[10px] text-gray-400">Pick up to {group.maxSelect}</span>}
+                        </div>
+                        <div className="space-y-1.5">
+                          {group.options.map(opt => {
+                            const selected = (modSheet.selections[group.id] ?? []).includes(opt.id)
+                            return (
+                              <button key={opt.id} type="button" onClick={() => toggleModOption(group.id, opt.id, group.maxSelect)}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all border"
+                                style={{ borderColor: selected ? 'var(--brand)' : undefined, backgroundColor: selected ? 'rgba(var(--brand-rgb),0.06)' : undefined }}>
+                                <div className="flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                                  style={{ borderColor: selected ? 'var(--brand)' : '#ccc', backgroundColor: selected ? 'var(--brand)' : 'transparent' }}>
+                                  {selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                </div>
+                                <span className="flex-1 text-sm font-medium text-gray-900 dark:text-white">{opt.name}</span>
+                                {Number(opt.priceAdd) > 0 && <span className="text-xs font-semibold" style={{ color: 'var(--brand)' }}>+AED {Number(opt.priceAdd).toFixed(2)}</span>}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="px-5 py-4 border-t border-gray-100 dark:border-[var(--card-border)] flex-shrink-0">
+                    {(() => {
+                      const missing = (modSheet.item.modifierGroups ?? []).filter(g => g.required && !(modSheet.selections[g.id]?.length))
+                      return (
+                        <button type="button" onClick={confirmModSheet} disabled={missing.length > 0}
+                          className="w-full py-3 rounded-xl text-sm font-bold text-white disabled:opacity-40"
+                          style={{ backgroundColor: 'var(--brand)' }}>
+                          {missing.length > 0 ? `Select ${missing[0].name}` : 'Add to Order'}
+                        </button>
+                      )
+                    })()}
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -946,19 +1119,56 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                           )}
                         </div>
                         {isOwner && (forceAvailableConfirm === table.id ? (
-                          <div className="flex gap-1.5">
-                            <button onClick={() => { updateStatus(table.id, 'EMPTY'); setForceAvailableConfirm(null) }}
-                              className="flex-1 py-1.5 rounded-lg text-[11px] font-bold border border-red-300 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors flex items-center justify-center gap-1">
-                              <Check size={10} /> Confirm
-                            </button>
-                            <button onClick={() => setForceAvailableConfirm(null)}
-                              className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors hover:bg-[var(--muted-bg)]"
-                              style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
-                              Cancel
-                            </button>
+                          <div className="rounded-xl px-3 py-2.5 space-y-2"
+                            style={{ border: '1px solid rgba(var(--brand-rgb),0.3)', background: 'rgba(var(--brand-rgb),0.06)' }}>
+                            <p className="text-[11px] font-bold flex items-center gap-1" style={{ color: 'var(--brand)' }}>
+                              ⚠️ Force-reset {table.name ?? `Table ${table.tableNumber}`}?
+                            </p>
+                            {forceAvailableLoading ? (
+                              <p className="text-[10px] animate-pulse" style={{ color: 'rgba(var(--brand-rgb),0.5)' }}>Checking active orders…</p>
+                            ) : forceAvailableBill ? (
+                              <div className="space-y-1">
+                                {forceAvailableBill.orderCount > 0 ? (
+                                  <>
+                                    <p className="text-[10px] font-semibold" style={{ color: 'rgba(var(--brand-rgb),0.85)' }}>
+                                      {forceAvailableBill.orderCount} active order{forceAvailableBill.orderCount !== 1 ? 's' : ''} · AED {forceAvailableBill.total.toFixed(2)} total
+                                    </p>
+                                    {forceAvailableBill.anyUnpaid && (
+                                      <p className="text-[10px] font-bold" style={{ color: '#f87171' }}>
+                                        💵 Unpaid bill — table status will reset but the bill stays open. Collect payment separately.
+                                      </p>
+                                    )}
+                                  </>
+                                ) : (
+                                  <p className="text-[10px]" style={{ color: 'rgba(var(--brand-rgb),0.6)' }}>No active orders on this table.</p>
+                                )}
+                              </div>
+                            ) : null}
+                            <div className="flex gap-1.5 pt-0.5">
+                              <button onClick={() => { updateStatus(table.id, 'EMPTY'); setForceAvailableConfirm(null); setForceAvailableBill(null) }}
+                                className="flex-1 py-1.5 rounded-lg text-[11px] font-bold transition-colors flex items-center justify-center gap-1"
+                                style={{ background: 'rgba(var(--brand-rgb),0.18)', border: '1px solid rgba(var(--brand-rgb),0.4)', color: 'var(--brand)' }}>
+                                <Check size={10} /> Confirm reset
+                              </button>
+                              <button onClick={() => { setForceAvailableConfirm(null); setForceAvailableBill(null) }}
+                                className="flex-1 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors hover:bg-[var(--muted-bg)]"
+                                style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+                                Cancel
+                              </button>
+                            </div>
                           </div>
                         ) : (
-                          <button onClick={() => setForceAvailableConfirm(table.id)}
+                          <button onClick={async () => {
+                            setForceAvailableConfirm(table.id)
+                            setForceAvailableLoading(true)
+                            setForceAvailableBill(null)
+                            try {
+                              const r = await api.get(`/orders/table/${table.id}/bill`)
+                              const b = r.data?.summary
+                              setForceAvailableBill({ orderCount: b?.orderCount ?? 0, total: b?.total ?? 0, anyUnpaid: b?.anyUnpaid ?? false })
+                            } catch { setForceAvailableBill({ orderCount: 0, total: 0, anyUnpaid: false }) }
+                            finally { setForceAvailableLoading(false) }
+                          }}
                             className="text-[11px] text-center py-1 transition-colors hover:underline"
                             style={{ color: 'var(--text-muted)' }}>
                             Force available

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Clock, CheckCircle, ChefHat, BellRing, PackageCheck, UtensilsCrossed, ChevronLeft,
+  MessageCircle, Send, X,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { notify } from '@/lib/notify'
@@ -11,6 +12,7 @@ import { getSocket } from '@/lib/socket'
 import { useBrandStore, initBrand } from '@/store/brand'
 import { useLangStore, applyLangDir, t, syncLangToServer, type Lang } from '@/store/lang'
 import ForceDark from '@/components/ForceDark'
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Order {
@@ -301,6 +303,7 @@ function GuestCancelModal({ order, onConfirm, onClose, busy }: {
 }) {
   const [reason, setReason] = useState('')
   const [custom, setCustom] = useState('')
+  useBodyScrollLock(true)
   const reasons = order.type === 'TAKEAWAY' ? CANCEL_REASONS_TAKEAWAY : CANCEL_REASONS_DINE_IN
   const finalReason = reason === 'Other' ? custom.trim() : reason
 
@@ -360,7 +363,7 @@ const STATUS_ICON: Record<string, string> = {
   DELIVERED: '😊',
   CANCELLED: '❌',
 }
-// Keys into locale files
+// KDS mode (default) — 4 steps: Received → Confirmed → Preparing → Ready
 const STATUS_LABEL_KEY: Record<string, { dine: string; take: string }> = {
   PENDING:   { dine: 'menu.orderReceived', take: 'menu.orderReceived' },
   ACCEPTED:  { dine: 'menu.confirmed',     take: 'menu.confirmed'     },
@@ -373,11 +376,10 @@ const STATUS_SUB_KEY: Record<string, { dine: string; take: string }> = {
   PENDING:   { dine: 'menu.awaitingApproval', take: 'menu.weGotYourOrder'  },
   ACCEPTED:  { dine: 'menu.inKitchenQueue',   take: 'menu.gettingStarted'  },
   PREPARING: { dine: 'menu.chefOnIt',         take: 'menu.cookingNow'      },
-  READY:     { dine: 'menu.waiterOnWay',      take: 'menu.collectCounter'  },
+  READY:     { dine: 'menu.waiterOnWay',       take: 'menu.collectCounter'  },
   DELIVERED: { dine: 'menu.thankYouDining',   take: 'menu.enjoyMeal'       },
   CANCELLED: { dine: 'menu.speakStaff',       take: 'menu.speakStaff'      },
 }
-// Short band label — uses existing stepper keys
 const STATUS_SHORT_KEY: Record<string, string> = {
   PENDING:   'menu.received',
   ACCEPTED:  'menu.confirmed',
@@ -387,14 +389,53 @@ const STATUS_SHORT_KEY: Record<string, string> = {
   CANCELLED: 'menu.cancelled',
 }
 
-function OrderTrackCard({ o, lang, onCancel }: { o: Order; lang: Lang; onCancel: (reason: string) => void }) {
+// Thermal mode — 3 steps: Received → With Kitchen → Ready
+// ACCEPTED and PREPARING both map to step 1 ("With Kitchen")
+const THERMAL_STEP: Record<string, number> = { PENDING: 0, ACCEPTED: 1, PREPARING: 1, READY: 2, DELIVERED: 3 }
+const THERMAL_STEPS_DINE_IN = [
+  { labelKey: 'menu.received',       icon: Clock        },
+  { labelKey: 'menu.withKitchen',    icon: ChefHat      },
+  { labelKey: 'menu.ready',          icon: BellRing     },
+]
+const THERMAL_STEPS_TAKEAWAY = [
+  { labelKey: 'menu.received',       icon: Clock        },
+  { labelKey: 'menu.withKitchen',    icon: ChefHat      },
+  { labelKey: 'menu.ready',          icon: PackageCheck },
+]
+// Thermal-specific copy — replaces KDS copy for ACCEPTED status
+const THERMAL_LABEL_KEY: Record<string, { dine: string; take: string }> = {
+  PENDING:   { dine: 'menu.orderReceived',    take: 'menu.orderReceived'    },
+  ACCEPTED:  { dine: 'menu.kotSent',          take: 'menu.kotSent'          },
+  PREPARING: { dine: 'menu.kotSent',          take: 'menu.kotSent'          },
+  READY:     { dine: 'menu.readyToServe',     take: 'menu.readyPickup'      },
+  DELIVERED: { dine: 'menu.enjoyMeal',        take: 'menu.collected'        },
+  CANCELLED: { dine: 'menu.cancelled',        take: 'menu.cancelled'        },
+}
+const THERMAL_SUB_KEY: Record<string, { dine: string; take: string }> = {
+  PENDING:   { dine: 'menu.awaitingApproval', take: 'menu.weGotYourOrder'   },
+  ACCEPTED:  { dine: 'menu.kotSentSub',       take: 'menu.kotSentSub'       },
+  PREPARING: { dine: 'menu.kotSentSub',       take: 'menu.kotSentSub'       },
+  READY:     { dine: 'menu.waiterOnWay',      take: 'menu.collectCounter'   },
+  DELIVERED: { dine: 'menu.thankYouDining',   take: 'menu.enjoyMeal'        },
+  CANCELLED: { dine: 'menu.speakStaff',       take: 'menu.speakStaff'       },
+}
+
+function OrderTrackCard({ o, lang, thermalMode, onCancel, onOpenChat, hasUnread }: {
+  o: Order; lang: Lang; thermalMode: boolean; onCancel: (reason: string) => void
+  onOpenChat: (orderId: string) => void
+  hasUnread: boolean
+}) {
   const [expanded, setExpanded] = useState(false)
   const [showCancel, setShowCancel] = useState(false)
   const [cancelBusy, setCancelBusy] = useState(false)
   const [now, setNow] = useState(() => Date.now())
-  const sIdx = STATUS_STEP[o.status] ?? 0
   const isTakeaway = o.type === 'TAKEAWAY'
-  const steps = isTakeaway ? STEPS_TAKEAWAY : STEPS_DINE_IN
+  const sIdx = thermalMode
+    ? (THERMAL_STEP[o.status] ?? 0)
+    : (STATUS_STEP[o.status] ?? 0)
+  const steps = thermalMode
+    ? (isTakeaway ? THERMAL_STEPS_TAKEAWAY : THERMAL_STEPS_DINE_IN)
+    : (isTakeaway ? STEPS_TAKEAWAY : STEPS_DINE_IN)
   const isReady = o.status === 'READY'
   const isCancelled = o.status === 'CANCELLED'
   const dotColor = STATUS_COLOR[o.status] ?? '#888'
@@ -416,8 +457,10 @@ function OrderTrackCard({ o, lang, onCancel }: { o: Order; lang: Lang; onCancel:
   const remainingMs = o.expectedReadyAt && ['ACCEPTED','PREPARING'].includes(o.status)
     ? new Date(o.expectedReadyAt).getTime() - now : null
 
-  const labelKey = isTakeaway ? STATUS_LABEL_KEY[o.status]?.take : STATUS_LABEL_KEY[o.status]?.dine
-  const subKey   = isTakeaway ? STATUS_SUB_KEY[o.status]?.take   : STATUS_SUB_KEY[o.status]?.dine
+  const labelMap = thermalMode ? THERMAL_LABEL_KEY : STATUS_LABEL_KEY
+  const subMap   = thermalMode ? THERMAL_SUB_KEY   : STATUS_SUB_KEY
+  const labelKey = isTakeaway ? labelMap[o.status]?.take : labelMap[o.status]?.dine
+  const subKey   = isTakeaway ? subMap[o.status]?.take   : subMap[o.status]?.dine
   const label = labelKey ? t(lang, labelKey) : o.status
   const sub   = subKey   ? t(lang, subKey)   : ''
   const short = STATUS_SHORT_KEY[o.status] ? t(lang, STATUS_SHORT_KEY[o.status]) : o.status
@@ -529,13 +572,15 @@ function OrderTrackCard({ o, lang, onCancel }: { o: Order; lang: Lang; onCancel:
                       const Icon  = step.icon
                       const done   = i < clampedIdx
                       const active = i === clampedIdx
+                      // In thermal mode the "With Kitchen" step pulses while cooking
+                      const pulsing = thermalMode && active && ['ACCEPTED', 'PREPARING'].includes(o.status)
                       return (
                         <div key={step.labelKey}
-                          className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-500"
+                          className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-500${pulsing ? ' animate-pulse' : ''}`}
                           style={{
                             background: active ? dotColor : done ? '#111' : '#111',
                             border: `2px solid ${active ? dotColor : done ? dotColor : '#2a2a2a'}`,
-                            boxShadow: active ? `0 0 10px ${dotColor}80` : 'none',
+                            boxShadow: active ? `0 0 12px ${dotColor}99` : 'none',
                             position: 'relative', zIndex: 1,
                           }}>
                           <Icon size={11} style={{ color: active ? '#000' : done ? dotColor : '#444' }} />
@@ -563,6 +608,26 @@ function OrderTrackCard({ o, lang, onCancel }: { o: Order; lang: Lang; onCancel:
               </div>
             )
           })()}
+
+          {/* Need help / chat button — shown while order is in kitchen */}
+          {['ACCEPTED', 'PREPARING'].includes(o.status) && (
+            <div className="px-3 pb-2">
+              <button
+                onClick={() => onOpenChat(o.id)}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-[11px] font-bold transition-all active:scale-[0.98] relative"
+                style={{
+                  background: hasUnread ? 'rgba(var(--brand-rgb),0.15)' : 'rgba(255,255,255,0.04)',
+                  border: hasUnread ? '1px solid rgba(var(--brand-rgb),0.4)' : '1px solid #222',
+                  color: hasUnread ? 'var(--brand)' : '#555',
+                }}>
+                <MessageCircle size={13} />
+                {hasUnread ? 'Staff replied — tap to view' : 'Need help? Chat with staff'}
+                {hasUnread && (
+                  <span className="absolute top-1.5 right-2.5 w-2 h-2 rounded-full bg-[var(--brand)] animate-pulse" />
+                )}
+              </button>
+            </div>
+          )}
 
           {/* Dashed divider (boarding pass tear line) */}
           <div className="relative flex items-center px-3" style={{ marginTop: -2 }}>
@@ -653,6 +718,13 @@ export default function MenuOrdersPage() {
   const [tableId, setTableId]           = useState('')
   const [tableNum, setTableNum]         = useState<number | null>(null)
   const [loaded, setLoaded]             = useState(false)
+  // Chat
+  const [thermalMode, setThermalMode]   = useState(false)
+  const [chatOrderId, setChatOrderId]   = useState<string | null>(null)
+  const [chatMessages, setChatMessages] = useState<Record<string, { from: 'guest' | 'staff'; text: string }[]>>({})
+  const [chatText, setChatText]         = useState('')
+  const [chatBusy, setChatBusy]         = useState(false)
+  const [unread, setUnread]             = useState<Set<string>>(new Set())
 
   useEffect(() => {
     applyLangDir(lang)
@@ -729,6 +801,7 @@ export default function MenuOrdersPage() {
     }
 
     fetchOrders()
+    api.get('/settings').then(r => setThermalMode(!!r.data?.thermalEnabled)).catch(() => {})
   }, [lang, router])
 
   // Socket — live updates
@@ -756,9 +829,27 @@ export default function MenuOrdersPage() {
         if (billPaid) setFeedback(billPaid)
       }, 0)
     }
+    const onMessage = (payload: { orderId: string; message: string; staffName?: string }) => {
+      setChatMessages(prev => ({
+        ...prev,
+        [payload.orderId]: [...(prev[payload.orderId] ?? []), { from: 'staff', text: payload.message }],
+      }))
+      // Mark as unread if chat isn't open for this order
+      setChatOrderId(current => {
+        if (current !== payload.orderId) setUnread(u => new Set([...u, payload.orderId]))
+        return current
+      })
+      notify.info(payload.message, '💬 Staff replied')
+    }
+
     socket.on('order:updated', handler)
     socket.on('order:ready', handler)
-    return () => { socket.off('order:updated', handler); socket.off('order:ready', handler) }
+    socket.on('order:message', onMessage)
+    return () => {
+      socket.off('order:updated', handler)
+      socket.off('order:ready', handler)
+      socket.off('order:message', onMessage)
+    }
   }, [])
 
   const cancelOrder = async (orderId: string, reason: string) => {
@@ -787,7 +878,7 @@ export default function MenuOrdersPage() {
   const allDineIn  = orders.every(o => o.type === 'DINE_IN')
 
   // Build back-to-menu URL preserving table context
-  const menuUrl = tableId ? `/menu?qr=table-${tableNum ?? ''}` : '/menu'
+  const menuUrl = tableId ? `/menu?qr=table-${tableNum ?? ''}&new=1` : '/menu?new=1'
 
   if (!loaded) return (
     <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#080808' }}>
@@ -871,8 +962,10 @@ export default function MenuOrdersPage() {
 
           {/* Order cards */}
           {orders.map(o => (
-            <OrderTrackCard key={o.id} o={o} lang={lang}
-              onCancel={reason => cancelOrder(o.id, reason)} />
+            <OrderTrackCard key={o.id} o={o} lang={lang} thermalMode={thermalMode}
+              onCancel={reason => cancelOrder(o.id, reason)}
+              onOpenChat={id => { setChatOrderId(id); setUnread(u => { const n = new Set(u); n.delete(id); return n }) }}
+              hasUnread={unread.has(o.id)} />
           ))}
 
           {/* Order more CTA */}
@@ -909,6 +1002,114 @@ export default function MenuOrdersPage() {
       {feedbackOrderId && (
         <FeedbackModal orderId={feedbackOrderId} onClose={() => setFeedback(null)} />
       )}
+
+      {/* ── Chat bottom sheet ── */}
+      {chatOrderId && (() => {
+        const order = orders.find(o => o.id === chatOrderId)
+        const msgs  = chatMessages[chatOrderId] ?? []
+        const orderLabel = order
+          ? (order.type === 'TAKEAWAY' ? `Token #${order.tokenNumber}` : (order.table?.name ?? `Table ${order.table?.tableNumber}`))
+          : 'Your order'
+
+        const sendHelp = async (text: string) => {
+          setChatBusy(true)
+          try {
+            await api.post(`/orders/${chatOrderId}/help`, { message: text })
+            setChatMessages(prev => ({
+              ...prev,
+              [chatOrderId]: [...(prev[chatOrderId] ?? []), { from: 'guest', text }],
+            }))
+            setChatText('')
+          } catch { /* silent */ } finally { setChatBusy(false) }
+        }
+
+        const isOrderDelayed = order?.expectedReadyAt
+          ? new Date(order.expectedReadyAt).getTime() < Date.now()
+          : false
+        const QUICK_OPTIONS = [
+          ...(isOrderDelayed ? ['My order is taking too long'] : []),
+          'Wrong item received',
+          'I need cutlery / napkins',
+          'Check please',
+        ]
+
+        return (
+          <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+            onClick={() => setChatOrderId(null)}>
+            <div className="rounded-t-3xl flex flex-col overflow-hidden"
+              style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e', maxHeight: '70vh' }}
+              onClick={e => e.stopPropagation()}>
+
+              {/* Handle + header */}
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-10 h-1 rounded-full" style={{ background: '#333' }} />
+              </div>
+              <div className="flex items-center gap-3 px-4 pb-3 pt-1">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'rgba(var(--brand-rgb),0.12)' }}>
+                  <MessageCircle size={15} style={{ color: 'var(--brand)' }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold text-white">Chat with staff</p>
+                  <p className="text-[10px]" style={{ color: '#555' }}>{orderLabel}</p>
+                </div>
+                <button onClick={() => setChatOrderId(null)} className="p-1.5 rounded-lg" style={{ color: '#555' }}>
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Quick help buttons */}
+              {msgs.length === 0 && (
+                <div className="px-4 pb-3 flex flex-wrap gap-2">
+                  {QUICK_OPTIONS.map(q => (
+                    <button key={q} onClick={() => sendHelp(q)} disabled={chatBusy}
+                      className="text-[11px] px-3 py-1.5 rounded-full font-semibold transition-all disabled:opacity-50"
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid #2a2a2a', color: '#888' }}>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Message thread */}
+              {msgs.length > 0 && (
+                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2" style={{ borderTop: '1px solid #1a1a1a' }}>
+                  {msgs.map((m, i) => (
+                    <div key={i} className={`flex ${m.from === 'guest' ? 'justify-end' : 'justify-start'}`}>
+                      <div className="max-w-[80%] px-3 py-2 rounded-2xl text-[12px] font-medium"
+                        style={m.from === 'guest'
+                          ? { background: 'var(--brand)', color: '#000', borderBottomRightRadius: 4 }
+                          : { background: '#1e1e1e', color: '#ddd', borderBottomLeftRadius: 4 }}>
+                        {m.text}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Text input */}
+              <div className="px-4 py-4 flex gap-2" style={{ borderTop: '1px solid #1a1a1a' }}>
+                <input
+                  value={chatText}
+                  onChange={e => setChatText(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && chatText.trim() && sendHelp(chatText.trim())}
+                  placeholder="Type a message…"
+                  className="flex-1 rounded-xl px-3 py-2.5 text-sm outline-none"
+                  style={{ background: '#1a1a1a', border: '1px solid #2a2a2a', color: '#e5e5e5' }}
+                />
+                <button onClick={() => chatText.trim() && sendHelp(chatText.trim())}
+                  disabled={chatBusy || !chatText.trim()}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 disabled:opacity-40"
+                  style={{ background: 'var(--brand)' }}>
+                  {chatBusy
+                    ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" />
+                    : <Send size={14} style={{ color: '#000' }} />}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </>
   )
 }

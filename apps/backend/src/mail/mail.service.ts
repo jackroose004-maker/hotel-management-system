@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { MailerService } from '@nestjs-modules/mailer'
 import { PrismaService } from '../prisma/prisma.service'
-import { PdfService } from '../pdf/pdf.service'
+import { BookingTicketService } from '../pdf/booking-ticket.service'
 
 @Injectable()
 export class MailService {
@@ -10,7 +10,7 @@ export class MailService {
   constructor(
     private mailer: MailerService,
     private prisma: PrismaService,
-    private pdf: PdfService,
+    private pdf: BookingTicketService,
   ) {}
 
   // ── Shared brand context ──────────────────────────────────────────────────

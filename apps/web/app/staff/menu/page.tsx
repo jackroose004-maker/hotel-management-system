@@ -9,6 +9,7 @@ import {
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import ImageUpload from '@/components/ui/ImageUpload'
+import { ModalBackdrop } from '@/components/ModalBackdrop'
 import { uploadVideo } from '@/lib/upload'
 
 interface ModifierOption {
@@ -93,9 +94,7 @@ function ReorderSheet({ categories, onReorder, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:hidden"
-      style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-      onClick={onClose}>
+    <ModalBackdrop onClick={onClose} className="fixed inset-0 z-50 flex items-end justify-center sm:hidden" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
       <div className="w-full rounded-t-2xl pb-8 pt-4 px-4 select-none"
         style={{ backgroundColor: 'var(--card-bg)', maxHeight: '80vh', overflowY: 'auto' }}
         onClick={e => e.stopPropagation()}>
@@ -126,7 +125,7 @@ function ReorderSheet({ categories, onReorder, onClose }: {
           Done
         </button>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
@@ -318,7 +317,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4" onClick={onClose}>
+    <ModalBackdrop onClick={onClose} style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
       <div className="bg-white dark:bg-gray-900 w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -575,7 +574,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
     {confirmDelDialog}
     </>
   )
@@ -654,7 +653,7 @@ function ItemCard({ item, catName, onToggle, onEdit, onDelete }: {
 function DeleteConfirm({ item, onConfirm, onCancel }: { item: MenuItem; onConfirm: () => void; onCancel: () => void }) {
   const [loading, setLoading] = useState(false)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onCancel}>
+    <ModalBackdrop onClick={onCancel} className="fixed inset-0 z-50 flex items-center justify-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
       <div className="bg-[var(--card-bg)] rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-xl flex items-center justify-center mb-4">
           <Trash2 size={18} className="text-red-500" />
@@ -674,7 +673,7 @@ function DeleteConfirm({ item, onConfirm, onCancel }: { item: MenuItem; onConfir
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
@@ -790,7 +789,7 @@ function ImportMenuModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+    <ModalBackdrop onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
       <div className="bg-[var(--card-bg)] rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -970,7 +969,7 @@ function ImportMenuModal({ onClose, onDone }: { onClose: () => void; onDone: () 
         )}
 
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 

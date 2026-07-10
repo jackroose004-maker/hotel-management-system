@@ -4,7 +4,7 @@ import { Loader2, Trash2, ChevronDown, Zap, Plus } from 'lucide-react'
 import { CheckCircle2, UtensilsCrossed } from 'lucide-react'
 import ImageUpload from '@/components/ui/ImageUpload'
 import toast from 'react-hot-toast'
-import { BilingualField, Inp } from './_controls'
+import { BilingualField, Inp, inputCls } from './_controls'
 import type { Cfg, HeroConfig, MenuItem } from './_types'
 
 const CLOUD  = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME!
@@ -35,6 +35,8 @@ interface Props {
 export default function LandingSection({ cfg, set, menuItems, videoUploading, setVideoUploading, openPanel, setOpenPanel }: Props) {
   const [dishCat, setDishCat] = React.useState('All')
   const [dishQ, setDishQ] = React.useState('')
+  const [videoPasteUrl, setVideoPasteUrl] = React.useState('')
+  const [imgPasteUrl, setImgPasteUrl] = React.useState('')
 
   const hc = cfg.heroConfig ?? {} as HeroConfig
   const setHc = (k: keyof HeroConfig, v: string | string[] | null) =>
@@ -138,39 +140,77 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
             ))}
           </div>
           {(hc.heroMediaType ?? 'video') === 'video' ? (
-            <div className="space-y-4">
-              <div>
-                <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Upload video (MP4)</p>
-                <label className="flex items-center justify-center gap-2 w-full py-3 rounded-xl cursor-pointer transition-all text-sm font-semibold"
-                  style={{ border: '1.5px dashed rgba(var(--brand-rgb),0.4)', color: 'var(--brand)', backgroundColor: 'rgba(var(--brand-rgb),0.04)' }}>
-                  {videoUploading ? <><Loader2 size={14} className="animate-spin" /> Uploading…</> : <><Zap size={14} /> Choose MP4 file</>}
+            <div className="flex flex-col gap-2">
+              {hc.videoUrl ? (
+                <video key={hc.videoUrl} src={hc.videoUrl}
+                  className="w-full rounded-xl object-cover" style={{ aspectRatio: '16/9' }}
+                  muted playsInline autoPlay loop />
+              ) : (
+                <label className="flex flex-col items-center justify-center gap-2 w-full rounded-xl cursor-pointer transition-all text-xs font-semibold"
+                  style={{ border: '1.5px dashed rgba(var(--brand-rgb),0.4)', color: 'var(--brand)', backgroundColor: 'rgba(var(--brand-rgb),0.04)', aspectRatio: '16/9' }}>
+                  {videoUploading ? <><Loader2 size={13} className="animate-spin" /> Uploading…</> : <><Zap size={13} /> Choose MP4</>}
                   <input type="file" accept="video/mp4,video/*" className="hidden" disabled={videoUploading}
                     onChange={async e => {
-                      const file = e.target.files?.[0]
-                      if (!file) return
+                      const file = e.target.files?.[0]; if (!file) return
                       setVideoUploading(true)
                       try { const url = await uploadVideo(file); setHc('videoUrl', url); toast.success('Video uploaded!') }
                       catch (err: any) { toast.error(err.message ?? 'Upload failed') }
                       finally { setVideoUploading(false) }
                     }} />
                 </label>
-                {hc.videoUrl && <p className="text-[10px] mt-1.5 truncate" style={{ color: 'var(--text-muted)' }}>✓ {hc.videoUrl}</p>}
-              </div>
-              <div>
-                <p className="text-xs font-semibold mb-1.5" style={{ color: 'var(--text-muted)' }}>Or paste video URL</p>
-                <Inp value={hc.videoUrl ?? ''} onChange={v => setHc('videoUrl', v)} placeholder="https://…/hero.mp4" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Poster image (shown while video loads)</p>
-                <ImageUpload value={hc.posterUrl ?? ''} onChange={v => setHc('posterUrl', v ?? '')}
-                  folder="almanzil/hero" publicId="hero-poster" aspectRatio="video" hint="1920 × 1080 px" />
+              )}
+              <div className="flex gap-1.5">
+                <input value={videoPasteUrl} onChange={e => setVideoPasteUrl(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && videoPasteUrl.trim()) { setHc('videoUrl', videoPasteUrl.trim()); setVideoPasteUrl('') } }}
+                  placeholder="Paste video URL to replace…" className={inputCls}
+                  style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text-primary)' }} />
+                {hc.videoUrl && (
+                  <>
+                    <label className="flex items-center gap-1 px-3 rounded-lg cursor-pointer text-[11px] font-semibold flex-shrink-0"
+                      style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>
+                      {videoUploading ? <Loader2 size={11} className="animate-spin" /> : <><Zap size={11} /> Replace</>}
+                      <input type="file" accept="video/mp4,video/*" className="hidden" disabled={videoUploading}
+                        onChange={async e => {
+                          const file = e.target.files?.[0]; if (!file) return
+                          setVideoUploading(true)
+                          try { const url = await uploadVideo(file); setHc('videoUrl', url); toast.success('Video uploaded!') }
+                          catch (err: any) { toast.error(err.message ?? 'Upload failed') }
+                          finally { setVideoUploading(false) }
+                        }} />
+                    </label>
+                    <button onClick={() => setHc('videoUrl', '')}
+                      className="px-2.5 rounded-lg text-[11px] font-semibold flex-shrink-0"
+                      style={{ backgroundColor: 'rgba(239,68,68,0.08)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>
+                      Remove
+                    </button>
+                  </>
+                )}
+                {videoPasteUrl.trim() && (
+                  <button onClick={() => { setHc('videoUrl', videoPasteUrl.trim()); setVideoPasteUrl('') }}
+                    className="px-3 rounded-lg text-[11px] font-semibold flex-shrink-0"
+                    style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                    Apply
+                  </button>
+                )}
               </div>
             </div>
           ) : (
-            <div>
-              <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-muted)' }}>Hero background image</p>
+            <div className="flex flex-col gap-2">
               <ImageUpload value={hc.heroImageUrl ?? ''} onChange={v => setHc('heroImageUrl', v ?? '')}
-                folder="almanzil/hero" publicId="hero-image" aspectRatio="video" hint="1920 × 1080 px, landscape" />
+                folder="almanzil/hero" publicId="hero-image" aspectRatio="video" />
+              <div className="flex gap-1.5">
+                <input value={imgPasteUrl} onChange={e => setImgPasteUrl(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && imgPasteUrl.trim()) { setHc('heroImageUrl', imgPasteUrl.trim()); setImgPasteUrl('') } }}
+                  placeholder="Paste image URL to replace…" className={inputCls}
+                  style={{ backgroundColor: 'var(--input-bg)', color: 'var(--text-primary)' }} />
+                {imgPasteUrl.trim() && (
+                  <button onClick={() => { setHc('heroImageUrl', imgPasteUrl.trim()); setImgPasteUrl('') }}
+                    className="px-3 rounded-lg text-[11px] font-semibold flex-shrink-0"
+                    style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                    Apply
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

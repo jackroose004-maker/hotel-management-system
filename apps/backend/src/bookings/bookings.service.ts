@@ -322,18 +322,27 @@ export class BookingsService {
     return this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'ARRIVED' } })
   }
 
+  private async findBookingByIdOrRef(bookingId: string, include?: any) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(bookingId)
+    if (isUuid) {
+      return this.prisma.booking.findUnique({ where: { id: bookingId }, include })
+    }
+    // Short ref: last 8 chars of UUID (uppercased) — match by id ending
+    return this.prisma.booking.findFirst({
+      where: { id: { endsWith: bookingId.toLowerCase() } },
+      include,
+    })
+  }
+
   async getPublicBookingDetails(bookingId: string) {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: {
-        table: { select: { tableNumber: true, zone: true } },
-        customer: { select: { name: true } },
-        preOrders: {
-          where: { status: 'PRE_ORDER' },
-          include: {
-            items: {
-              include: { menuItem: { select: { name: true, nameAr: true } } },
-            },
+    const booking = await this.findBookingByIdOrRef(bookingId, {
+      table: { select: { tableNumber: true, zone: true } },
+      customer: { select: { name: true } },
+      preOrders: {
+        where: { status: 'PRE_ORDER' },
+        include: {
+          items: {
+            include: { menuItem: { select: { name: true, nameAr: true } } },
           },
         },
       },
@@ -355,11 +364,17 @@ export class BookingsService {
   }
 
   async staffCheckIn(bookingId: string) {
-    const booking = await this.prisma.booking.findUnique({ where: { id: bookingId } })
+    const booking = await this.findBookingByIdOrRef(bookingId)
     if (!booking) throw new NotFoundException('Booking not found')
     if (booking.status === 'CANCELLED') throw new BadRequestException('Booking is cancelled')
+    if (booking.status === 'ARRIVED') throw new BadRequestException('Guest has already checked in')
+    if (booking.status === 'NO_SHOW') throw new BadRequestException('Booking was marked no-show')
+    // Check if booking date has passed (allow same-day check-in regardless of slot time)
+    const today = new Date(); today.setUTCHours(0, 0, 0, 0)
+    const slotDay = new Date(booking.slotDate); slotDay.setUTCHours(0, 0, 0, 0)
+    if (slotDay < today) throw new BadRequestException('Booking date has passed')
     await this.ordersService.checkInGuest(booking.id)
-    await this.prisma.booking.update({ where: { id: bookingId }, data: { status: 'ARRIVED' } })
+    await this.prisma.booking.update({ where: { id: booking.id }, data: { status: 'ARRIVED' } })
     return { success: true, bookingId: booking.id, tableId: booking.tableId }
   }
 

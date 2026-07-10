@@ -237,7 +237,7 @@ function LoginForm() {
   const hasBg = !!brand.loginDesktopImage
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center lg:overflow-hidden overflow-y-auto py-24 lg:py-0">
+    <div className="min-h-screen relative flex items-start lg:items-center justify-center lg:overflow-hidden overflow-y-auto pt-20 pb-8 lg:pt-0 lg:pb-0">
 
       {/* ── Full-screen background (video or fallback image) ── */}
       <div className="fixed inset-0 z-0">
@@ -295,7 +295,7 @@ function LoginForm() {
 
         {/* Frosted glass card */}
         <div className="rounded-3xl px-6 py-7 lg:px-8 lg:py-9 flex flex-col"
-          style={{ maxHeight: resetMode ? 'none' : 'min(82vh, 680px)', backgroundColor: 'rgba(8,8,8,0.6)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 32px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)' }}>
+          style={{ maxHeight: (resetMode || (typeof window !== 'undefined' && window.innerWidth < 1024)) ? 'none' : 'min(82dvh, 680px)', backgroundColor: 'rgba(8,8,8,0.6)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 32px 80px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)' }}>
 
           {/* ── Forgot password panel ── */}
           {resetMode ? (

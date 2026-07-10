@@ -2,7 +2,6 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { Cron, CronExpression } from '@nestjs/schedule'
 import { PrismaService } from '../prisma/prisma.service'
 import { OrdersGateway } from '../websocket/orders.gateway'
-import { PaymentsService } from '../payments/payments.service'
 import { KitchenPrintService } from './kitchen-print.service'
 import { SettingsService } from '../settings/settings.service'
 import { MailService } from '../mail/mail.service'
@@ -19,7 +18,6 @@ export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private gateway: OrdersGateway,
-    private payments: PaymentsService,
     private kitchenPrint: KitchenPrintService,
     private settings: SettingsService,
     private mail: MailService,
@@ -202,7 +200,11 @@ export class OrdersService {
     this.gateway.emitNewOrder(order)
 
     if (dto.paymentMethod === 'CASH') {
-      return this.payments.registerCashOrder(order.id)
+      return this.prisma.order.update({
+        where: { id: order.id },
+        data: { paymentMethod: 'CASH' },
+        include: { items: { include: { menuItem: true } }, table: true },
+      })
     }
     return order
   }
@@ -228,12 +230,18 @@ export class OrdersService {
     const newVat       = Math.round(newSubtotal * VAT_RATE * 100) / 100
     const newTotal     = Math.round((newSubtotal + newVat) * 100) / 100
 
+    // If items are added to an order already past PENDING (in kitchen or ready),
+    // reset to PENDING so the kitchen knows new work is pending.
+    const needsKitchenRefire = ['ACCEPTED', 'PREPARING', 'READY'].includes(order.status as string)
+    const statusReset = needsKitchenRefire ? { status: 'PENDING' as const } : {}
+
     const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         subtotal: newSubtotal,
         vatAmount: newVat,
         total: newTotal,
+        ...statusReset,
         items: {
           create: dto.items.map(item => ({
             menuItemId: item.menuItemId,
@@ -253,7 +261,39 @@ export class OrdersService {
       },
     })
 
-    this.gateway.emitOrderUpdated(updated)
+    // In thermal mode: fire an add-on KOT with ONLY the new items (not the full order).
+    // This prevents the kitchen reprinting food that is already cooked.
+    if (needsKitchenRefire) {
+      const cfg = await this.settings.get()
+      if ((cfg as any).thermalEnabled) {
+        const newItems = updated.items.slice(-dto.items.length) // new items are appended at the end
+        this.kitchenPrint.printKOT({
+          ...updated,
+          id: updated.id + '-ADD',
+          items: newItems,
+          notes: `ADD-ON to #${updated.tokenNumber}${order.notes ? ` | ${order.notes}` : ''}`,
+        }).catch(() => {})
+        // Advance to PREPARING (same as initial accept flow)
+        await this.prisma.order.update({
+          where: { id: updated.id },
+          data: {
+            status: 'PREPARING',
+            statusHistory: { create: { fromStatus: 'PENDING', toStatus: 'PREPARING', changedById: userId ?? null } },
+          },
+        }).catch(() => {})
+        this.gateway.emitOrderUpdated({ ...updated, status: 'PREPARING' })
+      } else {
+        if (needsKitchenRefire) {
+          await this.prisma.orderStatusHistory.create({
+            data: { orderId: orderId, fromStatus: order.status, toStatus: 'PENDING', changedById: userId ?? null },
+          }).catch(() => {})
+        }
+        this.gateway.emitOrderUpdated(updated)
+      }
+    } else {
+      this.gateway.emitOrderUpdated(updated)
+    }
+
     return updated
   }
 
@@ -398,10 +438,14 @@ export class OrdersService {
 
   async guestHelp(id: string, message?: string) {
     const order = await this.getById(id)
-    const label = order.type === 'DINE_IN'
-      ? (order.table ? `Table ${(order.table as any).tableNumber}` : 'Dine-in')
+    const tableLabel = order.type === 'DINE_IN'
+      ? ((order.table as any)?.name ?? (order.table ? `Table ${(order.table as any).tableNumber}` : 'Dine-in'))
       : `Takeaway #${order.tokenNumber}`
-    this.gateway.emitOrderHelp({ orderId: id, message: message || `${label} needs help` })
+    this.gateway.emitOrderHelp({
+      orderId: id,
+      tableLabel,
+      message: message || 'Needs help',
+    })
     return { ok: true }
   }
 

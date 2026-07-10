@@ -10,6 +10,7 @@ import api from '@/lib/api'
 import { notify } from '@/lib/notify'
 import { getSocket } from '@/lib/socket'
 import { useAuthStore } from '@/store/auth'
+import { ModalBackdrop } from '@/components/ModalBackdrop'
 
 interface Order {
   id: string; type: string; status: string; total: number; vatAmount: number; subtotal: number
@@ -81,10 +82,10 @@ function OrderCard({ order, onAdvance, onCancel, onVoid, onAddItems, onRush, onR
   // Kitchen-permission users can only advance kitchen stages (ACCEPTED→PREPARING→READY)
   const KITCHEN_STAGES = ['ACCEPTED', 'PREPARING']
   const canAdvance = !hasKitchenPerm || KITCHEN_STAGES.includes(order.status)
-  // Skip mode: PENDING jumps to READY (prints KOT), READY → DELIVERED; no middle stages
-  const SKIP_STATUS: Record<string, string> = { PENDING: 'READY', READY: 'DELIVERED' }
-  const SKIP_LABEL: Record<string, string>  = { PENDING: 'Accept & Ready', READY: 'Mark Served' }
-  const SKIP_LABEL_SHORT: Record<string, string> = { PENDING: 'Accept', READY: 'Served' }
+  // Skip mode: PENDING jumps to READY (prints KOT); waiter marks ACCEPTED→READY when chef says done, then READY→DELIVERED after serving
+  const SKIP_STATUS: Record<string, string> = { PENDING: 'READY', ACCEPTED: 'READY', READY: 'DELIVERED' }
+  const SKIP_LABEL: Record<string, string>  = { PENDING: 'Accept & Ready', ACCEPTED: 'Ready to Serve', READY: 'Mark Served' }
+  const SKIP_LABEL_SHORT: Record<string, string> = { PENDING: 'Accept', ACCEPTED: 'Ready', READY: 'Served' }
   const nextStatus = canAdvance ? (thermalEnabled ? (SKIP_STATUS[order.status] ?? NEXT_STATUS[order.status]) : NEXT_STATUS[order.status]) : undefined
   const nextLabel       = thermalEnabled ? (SKIP_LABEL[order.status]       ?? NEXT_LABEL[order.status])       : NEXT_LABEL[order.status]
   const nextLabelShort  = thermalEnabled ? (SKIP_LABEL_SHORT[order.status] ?? NEXT_LABEL_SHORT[order.status]) : NEXT_LABEL_SHORT[order.status]
@@ -402,9 +403,7 @@ function CancelReasonModal({ order, onConfirm, onClose, busy, mode = 'cancel' }:
   const accentBorder = isVoid ? 'rgba(234,179,8,0.5)' : 'rgba(239,68,68,0.5)'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-      onClick={onClose}>
+    <ModalBackdrop onClick={onClose}>
       <div className="w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl"
         style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
         onClick={e => e.stopPropagation()}>
@@ -471,7 +470,7 @@ function CancelReasonModal({ order, onConfirm, onClose, busy, mode = 'cancel' }:
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
@@ -487,26 +486,33 @@ function KanbanColumn({
   emptyText: string
 }) {
   return (
-    <div className="flex flex-col min-w-0" style={{ flex: '1 1 0' }}>
+    <div className="flex flex-col min-w-0 rounded-2xl overflow-hidden"
+      style={{ flex: '1 1 0', background: 'var(--muted-bg)', border: '1px solid var(--card-border)' }}>
+
       {/* Column header */}
-      <div className="flex items-center gap-2 px-3 py-2.5 mb-2 rounded-xl flex-shrink-0"
-        style={{ background: 'var(--muted-bg)', border: '0.5px solid var(--card-border)' }}>
-        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: dotColor }} />
-        <span className="text-xs font-bold flex-1" style={{ color: 'var(--text-primary)' }}>{title}</span>
-        <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
-          style={{ background: `${dotColor}22`, color: dotColor }}>
-          {count}
+      <div className="flex items-center gap-2.5 px-4 py-3 flex-shrink-0"
+        style={{ borderBottom: `2px solid ${dotColor}33`, background: `${dotColor}0d` }}>
+        <span className="w-2 h-2 rounded-full flex-shrink-0 shadow-sm"
+          style={{ background: dotColor, boxShadow: `0 0 6px ${dotColor}88` }} />
+        <span className="text-[11px] font-bold tracking-wide uppercase flex-1"
+          style={{ color: 'var(--text-primary)', letterSpacing: '0.06em' }}>
+          {title}
         </span>
+        {count > 0 && (
+          <span className="text-[11px] font-black w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+            style={{ background: dotColor, color: '#000' }}>
+            {count}
+          </span>
+        )}
       </div>
 
       {/* Scrollable content */}
-      <div className="flex flex-col gap-2.5 overflow-y-auto flex-1 px-0.5 pb-4"
+      <div className="flex flex-col gap-2.5 overflow-y-auto flex-1 p-3 pb-4"
         style={{ scrollbarWidth: 'thin' }}>
         {count === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-2 rounded-xl"
-            style={{ border: '1px dashed var(--card-border)' }}>
-            <span style={{ color: 'var(--text-muted)', opacity: 0.5 }}>{emptyIcon}</span>
-            <span className="text-xs font-medium" style={{ color: 'var(--text-muted)', opacity: 0.5 }}>{emptyText}</span>
+          <div className="flex flex-col items-center justify-center flex-1 py-16 gap-2">
+            <span style={{ color: 'var(--text-muted)', opacity: 0.25 }}>{emptyIcon}</span>
+            <span className="text-[11px] font-medium" style={{ color: 'var(--text-muted)', opacity: 0.35 }}>{emptyText}</span>
           </div>
         ) : children}
       </div>
@@ -634,8 +640,7 @@ function AddItemsModal({ order, onClose, onSaved }: {
   })()
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
+    <ModalBackdrop onClick={onClose} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}>
       <div className="relative w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
         style={{ backgroundColor: 'var(--card-bg)', maxHeight: '90vh' }}
         onClick={e => e.stopPropagation()}>
@@ -832,83 +837,136 @@ function AddItemsModal({ order, onClose, onSaved }: {
           </div>
         )}
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
 // ── Staff Place Order Panel ───────────────────────────────────────────────────
-interface MenuItem { id: string; name: string; price: number; isAvailable: boolean; prepTimeMins?: number }
-interface Category { id: string; name: string }
+// Uses same rich UI as AddItemsModal: all items loaded upfront with modifier groups,
+// full search + category tabs, modifier sheet, same cart format.
 
 function StaffPlaceOrderPanel({ tableId, tableName, onClose, onPlaced }: {
   tableId: string; tableName: string; onClose: () => void; onPlaced: () => void
 }) {
-  const [categories, setCategories] = useState<Category[]>([])
-  const [items, setItems] = useState<MenuItem[]>([])
-  const [catId, setCatId] = useState('')
-  const [cart, setCart] = useState<{ item: MenuItem; qty: number }[]>([])
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
+  const [menuItems, setMenuItems] = useState<AddMenuItem[]>([])
+  const [activeCatId, setActiveCatId] = useState<string | null>(null)
+  const [menuSearch, setMenuSearch] = useState('')
+  const [cart, setCart] = useState<AddCartEntry[]>([])
+  const [modSheet, setModSheet] = useState<{ item: AddMenuItem; selections: Record<string, string[]> } | null>(null)
   const [notes, setNotes] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [search, setSearch] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.get('/menu/categories').then(r => {
-      const cats = Array.isArray(r.data) ? r.data : []
+    Promise.all([
+      api.get('/menu/categories'),
+      api.get('/menu/items?includeUnavailable=false'),
+    ]).then(([catRes, itemRes]) => {
+      const cats = catRes.data?.data ?? catRes.data ?? []
+      const items = (itemRes.data?.data ?? itemRes.data ?? []).filter((i: AddMenuItem) => i.isAvailable)
       setCategories(cats)
-      if (cats.length) setCatId(cats[0].id)
-    })
+      setMenuItems(items)
+      setActiveCatId(cats[0]?.id ?? null)
+    }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => {
-    if (!catId) return
-    setLoading(true)
-    api.get(`/menu/items?categoryId=${catId}&all=true`).then(r => {
-      setItems(Array.isArray(r.data) ? r.data : (r.data?.items ?? []))
-    }).finally(() => setLoading(false))
-  }, [catId])
+  const cartCount = cart.reduce((s, e) => s + e.quantity, 0)
+  const cartTotal = cart.reduce((s, e) => {
+    const item = menuItems.find(i => i.id === e.menuItemId)
+    if (!item) return s
+    const modExtra = (item.modifierGroups ?? []).flatMap(g => g.options).filter(o => e.optionIds.includes(o.id)).reduce((a, o) => a + Number(o.priceAdd), 0)
+    return s + (Number(item.price) + modExtra) * e.quantity
+  }, 0)
 
-  function addToCart(item: MenuItem) {
-    setCart(prev => {
-      const ex = prev.find(c => c.item.id === item.id)
-      return ex ? prev.map(c => c.item.id === item.id ? { ...c, qty: c.qty + 1 } : c) : [...prev, { item, qty: 1 }]
+  function cartAddSimple(item: AddMenuItem) {
+    setCart(c => [...c, { menuItemId: item.id, quantity: 1, optionIds: [], label: '' }])
+  }
+  function cartRemoveEntry(idx: number) {
+    setCart(c => {
+      const n = [...c]
+      if (n[idx].quantity > 1) { n[idx] = { ...n[idx], quantity: n[idx].quantity - 1 }; return n }
+      n.splice(idx, 1); return n
+    })
+  }
+  function cartAddEntry(idx: number) {
+    setCart(c => { const n = [...c]; n[idx] = { ...n[idx], quantity: n[idx].quantity + 1 }; return n })
+  }
+  function openModSheet(item: AddMenuItem) {
+    const defaults: Record<string, string[]> = {}
+    for (const g of item.modifierGroups ?? []) {
+      defaults[g.id] = g.options.filter(o => o.isDefault).map(o => o.id)
+    }
+    setModSheet({ item, selections: defaults })
+  }
+  function confirmModSheet() {
+    if (!modSheet) return
+    const { item, selections } = modSheet
+    const optionIds = Object.values(selections).flat()
+    const labelParts: string[] = []
+    for (const g of item.modifierGroups ?? []) {
+      const chosen = g.options.filter(o => selections[g.id]?.includes(o.id))
+      if (chosen.length) labelParts.push(chosen.map(o => o.name).join(', '))
+    }
+    setCart(c => [...c, { menuItemId: item.id, quantity: 1, optionIds, label: labelParts.join(' · ') }])
+    setModSheet(null)
+  }
+  function toggleModOption(groupId: string, optionId: string, maxSelect: number) {
+    setModSheet(s => {
+      if (!s) return s
+      const prev = s.selections[groupId] ?? []
+      let next: string[]
+      if (prev.includes(optionId)) {
+        next = prev.filter(id => id !== optionId)
+      } else if (maxSelect === 1) {
+        next = [optionId]
+      } else {
+        next = prev.length < maxSelect ? [...prev, optionId] : prev
+      }
+      return { ...s, selections: { ...s.selections, [groupId]: next } }
     })
   }
 
-  function updateQty(itemId: string, delta: number) {
-    setCart(prev => prev.map(c => c.item.id === itemId ? { ...c, qty: Math.max(0, c.qty + delta) } : c).filter(c => c.qty > 0))
-  }
-
-  async function placeOrder() {
+  const submit = async () => {
     if (!cart.length) return
-    setBusy(true)
+    setSaving(true); setError('')
     try {
+      const items = cart.map(e => {
+        const item = menuItems.find(i => i.id === e.menuItemId)!
+        const allOpts = (item.modifierGroups ?? []).flatMap(g => g.options)
+        const modifiers = e.optionIds.map(oid => {
+          const opt = allOpts.find(o => o.id === oid)!
+          return { optionId: oid, name: opt.name, priceAdd: Number(opt.priceAdd) }
+        })
+        return { menuItemId: e.menuItemId, quantity: e.quantity, ...(modifiers.length ? { modifiers } : {}) }
+      })
       await api.post(`/orders/table/${tableId}/staff-order`, {
-        items: cart.map(c => ({ menuItemId: c.item.id, quantity: c.qty })),
+        items,
         notes: notes.trim() || undefined,
       })
       notify.success(`Order placed for ${tableName}`)
       onPlaced()
     } catch (e: any) {
-      notify.error(e?.response?.data?.message ?? 'Could not place order')
-    } finally { setBusy(false) }
+      setError(e?.response?.data?.message ?? 'Could not place order')
+    } finally { setSaving(false) }
   }
 
-  const filtered = items.filter(i => i.isAvailable && (!search || i.name.toLowerCase().includes(search.toLowerCase())))
-  const total = cart.reduce((s, c) => s + c.item.price * c.qty, 0)
-  const INPUT = 'w-full rounded-xl px-3 py-2 text-sm outline-none'
-  const inputStyle = { backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }
+  const visibleItems = (() => {
+    const q = menuSearch.trim().toLowerCase()
+    return q ? menuItems.filter(i => i.name.toLowerCase().includes(q)) : menuItems.filter(i => i.categoryId === activeCatId)
+  })()
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
-      <div className="w-full sm:max-w-xl sm:mx-4 sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[92dvh]"
-        style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
+    <ModalBackdrop onClick={onClose} className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}>
+      <div className="relative w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col"
+        style={{ backgroundColor: 'var(--card-bg)', maxHeight: '90vh' }}
+        onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div className="px-5 py-4 border-b flex items-center gap-3 flex-shrink-0"
+        <div className="flex items-center justify-between px-5 py-4 border-b flex-shrink-0"
           style={{ borderColor: 'var(--card-border)' }}>
-          <div className="flex-1 min-w-0">
+          <div>
             <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Place Order</p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{tableName}</p>
           </div>
@@ -917,118 +975,189 @@ function StaffPlaceOrderPanel({ tableId, tableName, onClose, onPlaced }: {
           </button>
         </div>
 
-        <div className="flex flex-1 min-h-0">
-          {/* Left: menu */}
-          <div className="flex-1 flex flex-col min-w-0 border-r" style={{ borderColor: 'var(--card-border)' }}>
-            {/* Category tabs */}
-            <div className="flex gap-1 px-3 py-2 overflow-x-auto flex-shrink-0 border-b" style={{ borderColor: 'var(--card-border)' }}>
-              {categories.map(c => (
-                <button key={c.id} onClick={() => setCatId(c.id)}
-                  className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-semibold transition-all"
-                  style={catId === c.id
-                    ? { backgroundColor: 'var(--brand)', color: '#fff' }
-                    : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
-                  {c.name}
-                </button>
-              ))}
-            </div>
-            {/* Search */}
-            <div className="px-3 py-2 flex-shrink-0">
+        {/* Search + categories + list */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          {loading ? (
+            <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>
+          ) : (
+            <>
               <div className="relative">
-                <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…"
-                  className="w-full rounded-lg pl-8 pr-3 py-1.5 text-xs outline-none"
-                  style={inputStyle} />
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                <input value={menuSearch}
+                  onChange={e => { setMenuSearch(e.target.value); if (e.target.value) setActiveCatId(null) }}
+                  placeholder="Search dishes…"
+                  className="w-full pl-8 pr-3 py-2 rounded-xl text-sm outline-none"
+                  style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }} />
               </div>
-            </div>
-            {/* Items */}
-            <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5">
-              {loading && <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin" style={{ color: 'var(--text-muted)' }} /></div>}
-              {!loading && filtered.map(item => {
-                const inCart = cart.find(c => c.item.id === item.id)
-                return (
-                  <div key={item.id} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl"
-                    style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)' }}>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--brand)' }}>AED {item.price.toFixed(2)}</p>
-                    </div>
-                    {inCart ? (
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button onClick={() => updateQty(item.id, -1)} className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold"
-                          style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>−</button>
-                        <span className="text-sm font-bold w-4 text-center" style={{ color: 'var(--text-primary)' }}>{inCart.qty}</span>
-                        <button onClick={() => updateQty(item.id, 1)} className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold"
-                          style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>+</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => addToCart(item)}
-                        className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-                        style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>
-                        <Plus size={13} />
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
 
-          {/* Right: cart */}
-          <div className="w-44 sm:w-52 flex flex-col flex-shrink-0">
-            <div className="px-3 py-2 border-b flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
-              <p className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Cart</p>
-            </div>
-            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
-              {cart.length === 0 && (
-                <p className="text-xs text-center pt-6" style={{ color: 'var(--text-muted)' }}>No items yet</p>
+              {!menuSearch && (
+                <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+                  {categories.map(cat => (
+                    <button key={cat.id} type="button" onClick={() => setActiveCatId(cat.id)}
+                      className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
+                      style={{
+                        backgroundColor: activeCatId === cat.id ? 'var(--brand)' : 'var(--muted-bg)',
+                        color: activeCatId === cat.id ? '#fff' : 'var(--text-muted)',
+                        border: '1px solid var(--card-border)',
+                      }}>
+                      {cat.name}
+                    </button>
+                  ))}
+                </div>
               )}
-              {cart.map(c => (
-                <div key={c.item.id} className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>{c.item.name}</p>
-                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>AED {(c.item.price * c.qty).toFixed(2)}</p>
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button onClick={() => updateQty(c.item.id, -1)} className="w-5 h-5 rounded flex items-center justify-center text-xs"
-                      style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>−</button>
-                    <span className="text-xs font-bold w-3 text-center" style={{ color: 'var(--text-primary)' }}>{c.qty}</span>
-                    <button onClick={() => updateQty(c.item.id, 1)} className="w-5 h-5 rounded flex items-center justify-center text-xs"
-                      style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-muted)' }}>+</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {cart.length > 0 && (
-              <div className="px-3 py-2 border-t flex-shrink-0 space-y-2" style={{ borderColor: 'var(--card-border)' }}>
-                <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes…"
-                  className="w-full rounded-lg px-2 py-1.5 text-xs outline-none"
-                  style={inputStyle} />
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold" style={{ color: 'var(--text-muted)' }}>Total</span>
-                  <span className="text-sm font-black" style={{ color: 'var(--brand)' }}>AED {total.toFixed(2)}</span>
-                </div>
+
+              <div className="space-y-2">
+                {visibleItems.length === 0 ? (
+                  <p className="text-center text-sm py-6" style={{ color: 'var(--text-muted)' }}>
+                    {menuSearch ? `No results for "${menuSearch}"` : 'No items in this category'}
+                  </p>
+                ) : visibleItems.map(item => {
+                  const hasModifiers = (item.modifierGroups ?? []).length > 0
+                  const itemEntries = cart.filter(e => e.menuItemId === item.id)
+                  const totalQty = itemEntries.reduce((s, e) => s + e.quantity, 0)
+                  return (
+                    <div key={item.id} className="rounded-xl overflow-hidden cursor-pointer active:opacity-80 transition-opacity"
+                      style={{ border: `1px solid ${totalQty > 0 ? 'rgba(var(--brand-rgb),0.3)' : 'var(--card-border)'}`, backgroundColor: totalQty > 0 ? 'rgba(var(--brand-rgb),0.04)' : 'var(--card-bg)' }}
+                      onClick={() => hasModifiers ? openModSheet(item) : cartAddSimple(item)}>
+                      <div className="flex items-center gap-3 px-3 py-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
+                          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            AED {Number(item.price).toFixed(2)}{hasModifiers && <span className="ml-1 opacity-60">· customisable</span>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                          {hasModifiers ? (
+                            <button type="button" onClick={() => openModSheet(item)}
+                              className="px-3 h-7 rounded-full text-xs font-semibold"
+                              style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>
+                              + Add
+                            </button>
+                          ) : totalQty > 0 ? (
+                            <>
+                              <button type="button"
+                                onClick={() => { const idx = cart.findLastIndex(e => e.menuItemId === item.id); if (idx >= 0) cartRemoveEntry(idx) }}
+                                className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm"
+                                style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-primary)', border: '1px solid var(--card-border)' }}>−</button>
+                              <span className="w-5 text-center text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{totalQty}</span>
+                              <button type="button" onClick={() => cartAddSimple(item)}
+                                className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm"
+                                style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>+</button>
+                            </>
+                          ) : (
+                            <button type="button" onClick={() => cartAddSimple(item)}
+                              className="w-7 h-7 rounded-full flex items-center justify-center font-bold text-sm"
+                              style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>+</button>
+                          )}
+                        </div>
+                      </div>
+                      {hasModifiers && itemEntries.length > 0 && (
+                        <div className="px-3 pb-2 space-y-1">
+                          {itemEntries.map((e, idx) => {
+                            const globalIdx = cart.indexOf(e)
+                            return (
+                              <div key={idx} className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                <span className="flex-1 truncate">{e.label || 'No extras'} ×{e.quantity}</span>
+                                <button type="button" onClick={() => cartRemoveEntry(globalIdx)} className="text-red-400 flex items-center justify-center"><Trash2 size={12} /></button>
+                                <button type="button" onClick={() => cartAddEntry(globalIdx)} className="font-bold" style={{ color: 'var(--brand)' }}>+1</button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-            )}
-          </div>
+
+              {/* Order notes */}
+              {cartCount > 0 && (
+                <div className="space-y-2">
+                  <div className="rounded-xl p-3 flex items-center justify-between"
+                    style={{ backgroundColor: 'rgba(var(--brand-rgb),0.08)', border: '1px solid rgba(var(--brand-rgb),0.2)' }}>
+                    <span className="text-sm font-semibold" style={{ color: 'var(--brand)' }}>
+                      {cartCount} item{cartCount > 1 ? 's' : ''}
+                    </span>
+                    <span className="text-sm font-bold" style={{ color: 'var(--brand)' }}>AED {cartTotal.toFixed(2)}</span>
+                  </div>
+                  <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Order notes (optional)…"
+                    className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+                    style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }} />
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3 border-t flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
-          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-semibold"
-            style={{ backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
-            Cancel
-          </button>
-          <div className="flex-1" />
-          <button onClick={placeOrder} disabled={!cart.length || busy}
-            className="px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2 disabled:opacity-50"
-            style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Utensils size={14} />}
-            Place Order {cart.length > 0 && `(${cart.reduce((s, c) => s + c.qty, 0)} items)`}
+        <div className="px-4 py-4 border-t flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
+          {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
+          <button onClick={submit} disabled={saving || cartCount === 0}
+            className="w-full py-3 rounded-xl text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ background: 'var(--brand)', color: '#fff' }}>
+            {saving && <Loader2 size={13} className="animate-spin" />}
+            {saving ? 'Placing…' : cartCount > 0 ? `Place order · ${cartCount} item${cartCount > 1 ? 's' : ''}` : 'Select items above'}
           </button>
         </div>
+
+        {/* Modifier bottom sheet */}
+        {modSheet && (
+          <div className="absolute inset-0 z-20 flex flex-col justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+            onClick={e => { if (e.target === e.currentTarget) setModSheet(null) }}>
+            <div className="rounded-t-2xl overflow-hidden flex flex-col max-h-[80vh]"
+              style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
+              <div className="px-5 py-4 border-b flex items-center gap-3 flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-sm truncate" style={{ color: 'var(--text-primary)' }}>{modSheet.item.name}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>AED {Number(modSheet.item.price).toFixed(2)}</p>
+                </div>
+                <button type="button" onClick={() => setModSheet(null)} className="text-lg font-bold leading-none" style={{ color: 'var(--text-muted)' }}>×</button>
+              </div>
+              <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+                {(modSheet.item.modifierGroups ?? []).map(group => (
+                  <div key={group.id}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>{group.name}</p>
+                      {group.required && <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold" style={{ backgroundColor: 'rgba(var(--brand-rgb),0.1)', color: 'var(--brand)' }}>Required</span>}
+                      {group.maxSelect > 1 && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Pick up to {group.maxSelect}</span>}
+                    </div>
+                    <div className="space-y-1.5">
+                      {group.options.map(opt => {
+                        const selected = (modSheet.selections[group.id] ?? []).includes(opt.id)
+                        return (
+                          <button key={opt.id} type="button" onClick={() => toggleModOption(group.id, opt.id, group.maxSelect)}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all"
+                            style={{ border: `1px solid ${selected ? 'var(--brand)' : 'var(--card-border)'}`, backgroundColor: selected ? 'rgba(var(--brand-rgb),0.06)' : 'var(--muted-bg)' }}>
+                            <div className="flex-shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                              style={{ borderColor: selected ? 'var(--brand)' : 'var(--card-border)', backgroundColor: selected ? 'var(--brand)' : 'transparent' }}>
+                              {selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            </div>
+                            <span className="flex-1 text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{opt.name}</span>
+                            {Number(opt.priceAdd) > 0 && <span className="text-xs font-semibold" style={{ color: 'var(--brand)' }}>+AED {Number(opt.priceAdd).toFixed(2)}</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="px-5 py-4 border-t flex-shrink-0" style={{ borderColor: 'var(--card-border)' }}>
+                {(() => {
+                  const missing = (modSheet.item.modifierGroups ?? []).filter(g => g.required && !(modSheet.selections[g.id]?.length))
+                  return (
+                    <button type="button" onClick={confirmModSheet} disabled={missing.length > 0}
+                      className="w-full py-3 rounded-xl text-sm font-bold disabled:opacity-40"
+                      style={{ backgroundColor: 'var(--brand)', color: '#fff' }}>
+                      {missing.length > 0 ? `Select ${missing[0].name}` : 'Add to Order'}
+                    </button>
+                  )
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 
@@ -1046,7 +1175,7 @@ function OrdersPageInner() {
   const [addItemsTarget, setAddItemsTarget]   = useState<Order | null>(null)
   const [newOrderIds, setNewOrderIds] = useState<Set<string>>(new Set())
   const [socketConnected, setSocketConnected] = useState(true)
-  const [helpAlerts, setHelpAlerts] = useState<{ orderId: string; message: string; at: Date }[]>([])
+  const [helpAlerts, setHelpAlerts] = useState<{ orderId: string; tableLabel: string; message: string; at: Date }[]>([])
   const [guestMessages, setGuestMessages] = useState<Record<string, { from: 'staff' | 'guest'; text: string }[]>>({})
   const [replyTarget, setReplyTarget] = useState<string | null>(null)
   const [replyText, setReplyText] = useState('')
@@ -1105,8 +1234,8 @@ function OrdersPageInner() {
         notify.order.ready(o.type === 'DINE_IN' ? `Table ${o.table?.tableNumber}` : `Token #${o.tokenNumber}`)
       }
     }
-    const onHelp = (payload: { orderId: string; message: string }) => {
-      setHelpAlerts(prev => [...prev, { orderId: payload.orderId, message: payload.message, at: new Date() }])
+    const onHelp = (payload: { orderId: string; tableLabel: string; message: string }) => {
+      setHelpAlerts(prev => [...prev, { orderId: payload.orderId, tableLabel: payload.tableLabel, message: payload.message, at: new Date() }])
       setGuestMessages(prev => ({
         ...prev,
         [payload.orderId]: [...(prev[payload.orderId] ?? []), { from: 'guest', text: payload.message || 'Needs help' }],
@@ -1216,7 +1345,10 @@ function OrdersPageInner() {
   const rushFirst = (a: Order, b: Order) => (b.isRush ? 1 : 0) - (a.isRush ? 1 : 0)
   const pending   = orders.filter(o => o.status === 'PENDING' && o.paymentMethod === 'CASH').sort(rushFirst)
   const zombies   = orders.filter(o => o.status === 'PENDING' && o.stripeIntentId && !o.paymentMethod)
-  const kitchen   = orders.filter(o => ['ACCEPTED', 'PREPARING'].includes(o.status)).sort(rushFirst)
+  // In KDS mode: kitchen col shows ACCEPTED+PREPARING; waiter sees READY then marks delivered
+  // In thermal mode: KOT already printed, so ACCEPTED orders go to a "Cooking" col where waiter marks directly delivered
+  const kitchen   = !thermalEnabled ? orders.filter(o => ['ACCEPTED', 'PREPARING'].includes(o.status)).sort(rushFirst) : []
+  const cooking   = thermalEnabled  ? orders.filter(o => ['ACCEPTED', 'PREPARING'].includes(o.status)).sort(rushFirst) : []
   const ready     = orders.filter(o => o.status === 'READY').sort(rushFirst)
 
   const completed = filter === 'all'
@@ -1234,7 +1366,7 @@ function OrdersPageInner() {
   const pendingGroups = Object.values(pendingByTable)
 
   const col1Count = pending.length + zombies.length
-  const allEmpty  = col1Count === 0 && kitchen.length === 0 && ready.length === 0
+  const allEmpty  = col1Count === 0 && kitchen.length === 0 && cooking.length === 0 && ready.length === 0
 
   return (
     <>
@@ -1285,7 +1417,7 @@ function OrdersPageInner() {
         {/* ── Mobile tab bar (md and below) ── */}
         <div className="flex md:hidden flex-shrink-0 gap-1 px-3 pt-3 pb-2">
           {(thermalEnabled
-            ? [{ label: 'Approval', dot: '#eab308', count: pending.length + zombies.length }, { label: 'Ready', dot: '#22c55e', count: ready.length }]
+            ? [{ label: 'Approval', dot: '#eab308', count: pending.length + zombies.length }, { label: 'Cooking', dot: '#f97316', count: cooking.length }, { label: 'Ready', dot: '#22c55e', count: ready.length }]
             : [{ label: 'Approval', dot: '#eab308', count: pending.length + zombies.length }, { label: 'Kitchen', dot: '#3b82f6', count: kitchen.length }, { label: 'Ready', dot: '#22c55e', count: ready.length }]
           ).map((tab, i) => (
             <button key={i} onClick={() => setMobileTab(i)}
@@ -1316,7 +1448,6 @@ function OrdersPageInner() {
           flex: 1,
           overflow: 'hidden',
           alignItems: 'stretch',
-          maxWidth: 1200,
         }}>
 
           {/* ── Col 1: Needs Approval (always visible) ── */}
@@ -1397,11 +1528,23 @@ function OrdersPageInner() {
             )}
           </KanbanColumn>
 
-          {/* ── Col 2: In Kitchen (hidden in skip-kitchen-stages mode) ── */}
-          {!thermalEnabled && (
+          {/* ── Col 2: In Kitchen (KDS mode) or Cooking (thermal mode) ── */}
+          {!thermalEnabled ? (
             <KanbanColumn title="In Kitchen" dotColor="#3b82f6" count={kitchen.length}
               emptyIcon={<ChefHat size={28} />} emptyText="Nothing cooking">
               {kitchen.map(o => (
+                <OrderCard key={o.id} order={o} onAdvance={advance}
+                  onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
+                  onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
+                  userRole={userRole} hasKitchenPerm={hasKitchenPerm} thermalEnabled={thermalEnabled} onRush={rushOrder}
+                  onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)}
+                  busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />
+              ))}
+            </KanbanColumn>
+          ) : (
+            <KanbanColumn title="Cooking" dotColor="#f97316" count={cooking.length}
+              emptyIcon={<ChefHat size={28} />} emptyText="Nothing cooking">
+              {cooking.map(o => (
                 <OrderCard key={o.id} order={o} onAdvance={advance}
                   onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
                   onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
@@ -1474,14 +1617,14 @@ function OrdersPageInner() {
               </div>
             )}
           </>}
-          {mobileTab === 1 && !thermalEnabled && <>
-            {kitchen.map(o => <OrderCard key={o.id} order={o} onAdvance={advance}
+          {mobileTab === 1 && <>
+            {(thermalEnabled ? cooking : kitchen).map(o => <OrderCard key={o.id} order={o} onAdvance={advance}
               onCancel={id => setCancelTarget(orders.find(x => x.id === id) ?? null)}
               onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
               userRole={userRole} hasKitchenPerm={hasKitchenPerm} thermalEnabled={thermalEnabled} onRush={rushOrder} onReply={id => setReplyTarget(id)} hasGuestMessage={!!(guestMessages[o.id]?.length)} busy={!!busy[o.id]} isNew={newOrderIds.has(o.id)} />)}
-            {kitchen.length === 0 && <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}><ChefHat size={28} /><span className="text-xs">Nothing here</span></div>}
+            {(thermalEnabled ? cooking : kitchen).length === 0 && <div className="flex flex-col items-center justify-center py-16 gap-2" style={{ color: 'var(--text-muted)', opacity: 0.5 }}><ChefHat size={28} /><span className="text-xs">Nothing here</span></div>}
           </>}
-          {(thermalEnabled ? mobileTab === 1 : mobileTab === 2) && <>
+          {mobileTab === 2 && <>
             {ready.map(o => <OrderCard key={o.id} order={o} onAdvance={advance}
               onVoid={id => setVoidTarget(orders.find(x => x.id === id) ?? null)}
               onAddItems={id => setAddItemsTarget(orders.find(x => x.id === id) ?? null)}
@@ -1546,21 +1689,14 @@ function OrdersPageInner() {
     {/* ── Guest help alerts ── */}
     {helpAlerts.length > 0 && (
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-xs w-full">
-        {helpAlerts.map((a, i) => {
-          const order = orders.find(o => o.id === a.orderId)
-          const label = order
-            ? (order.type === 'DINE_IN' ? (order.table?.name ?? `Table ${order.table?.tableNumber}`) : `Takeaway #${order.tokenNumber}`)
-            : `Order`
-          return (
+        {helpAlerts.map((a, i) => (
             <div key={i} className="rounded-2xl p-3.5 flex items-start gap-3 shadow-2xl"
               style={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(239,68,68,0.4)' }}>
               <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
                 style={{ backgroundColor: 'rgba(239,68,68,0.15)' }}>🙋</div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-white">{label} needs help</p>
-                {a.message && a.message !== 'Needs help' && (
-                  <p className="text-[11px] text-gray-400 mt-0.5 truncate">"{a.message}"</p>
-                )}
+                <p className="text-xs font-bold text-white">🪑 {a.tableLabel}</p>
+                <p className="text-[11px] text-red-400 mt-0.5">"{a.message}"</p>
                 <div className="flex gap-2 mt-2">
                   <button onClick={() => { setReplyTarget(a.orderId); setHelpAlerts(p => p.filter((_, j) => j !== i)) }}
                     className="text-[11px] font-bold px-3 py-1.5 rounded-lg"
@@ -1575,15 +1711,13 @@ function OrdersPageInner() {
                 </div>
               </div>
             </div>
-          )
-        })}
+        ))}
       </div>
     )}
 
     {/* ── Reply to guest modal ── */}
     {replyTarget && (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
-        style={{ backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+      <ModalBackdrop style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}>
         <div className="w-full max-w-sm rounded-2xl overflow-hidden"
           style={{ backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a' }}>
           <div className="px-4 py-3.5 border-b" style={{ borderColor: '#2a2a2a' }}>
@@ -1625,7 +1759,7 @@ function OrdersPageInner() {
             </button>
           </div>
         </div>
-      </div>
+      </ModalBackdrop>
     )}
     {staffOrderTable && (
       <StaffPlaceOrderPanel

@@ -1,5 +1,6 @@
 'use client'
 import React, { useState } from 'react'
+import { ModalBackdrop } from '@/components/ModalBackdrop'
 import { Toggle, TimePick, Slider } from './_controls'
 import type { Cfg } from './_types'
 import type { RestaurantTable } from '../page'
@@ -216,8 +217,7 @@ function fmtMins(v: number): string {
 /* ── Disable-bookings confirmation modal ─────────────────────── */
 function DisableConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(2px)' }}>
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center sm:p-4" style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}>
       <div className="rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-5"
         style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
         {/* Icon */}
@@ -251,7 +251,7 @@ function DisableConfirmModal({ onConfirm, onCancel }: { onConfirm: () => void; o
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   )
 }
 

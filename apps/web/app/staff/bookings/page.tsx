@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/auth'
 import { useBrandStore } from '@/store/brand'
 import api from '@/lib/api'
 import { useConfirm } from '@/lib/confirm'
+import { ModalBackdrop } from '@/components/ModalBackdrop'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
@@ -433,8 +434,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
   const labelCls = "block text-[11px] font-bold mb-1.5 tracking-wider uppercase"
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }}>
+    <ModalBackdrop>
       <div className="w-full sm:max-w-lg sm:mx-4 sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[92dvh]"
         style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
 
@@ -871,7 +871,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
 
       {/* Modifier bottom sheet */}
       {modSheet && (
-        <div className="absolute inset-0 z-20 flex flex-col justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+        <div className="absolute inset-0 z-20 flex flex-col justify-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'none' }}
           onClick={e => { if (e.target === e.currentTarget) setModSheet(null) }}>
           <div className="rounded-t-2xl overflow-hidden flex flex-col max-h-[80vh]"
             style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}>
@@ -934,7 +934,7 @@ function NewBookingPanel({ onClose, onDone, token }: { onClose: () => void; onDo
           </div>
         </div>
       )}
-    </div>
+    </ModalBackdrop>
   )
 }
 
@@ -1323,9 +1323,7 @@ export default function StaffBookingsPage() {
         const name = b.customer?.name ?? '—'
         const phone = b.customer?.phone
         return (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-            style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-            onClick={() => setDetailBooking(null)}>
+          <ModalBackdrop onClick={() => setDetailBooking(null)} style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
             <div className="w-full sm:max-w-sm sm:mx-4 sm:rounded-2xl rounded-t-2xl overflow-hidden"
               style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
               onClick={e => e.stopPropagation()}>
@@ -1467,7 +1465,7 @@ export default function StaffBookingsPage() {
                 </button>
               </div>
             </div>
-          </div>
+          </ModalBackdrop>
         )
       })()}
     </div>

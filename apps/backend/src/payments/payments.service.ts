@@ -2,13 +2,18 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { ConfigService } from '@nestjs/config'
 import Stripe from 'stripe'
 import { PrismaService } from '../prisma/prisma.service'
+import { OrdersService } from '../orders/orders.service'
 
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name)
   private stripe: Stripe
 
-  constructor(private prisma: PrismaService, private config: ConfigService) {
+  constructor(
+    private prisma: PrismaService,
+    private config: ConfigService,
+    private orders: OrdersService,
+  ) {
     this.stripe = new Stripe(this.config.get<string>('STRIPE_SECRET_KEY') || '', {
       apiVersion: '2026-06-24.dahlia',
     })
@@ -43,12 +48,28 @@ export class PaymentsService {
       throw new BadRequestException(`Payment not confirmed. Status: ${intent.status}`)
     }
 
-    const order = await this.prisma.order.update({
+    const existing = await this.prisma.order.findUnique({ where: { id: orderId }, select: { status: true } })
+    if (!existing) throw new NotFoundException('Order not found')
+
+    // Mark payment
+    await this.prisma.order.update({
       where: { id: orderId },
-      data: { paymentStatus: 'PAID', paymentMethod: 'CARD', status: 'ACCEPTED' },
-      include: { items: { include: { menuItem: true } }, table: true },
+      data: { paymentStatus: 'PAID', paymentMethod: 'CARD' },
     })
-    this.logger.log(`Payment confirmed: orderId=${orderId} intentId=${paymentIntentId} total=${order.total}`)
+
+    if (existing.status === 'PRE_ORDER') {
+      // Booking pre-payment: guest hasn't arrived yet — stay PRE_ORDER, kitchen fires on check-in
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        include: { items: { include: { menuItem: true } }, table: true },
+      })
+      this.logger.log(`Pre-order payment confirmed (kitchen on hold): orderId=${orderId}`)
+      return { order }
+    }
+
+    // Immediate order (TAKEAWAY or DINE_IN walk-in) — accept and fire kitchen
+    const order = await this.orders.updateStatus(orderId, { status: 'ACCEPTED' })
+    this.logger.log(`Payment confirmed + kitchen fired: orderId=${orderId} total=${order.total}`)
     return { order }
   }
 
@@ -68,11 +89,18 @@ export class PaymentsService {
       const intent = event.data.object as Stripe.PaymentIntent
       const orderId = intent.metadata.orderId
       if (orderId) {
-        await this.prisma.order.update({
-          where: { id: orderId },
-          data: { paymentStatus: 'PAID', paymentMethod: 'CARD', status: 'ACCEPTED' },
-        })
-        this.logger.log(`Webhook: payment_intent.succeeded — orderId=${orderId} intentId=${intent.id}`)
+        const existing = await this.prisma.order.findUnique({ where: { id: orderId }, select: { paymentStatus: true, status: true } })
+        if (existing && existing.paymentStatus !== 'PAID') {
+          await this.prisma.order.update({
+            where: { id: orderId },
+            data: { paymentStatus: 'PAID', paymentMethod: 'CARD' },
+          })
+          // Pre-orders: paid but kitchen waits for check-in
+          if (existing.status !== 'PRE_ORDER') {
+            await this.orders.updateStatus(orderId, { status: 'ACCEPTED' }).catch(() => {})
+          }
+          this.logger.log(`Webhook: payment_intent.succeeded — orderId=${orderId} status=${existing.status}`)
+        }
       }
     }
 
