@@ -779,15 +779,18 @@ export default function MenuOrdersPage() {
         }
       } catch {}
 
-      // Logged-in user orders
+      // Logged-in user orders — scoped to current table session only
       try {
         const token = localStorage.getItem('token')
+        const currentTableId = localStorage.getItem('almanzil_table_id')
         if (token) {
           const r = await api.get('/orders/mine')
           const myOrders: Order[] = r.data ?? []
           const existing = new Set(live.map(o => o.id))
           for (const o of myOrders) {
-            if (!existing.has(o.id) && o.status !== 'CANCELLED' && !(o.status === 'DELIVERED' && o.paymentStatus === 'PAID'))
+            // Only include orders that belong to the current table (or takeaway if no table)
+            const sameTable = currentTableId ? o.table?.id === currentTableId : !o.table
+            if (!existing.has(o.id) && sameTable && o.status !== 'CANCELLED' && !(o.status === 'DELIVERED' && o.paymentStatus === 'PAID'))
               live.push(o)
           }
         }

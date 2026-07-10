@@ -669,8 +669,14 @@ export class OrdersService {
   }
 
   getByUser(userId: string) {
+    const today = new Date(); today.setHours(0, 0, 0, 0)
     return this.prisma.order.findMany({
-      where: { userId },
+      where: {
+        userId,
+        createdAt: { gte: today },
+        status: { notIn: ['CANCELLED'] },
+        paymentStatus: 'UNPAID',
+      },
       include: { items: { include: { menuItem: true } }, table: true, feedback: true },
       orderBy: { createdAt: 'desc' },
       take: 20,
