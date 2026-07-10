@@ -250,7 +250,7 @@ export default function LandingSection({ cfg, set, menuItems, videoUploading, se
                   ))}
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[400px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 h-[400px] overflow-y-auto pr-1 content-start">
                 {filteredDishes.map(item => {
                   const anyItem = item as any
                   const selected = (hc.signatureDishIds ?? []).includes(item.id)

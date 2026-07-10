@@ -59,7 +59,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (section !== 'landing') return
     fetch(`${API}/menu/items`).then(r => r.json())
-      .then(j => setMenuItems((j?.data ?? j ?? []).filter((i: MenuItem) => i.imageUrl)))
+      .then(j => setMenuItems((j?.data ?? j ?? []).filter((i: MenuItem) => i.imageUrl || (i as any).videoUrl)))
       .catch(() => {})
   }, [section])
 
