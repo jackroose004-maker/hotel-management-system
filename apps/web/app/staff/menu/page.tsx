@@ -596,9 +596,13 @@ function ItemCard({ item, catName, onToggle, onEdit, onDelete }: {
         ? 'border-gray-200 dark:border-[var(--card-border)] shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-gray-700'
         : 'border-gray-200 dark:border-[var(--card-border)] opacity-60'}`}>
 
-      {/* Image */}
+      {/* Thumbnail — video takes priority over image */}
       <div className="relative h-32 sm:h-36 bg-gray-100 dark:bg-gray-800 overflow-hidden">
-        <Thumb src={item.imageUrl} name={item.name} size="cover" />
+        {item.videoUrl ? (
+          <video src={item.videoUrl} className="w-full h-full object-cover" muted autoPlay loop playsInline />
+        ) : (
+          <Thumb src={item.imageUrl} name={item.name} size="cover" />
+        )}
 
         {/* Status badge */}
         <span className={`absolute top-2 left-2 text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm
