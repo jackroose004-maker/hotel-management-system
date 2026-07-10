@@ -47,6 +47,7 @@ const TEMPLATE_LABELS: Record<string, { label: string; desc: string }> = {
   order_cancelled:     { label: 'Order Cancelled',      desc: 'Sent when a dine-in or pre-order is cancelled.' },
   otp:                 { label: 'Verification Code',    desc: 'One-time code sent during sign-up and login.' },
   welcome:             { label: 'Welcome',              desc: 'Sent when a new customer account is created.' },
+  staff_welcome:       { label: 'Staff Welcome',        desc: 'Sent when a new staff account is created by the owner.' },
 }
 
 // Variables available per template — used for chip picker
@@ -75,6 +76,11 @@ const TEMPLATE_VARS: Record<string, { var: string; label: string; labelAr: strin
   welcome: [
     { var: '{{restaurantName}}', label: 'Restaurant name',  labelAr: 'اسم المطعم' },
     { var: '{{name}}',           label: 'Guest name',        labelAr: 'اسم الضيف' },
+  ],
+  staff_welcome: [
+    { var: '{{restaurantName}}', label: 'Restaurant name',  labelAr: 'اسم المطعم' },
+    { var: '{{name}}',           label: 'Staff name',        labelAr: 'اسم الموظف' },
+    { var: '{{email}}',          label: 'Staff email',       labelAr: 'البريد الإلكتروني' },
   ],
 }
 

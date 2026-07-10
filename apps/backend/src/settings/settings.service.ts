@@ -32,6 +32,24 @@ export class SettingsService {
     return u?.email ?? 'test@example.com'
   }
 
+  async ensureEmailTemplates() {
+    const defaults = [
+      { key: 'booking_confirmation', name: 'Booking Confirmation', subject: 'Your booking at {{restaurantName}} is confirmed — Ref #{{ref}}' },
+      { key: 'booking_cancelled',    name: 'Booking Cancelled',    subject: 'Your booking at {{restaurantName}} has been cancelled' },
+      { key: 'order_cancelled',      name: 'Order Cancelled',      subject: 'Your order at {{restaurantName}} has been cancelled — Ref #{{ref}}' },
+      { key: 'otp',                  name: 'Verification Code',    subject: 'Your {{restaurantName}} verification code' },
+      { key: 'welcome',              name: 'Welcome',              subject: 'Welcome to {{restaurantName}}!' },
+      { key: 'staff_welcome',        name: 'Staff Welcome',        subject: 'Welcome to {{restaurantName}} — your staff account is ready' },
+    ]
+    for (const d of defaults) {
+      await this.prisma.emailTemplate.upsert({
+        where: { key: d.key },
+        update: { name: d.name },
+        create: { key: d.key, name: d.name, subject: d.subject },
+      })
+    }
+  }
+
   async getEmailTemplates() {
     return this.prisma.emailTemplate.findMany({ orderBy: { key: 'asc' } })
   }
