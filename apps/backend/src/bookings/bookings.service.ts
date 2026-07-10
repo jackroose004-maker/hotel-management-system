@@ -348,6 +348,7 @@ export class BookingsService {
       },
     })
     if (!booking) throw new NotFoundException('Booking not found')
+    const b = booking as any
     const shortRef = booking.id.slice(-8).toUpperCase()
     return {
       ref: shortRef,
@@ -355,8 +356,8 @@ export class BookingsService {
       slotDate: booking.slotDate,
       slotTime: booking.slotTime,
       partySize: booking.partySize,
-      guestName: booking.customer?.name ?? null,
-      table: booking.table ? { number: booking.table.tableNumber, zone: booking.table.zone } : null,
+      guestName: b.customer?.name ?? null,
+      table: b.table ? { number: b.table.tableNumber, zone: b.table.zone } : null,
       preOrderItems: (booking as any).preOrders?.flatMap((o: any) =>
         o.items.map((i: any) => ({ name: i.menuItem.name, nameAr: i.menuItem.nameAr, quantity: i.quantity }))
       ) ?? [],
