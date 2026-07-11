@@ -61,6 +61,9 @@ export default function BookPage() {
   const [partySize, setPartySize] = useState(2)
   const [notes, setNotes] = useState('')
   const [seatingPreference, setSeatingPreference] = useState<string>('Indoor')
+  const [availableTables, setAvailableTables] = useState<any[]>([])
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
+  const [tablesLoading, setTablesLoading] = useState(false)
   const [step, setStep] = useState<'pick' | 'confirm' | 'done'>('pick')
   const [booking, setBooking] = useState<any>(null)
   const [error, setError] = useState('')
@@ -76,6 +79,16 @@ export default function BookPage() {
 
   useEffect(() => { fetchSlots() }, [date])
 
+  useEffect(() => {
+    if (step !== 'confirm' || !selected) return
+    setSelectedTableId(null)
+    setTablesLoading(true)
+    fetch(`${API}/tables/tables-for-date?date=${formatDate(date)}&partySize=${partySize}`)
+      .then(r => r.json()).then(j => setAvailableTables(j?.data ?? j ?? []))
+      .catch(() => setAvailableTables([]))
+      .finally(() => setTablesLoading(false))
+  }, [partySize, step])
+
   async function fetchSlots() {
     setLoading(true)
     try {
@@ -87,9 +100,17 @@ export default function BookPage() {
     } finally { setLoading(false) }
   }
 
-  function selectSlot(time: string) {
+  async function selectSlot(time: string) {
     setSelected(time)
     setStep('confirm')
+    setSelectedTableId(null)
+    setTablesLoading(true)
+    try {
+      const r = await fetch(`${API}/tables/tables-for-date?date=${formatDate(date)}&partySize=${partySize}`)
+      const json = await r.json()
+      setAvailableTables(json?.data ?? json ?? [])
+    } catch { setAvailableTables([]) }
+    finally { setTablesLoading(false) }
   }
 
   async function confirmBooking() {
@@ -102,6 +123,7 @@ export default function BookPage() {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           partySize, slotDate: formatDate(date), slotTime: selected, notes, seatingPreference,
+          ...(selectedTableId ? { tableId: selectedTableId } : {}),
           idempotencyKey: `${user?.id}-${formatDate(date)}-${selected}-${Date.now()}`,
         }),
       })
@@ -416,26 +438,36 @@ export default function BookPage() {
             </div>
           </div>
 
-          {/* Seating preference */}
+          {/* Table selection */}
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Seating Preference</div>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { key: 'Indoor',  label: 'Indoor',   icon: <Sofa size={14} /> },
-                { key: 'Outdoor', label: 'Outdoor',  icon: <Trees size={14} /> },
-                { key: 'Window',  label: 'Window',   icon: <Eye size={14} /> },
-                { key: 'Private', label: 'Private',  icon: <Lock size={14} /> },
-              ].map(z => (
-                <button key={z.key} onClick={() => setSeatingPreference(z.key)}
-                  className="flex items-center gap-2 px-3 py-2.5 rounded-xl border text-sm font-medium transition-all"
-                  style={seatingPreference === z.key
-                    ? { backgroundColor: `${brandColor}20`, borderColor: brandColor, color: brandColor }
-                    : { backgroundColor: '#1f1f1f', borderColor: '#374151', color: '#9ca3af' }}>
-                  {z.icon} {z.label}
-                </button>
-              ))}
+            <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <MapPin size={12} /> Select a Table <span className="font-normal normal-case text-gray-600">(optional)</span>
             </div>
-            <p className="text-[11px] text-gray-600 mt-2">We'll do our best to match your preference.</p>
+            {tablesLoading ? (
+              <div className="text-xs text-gray-600 py-2">Loading available tables…</div>
+            ) : availableTables.length === 0 ? (
+              <p className="text-xs text-gray-600">No tables available — one will be assigned at check-in.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {availableTables.map((t: any) => {
+                  const active = selectedTableId === t.id
+                  return (
+                    <button key={t.id} onClick={() => setSelectedTableId(active ? null : t.id)}
+                      className="flex flex-col items-start px-3 py-2.5 rounded-xl border text-left transition-all"
+                      style={active
+                        ? { backgroundColor: `${brandColor}20`, borderColor: brandColor }
+                        : { backgroundColor: '#1f1f1f', borderColor: '#374151' }}>
+                      <span className="text-sm font-bold" style={{ color: active ? brandColor : '#fff' }}>
+                        #{t.tableNumber} {t.name}
+                      </span>
+                      <span className="text-[11px] mt-0.5" style={{ color: active ? brandColor : '#6b7280' }}>
+                        {t.capacity}p · {t.zone ?? 'Indoor'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           {/* Special requests */}

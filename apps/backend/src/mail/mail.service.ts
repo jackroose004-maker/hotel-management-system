@@ -47,7 +47,7 @@ export class MailService {
     ])
     const social = (s?.socialLinks ?? {}) as Record<string, string>
 
-    const fromName    = tmpl?.fromName    ?? s?.emailFromName    ?? s?.restaurantName ?? 'Al Manzil'
+    const fromName    = tmpl?.fromName    || s?.emailFromName    || s?.restaurantName || 'Al Manzil'
     const fromAddr    = s?.emailFromAddress ?? s?.smtpUser ?? undefined
     const replyTo     = tmpl?.replyTo     ?? s?.emailReplyTo     ?? undefined
     const bgColor     = tmpl?.bgColor     ?? '#f0f0f0'

@@ -84,10 +84,13 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     // Layer 3 — cross-tab sync (other tabs on same browser)
     initCrossTabAuth(doForceLogout)
 
-    // Layer 1 fallback — poll /auth/me every 45s + on window focus
-    // Catches cases where socket missed the event (reconnect race, idle tab)
+    // Layer 1 fallback — poll /auth/me every 60s + on window focus (throttled to 1/min)
+    let lastCheck = 0
     const checkSession = async () => {
       if (loggingOut.current) return
+      const now = Date.now()
+      if (now - lastCheck < 60_000) return
+      lastCheck = now
       try {
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'}/auth/me`,
@@ -96,7 +99,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
         if (res.status === 401) doForceLogout()
       } catch {}
     }
-    const pollId = setInterval(checkSession, 45_000)
+    const pollId = setInterval(checkSession, 60_000)
     window.addEventListener('focus', checkSession)
 
     return () => {
