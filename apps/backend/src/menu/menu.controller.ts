@@ -35,9 +35,11 @@ export class MenuController {
     @Query('categoryId') categoryId?: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
+    @Query('q') q?: string,
   ) {
+    const parsed = limit ? parseInt(limit, 10) : 12
+    if (q) return this.menu.searchItems(q, Number.isFinite(parsed) ? Math.max(parsed, 20) : 20)
     if (categoryId) {
-      const parsed = limit ? parseInt(limit, 10) : 12
       return this.menu.getCategoryItems(categoryId, cursor, Number.isFinite(parsed) ? parsed : 12)
     }
     return this.menu.getAllItems(all === 'true')

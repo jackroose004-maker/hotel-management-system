@@ -3,7 +3,7 @@ import { Redirect, useRouter } from 'expo-router'
 import { LayoutDashboard, ChefHat, ClipboardList, Table2, CalendarDays, Receipt, Users, LogOut } from 'lucide-react-native'
 import { Alert, Pressable, Text } from 'react-native'
 import { useAuthStore } from '../../src/stores/auth.store'
-import { useBrandStore } from '../../src/stores/brand.store'
+import { useBrandStore, hexToRgbString } from '../../src/stores/brand.store'
 import { isStaffRole } from '../../src/navigation/roleGuard'
 import { colors } from '../../src/theme/colors'
 
@@ -43,6 +43,7 @@ function HeaderRight() {
 
 export default function StaffLayout() {
   const { user, token } = useAuthStore()
+  const brandColor = useBrandStore((s) => s.brandColor)
 
   // UX convenience only, not a security boundary — see src/navigation/roleGuard.ts.
   // The real enforcement is server-side (JwtAuthGuard + RolesGuard + @Roles()).
@@ -58,9 +59,9 @@ export default function StaffLayout() {
         headerStyle: { backgroundColor: colors.headerBg },
         headerTintColor: colors.textPrimary,
         headerRight: () => <HeaderRight />,
-        drawerActiveTintColor: colors.brand,
+        drawerActiveTintColor: brandColor,
         drawerInactiveTintColor: colors.textMuted,
-        drawerActiveBackgroundColor: colors.brandLight,
+        drawerActiveBackgroundColor: `rgba(${hexToRgbString(brandColor)},0.1)`,
       }}
     >
       <Drawer.Screen

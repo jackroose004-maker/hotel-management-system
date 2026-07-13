@@ -1024,7 +1024,16 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {visible.map(table => {
-            const isReserved  = table.status === 'EMPTY' && !!table.upcomingBooking
+            // hasUpcoming: table has a booking today (show info card regardless of time)
+            // isReserved: within 4 hours of slot — block the table, show amber badge
+            const hasUpcoming = table.status === 'EMPTY' && !!table.upcomingBooking
+            const isReserved  = hasUpcoming && (() => {
+              const [h, m] = (table.upcomingBooking!.slotTime ?? '').split(':').map(Number)
+              if (isNaN(h)) return true
+              const slotDate = new Date(now)
+              slotDate.setHours(h, m, 0, 0)
+              return (slotDate.getTime() - now) <= 4 * 60 * 60 * 1000
+            })()
             const isWalkIn    = !table.isReservable
             const cfg         = S[table.status as Status] ?? S.EMPTY
             const displayName = table.name ?? `Table ${table.tableNumber}`
@@ -1035,7 +1044,7 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
             return (
               <div key={table.id}
                 className="rounded-2xl border overflow-hidden flex flex-col transition-all hover:shadow-md"
-                style={{ borderColor: isWalkIn ? '#6366f133' : 'var(--card-border)', backgroundColor: 'var(--card-bg)' }}>
+                style={{ borderColor: isWalkIn ? '#6366f133' : 'var(--card-border)', backgroundColor: 'var(--card-bg)', minHeight: '200px' }}>
 
                 {/* dual-tone top bar: left = booking mode, right = table status */}
                 <div className="h-1 flex-shrink-0 flex">
@@ -1078,10 +1087,10 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                       </span>
                     </div>
                   </div>
-                  {isReserved && table.upcomingBooking && (
+                  {hasUpcoming && table.upcomingBooking && (
                     <div className="flex flex-col gap-0.5 px-2 py-1.5 rounded-lg text-[11px]"
-                      style={{ backgroundColor: '#f59e0b18', border: '1px solid #f59e0b44' }}>
-                      <span className="font-bold" style={{ color: '#f59e0b' }}>
+                      style={{ backgroundColor: isReserved ? '#f59e0b18' : 'var(--muted-bg)', border: `1px solid ${isReserved ? '#f59e0b44' : 'var(--card-border)'}` }}>
+                      <span className="font-bold" style={{ color: isReserved ? '#f59e0b' : 'var(--text-muted)' }}>
                         {table.upcomingBooking.slotTime}
                       </span>
                       <span className="truncate" style={{ color: 'var(--text-muted)' }}>
@@ -1193,6 +1202,13 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                         style={{ backgroundColor: '#f59e0b', color: '#000' }}>
                         <LogIn size={13} />
                         {checkingIn === table.upcomingBooking.id ? 'Checking in…' : 'Check In Guest'}
+                      </button>
+                    )}
+                    {table.status === 'EMPTY' && !isReserved && (
+                      <button onClick={() => openAddOrder(table)}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-colors active:scale-[0.98]"
+                        style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                        <Plus size={13} /> Take Order
                       </button>
                     )}
                     {table.status === 'EMPTY' && table.qrCode && (

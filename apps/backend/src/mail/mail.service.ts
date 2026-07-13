@@ -368,6 +368,35 @@ export class MailService {
     }
   }
 
+  async sendNoShowEmail(bookingId: string) {
+    try {
+      const booking = await this.prisma.booking.findUnique({
+        where: { id: bookingId },
+        include: { customer: { select: { email: true, name: true } } },
+      })
+      if (!booking?.customer?.email) return
+      const { base, enabled, fromName, fromAddr, replyTo } = await this.tpl('booking_confirmation')
+      if (!enabled) return
+      const ref = booking.id.slice(-8).toUpperCase()
+      const slotDate = new Date(booking.slotDate).toLocaleDateString('en-AE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+      await this.mailer.sendMail({
+        from: `"${fromName}" <${fromAddr}>`,
+        replyTo,
+        to: booking.customer.email,
+        subject: `We missed you — Booking ${ref}`,
+        html: `<div style="font-family:sans-serif;max-width:520px;margin:auto;padding:24px">
+          <h2 style="color:#ef4444">We missed you, ${booking.customer.name}!</h2>
+          <p>Your reservation on <strong>${slotDate} at ${booking.slotTime}</strong> (Ref: <strong>${ref}</strong>) was marked as a no-show as we didn't receive your arrival.</p>
+          <p>If this was a mistake or you'd like to rebook, please contact us or book again through the app.</p>
+          <p style="color:#6b7280;font-size:13px">— ${base.restaurantName} Team</p>
+        </div>`,
+      })
+      this.logger.log(`No-show email sent → ${booking.customer.email} (ref: ${ref})`)
+    } catch (err: any) {
+      this.logger.error(`No-show email failed for booking ${bookingId}: ${err?.message}`)
+    }
+  }
+
   // Used by settings to send a test email
   async sendTestEmail(to: string, templateKey: string) {
     const { base, enabled, fromName, fromAddr, replyTo } = await this.tpl(templateKey)

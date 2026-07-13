@@ -59,9 +59,6 @@ export class OrdersService {
 
     if (menuItems.length !== itemIds.length) throw new BadRequestException('One or more menu items not found')
     if (dto.type === 'DINE_IN' && !dto.tableId) throw new BadRequestException('Table number is required for dine-in orders')
-    if (dto.type === 'TAKEAWAY' && dto.paymentMethod === 'CASH') {
-      throw new BadRequestException('Takeaway orders require card payment')
-    }
 
     const menuMap = new Map(menuItems.map(m => [m.id, m]))
 
@@ -184,20 +181,39 @@ export class OrdersService {
               } : undefined,
             })),
           },
-          statusHistory: { create: { fromStatus: null, toStatus: 'PENDING', changedById: userId } },
+          // Staff orders and returning guest orders (same session) skip approval and go straight to kitchen
+          ...(dto.bookingId
+            ? { bookingId: dto.bookingId, status: 'PRE_ORDER' }
+            : (!isNewTableSession || (dto.type === 'DINE_IN' && userId))
+              ? { status: 'ACCEPTED' }
+              : {}),
+          statusHistory: { create: { fromStatus: null, toStatus: dto.bookingId ? 'PRE_ORDER' : (!isNewTableSession || (dto.type === 'DINE_IN' && userId)) ? 'ACCEPTED' : 'PENDING', changedById: userId } },
         },
         include: { items: { include: { menuItem: true, modifiers: true } }, table: true },
       })
 
-      // Auto-mark table OCCUPIED atomically with the order creation
+      // Mark table OCCUPIED only for walk-ins (no active booking on this table today).
+      // Pre-orders from booking flow keep the table RESERVED until guest physically arrives.
       if (dto.type === 'DINE_IN' && dto.tableId) {
-        await tx.restaurantTable.update({ where: { id: dto.tableId }, data: { status: 'OCCUPIED' } })
+        const today = new Date(); today.setHours(0, 0, 0, 0)
+        const activeBooking = await tx.booking.findFirst({
+          where: { tableId: dto.tableId, slotDate: today, status: { in: ['PENDING', 'CONFIRMED'] } },
+          select: { id: true },
+        })
+        if (!activeBooking) {
+          await tx.restaurantTable.update({ where: { id: dto.tableId }, data: { status: 'OCCUPIED' } })
+        }
       }
 
       return created
     })
 
     this.gateway.emitNewOrder(order)
+
+    // Customer added a pre-order after booking — send combined email with food items.
+    if (dto.bookingId) {
+      this.mail.sendCombinedBookingConfirmation(dto.bookingId)
+    }
 
     if (dto.paymentMethod === 'CASH') {
       return this.prisma.order.update({
@@ -309,7 +325,7 @@ export class OrdersService {
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: {
-        items: { include: { menuItem: true } },
+        items: { include: { menuItem: true, modifiers: true } },
         table: true,
         approvedBy:  { select: { id: true, name: true, role: true } },
         cancelledBy: { select: { id: true, name: true, role: true } },
@@ -403,13 +419,14 @@ export class OrdersService {
   // (e.g. voided) — without this, a table can get stuck showing "awaiting bill" with
   // zero real unpaid orders behind it, and there / was no way to clear it from the UI.
   private async recalculateTableStatus(tableId: string) {
+    // Exclude voided orders — they are gone from kitchen even though status isn't CANCELLED
     const remaining = await this.prisma.order.count({
-      where: { tableId, status: { notIn: ['DELIVERED', 'CANCELLED'] } },
+      where: { tableId, status: { notIn: ['DELIVERED', 'CANCELLED'] }, isVoided: false },
     })
     if (remaining > 0) return // guests still actively ordering — leave status alone
 
     const unpaid = await this.prisma.order.count({
-      where: { tableId, paymentStatus: 'UNPAID', status: { notIn: ['CANCELLED', 'PRE_ORDER'] } },
+      where: { tableId, paymentStatus: 'UNPAID', status: { notIn: ['CANCELLED', 'PRE_ORDER'] }, isVoided: false },
     })
     const tableStatus = unpaid > 0 ? 'BILL_PENDING' : 'DIRTY'
     await this.prisma.restaurantTable.update({ where: { id: tableId }, data: { status: tableStatus } })
@@ -677,7 +694,7 @@ export class OrdersService {
         status: { notIn: ['CANCELLED'] },
         paymentStatus: 'UNPAID',
       },
-      include: { items: { include: { menuItem: true } }, table: true, feedback: true },
+      include: { items: { include: { menuItem: true, modifiers: true } }, table: true, feedback: true },
       orderBy: { createdAt: 'desc' },
       take: 20,
     })
@@ -694,7 +711,7 @@ export class OrdersService {
         ],
       },
       include: {
-        items: { include: { menuItem: true } },
+        items: { include: { menuItem: true, modifiers: true } },
         table: true,
         approvedBy:  { select: { id: true, name: true, role: true } },
         cancelledBy: { select: { id: true, name: true, role: true } },
@@ -796,7 +813,7 @@ export class OrdersService {
         if (!tableSessionId) return null
         const orders = await this.prisma.order.findMany({
           where: { tableSessionId, status: { not: 'CANCELLED' } },
-          include: { items: { include: { menuItem: true } }, user: { select: { id: true, name: true } } },
+          include: { items: { include: { menuItem: true, modifiers: true } }, user: { select: { id: true, name: true } } },
           orderBy: { createdAt: 'asc' },
         })
         return { sessionId: tableSessionId, orders, summary: this.buildSessionSummary(orders) }
@@ -815,8 +832,9 @@ export class OrdersService {
   }
 
   // Today's closed sessions (tables now EMPTY or DIRTY but had orders today)
-  async getClosedBillsToday() {
-    const today = new Date(); today.setHours(0, 0, 0, 0)
+  async getClosedBillsToday(dateStr?: string) {
+    const today = dateStr ? new Date(dateStr) : new Date(); today.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(today); dayEnd.setHours(23, 59, 59, 999)
 
     // Find all sessions that started today for tables now empty/dirty (closed)
     const sessions = await this.prisma.order.groupBy({
@@ -824,8 +842,7 @@ export class OrdersService {
       where: {
         tableSessionId: { not: null },
         type: 'DINE_IN',
-        createdAt: { gte: today },
-        table: { status: { in: ['EMPTY', 'DIRTY'] } },
+        createdAt: { gte: today, lte: dayEnd },
       },
     })
 
@@ -834,7 +851,7 @@ export class OrdersService {
       const orders = await this.prisma.order.findMany({
         where: { tableSessionId, status: { not: 'CANCELLED' } },
         include: {
-          items: { include: { menuItem: true } },
+          items: { include: { menuItem: true, modifiers: true } },
           user: { select: { id: true, name: true } },
           settledBy: { select: { id: true, name: true } },
           table: true,
@@ -842,6 +859,9 @@ export class OrdersService {
         orderBy: { createdAt: 'asc' },
       })
       if (!orders.length || !orders[0].table) return null
+      // Skip sessions that were never actually paid (e.g. void-only sessions from same device)
+      const hasPaidOrders = orders.some(o => o.paymentStatus === 'PAID')
+      if (!hasPaidOrders) return null
       const table = orders[0].table
       const closedAt = orders[orders.length - 1].settledAt ?? orders[orders.length - 1].updatedAt
       return { table, sessionId: tableSessionId, orders, summary: this.buildSessionSummary(orders), closedAt }
@@ -942,11 +962,40 @@ export class OrdersService {
     return this.getSessionBill(latestOrder.tableSessionId)
   }
 
-  // Today's takeaway orders grouped by token (for bills page Takeaway tab)
-  async getTakeawayBillsToday() {
-    const today = new Date(); today.setHours(0, 0, 0, 0)
+  async convertSessionToTakeaway(sessionId: string) {
+    // Find all UNPAID dine-in orders for this session
     const orders = await this.prisma.order.findMany({
-      where: { type: 'TAKEAWAY', createdAt: { gte: today }, status: { not: 'CANCELLED' } },
+      where: { tableSessionId: sessionId, type: 'DINE_IN', paymentStatus: 'UNPAID', status: { not: 'CANCELLED' } },
+      select: { id: true, tableId: true },
+    })
+    if (!orders.length) throw new BadRequestException('No active dine-in orders found for this session')
+
+    const orderIds = orders.map(o => o.id)
+
+    // Only change the type — keep tableId and tableSessionId so the bill stays
+    // visible in Active Bills and can be settled normally. Kitchen sees the
+    // TAKEAWAY type change immediately via socket.
+    await this.prisma.order.updateMany({
+      where: { id: { in: orderIds } },
+      data: { type: 'TAKEAWAY' },
+    })
+
+    // Emit socket update for each order so kitchen sees the type change
+    const updated = await this.prisma.order.findMany({
+      where: { id: { in: orderIds } },
+      include: { items: { include: { menuItem: true } }, table: true },
+    })
+    for (const o of updated) this.gateway.emitOrderUpdated(o as any)
+
+    return { ok: true, converted: orderIds.length }
+  }
+
+  // Today's takeaway orders grouped by token (for bills page Takeaway tab)
+  async getTakeawayBillsToday(dateStr?: string) {
+    const today = dateStr ? new Date(dateStr) : new Date(); today.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(today); dayEnd.setHours(23, 59, 59, 999)
+    const orders = await this.prisma.order.findMany({
+      where: { type: 'TAKEAWAY', createdAt: { gte: today, lte: dayEnd }, status: { not: 'CANCELLED' } },
       include: {
         items: { include: { menuItem: true } },
         user: { select: { id: true, name: true, phone: true } },

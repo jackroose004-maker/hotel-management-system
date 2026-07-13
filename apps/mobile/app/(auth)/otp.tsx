@@ -9,11 +9,13 @@ import { GlassBackground } from '../../src/components/GlassBackground'
 import { GlassCard } from '../../src/components/GlassCard'
 import { GlassInput } from '../../src/components/GlassInput'
 import { GlassButton } from '../../src/components/GlassButton'
+import { useBrandStore, hexToRgbString } from '../../src/stores/brand.store'
 import { glass } from '../../src/theme/colors'
 
 export default function OtpScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const brandRgb = hexToRgbString(useBrandStore((s) => s.brandColor))
   const setAuth = useAuthStore((s) => s.setAuth)
   const { name, email, phone } = useLocalSearchParams<{ name: string; email: string; phone?: string }>()
   const [otp, setOtp] = useState('')
@@ -45,7 +47,7 @@ export default function OtpScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 70, paddingBottom: insets.bottom + 24 }]}>
           <GlassCard>
-            <View style={styles.codeBanner}>
+            <View style={[styles.codeBanner, { backgroundColor: `rgba(${brandRgb},0.08)`, borderColor: `rgba(${brandRgb},0.2)` }]}>
               <Text style={styles.codeBannerLabel}>Code sent to</Text>
               <Text style={styles.codeBannerEmail}>{email}</Text>
             </View>
@@ -79,9 +81,7 @@ export default function OtpScreen() {
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 20 },
   codeBanner: {
-    backgroundColor: `rgba(${glass.brandRgb},0.08)`,
     borderWidth: 1,
-    borderColor: `rgba(${glass.brandRgb},0.2)`,
     borderRadius: 16,
     paddingVertical: 14,
     alignItems: 'center',

@@ -232,12 +232,25 @@ export class BookingsService {
       include: { table: true, customer: { select: { name: true, email: true } } },
     })
 
-    // Send confirmation email (non-blocking — don't fail the booking if email fails)
-    if (booking.customer?.email && !booking.customer.email.includes('@walkin.')) {
-      this.mail.sendCombinedBookingConfirmation(booking.id)
-    }
+    // Email is NOT sent here. The frontend fires it via /bookings/:id/send-confirmation:
+    //  - if customer adds a pre-order → combined email fires from orders.service instead
+    //  - if customer skips pre-order  → frontend calls send-confirmation for booking-only email
+    // This keeps the customer flow atomic (one email per journey), matching the staff flow.
 
     return booking
+  }
+
+  // Called by the customer frontend when they skip pre-ordering (or navigate away from Booked step).
+  // Fires booking-only confirmation email so every booking path results in exactly one email.
+  async sendConfirmationEmail(bookingId: string, requesterId: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { customerId: true },
+    })
+    if (!booking) throw new NotFoundException('Booking not found')
+    if (booking.customerId !== requesterId) throw new ForbiddenException()
+    this.mail.sendCombinedBookingConfirmation(bookingId)
+    return { ok: true }
   }
 
   async cancelBooking(bookingId: string, requesterId: string, isStaff: boolean) {
@@ -740,12 +753,30 @@ export class BookingsService {
       }
     }
 
+    // Expire bookings with slotExpiresAt set
     const expired = await this.prisma.booking.findMany({
       where: { status: 'CONFIRMED', slotExpiresAt: { lt: now } },
+      include: { customer: { select: { email: true } } },
     })
+    // Also catch CONFIRMED bookings where slotExpiresAt was never set (e.g. manually confirmed)
+    // by checking if slot time + default grace has passed
+    const confirmedNoExpiry = await this.prisma.booking.findMany({
+      where: { status: 'CONFIRMED', slotExpiresAt: null },
+      include: { customer: { select: { email: true } } },
+    })
+    for (const b of confirmedNoExpiry) {
+      const [h, m] = b.slotTime.split(':').map(Number)
+      const slotTime = new Date(b.slotDate); slotTime.setHours(h, m, 0, 0)
+      const peak = cfg.peakHoursEnabled && isPeakSlot(b.slotTime, cfg)
+      const windowMins = Math.max(1, peak ? cfg.noShowGracePeriodPeak : cfg.noShowGracePeriodOffPeak)
+      if (new Date(slotTime.getTime() + windowMins * 60_000) < now) {
+        expired.push(b)
+      }
+    }
     for (const b of expired) {
       await this.prisma.booking.update({ where: { id: b.id }, data: { status: 'NO_SHOW', tableId: null } })
       if (b.customerId) await this.upsertStrike(b.customerId, true)
+      if (b.customerId) this.mail.sendNoShowEmail(b.id).catch(() => {})
     }
   }
 

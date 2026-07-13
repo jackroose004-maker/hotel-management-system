@@ -6,11 +6,13 @@ import * as usersApi from '../../../src/api/users.api'
 import { useAuthStore } from '../../../src/stores/auth.store'
 import { Button } from '../../../src/components/Button'
 import type { StaffUser } from '../../../src/api/users.api'
+import { useBrandStore } from '../../../src/stores/brand.store'
 import { colors } from '../../../src/theme/colors'
 
 const ROLES = ['STAFF', 'MANAGER'] as const
 
 export default function TeamScreen() {
+  const brandColor = useBrandStore((s) => s.brandColor)
   const { user } = useAuthStore()
   const isOwner = user?.role === 'OWNER'
   const [staff, setStaff] = useState<StaffUser[]>([])
@@ -99,7 +101,7 @@ export default function TeamScreen() {
         )}
       />
 
-      <Pressable style={styles.fab} onPress={() => setModalOpen(true)}>
+      <Pressable style={[styles.fab, { backgroundColor: brandColor }]} onPress={() => setModalOpen(true)}>
         <Plus size={22} color="#fff" />
       </Pressable>
 
@@ -112,7 +114,7 @@ export default function TeamScreen() {
             <TextInput style={styles.input} placeholder="Temporary password" value={password} onChangeText={setPassword} secureTextEntry />
             <View style={styles.roleRow}>
               {ROLES.map((r) => (
-                <Pressable key={r} style={[styles.roleChip, role === r && styles.roleChipActive]} onPress={() => setRole(r)}>
+                <Pressable key={r} style={[styles.roleChip, role === r && { backgroundColor: brandColor }]} onPress={() => setRole(r)}>
                   <Text style={[styles.roleChipText, role === r && styles.roleChipTextActive]}>{r}</Text>
                 </Pressable>
               ))}
@@ -141,14 +143,13 @@ const styles = StyleSheet.create({
   statusActive: { backgroundColor: colors.status.success.bg },
   statusInactive: { backgroundColor: colors.status.danger.bg },
   statusPillText: { fontSize: 11, fontWeight: '700' },
-  fab: { position: 'absolute', bottom: 20, right: 20, width: 52, height: 52, borderRadius: 26, backgroundColor: colors.brand, alignItems: 'center', justifyContent: 'center', elevation: 4 },
+  fab: { position: 'absolute', bottom: 20, right: 20, width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', elevation: 4 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: colors.cardBg, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
   modalTitle: { fontSize: 17, fontWeight: '800', color: colors.textPrimary, marginBottom: 14 },
   input: { borderWidth: 1, borderColor: colors.cardBorder, borderRadius: 10, padding: 12, marginBottom: 10, fontSize: 14, backgroundColor: colors.inputBg, color: colors.textPrimary },
   roleRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
   roleChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.mutedBg },
-  roleChipActive: { backgroundColor: colors.brand },
   roleChipText: { fontSize: 12, fontWeight: '700', color: colors.textMuted },
-  roleChipTextActive: { color: '#fff' },
+  roleChipTextActive: { color: '#000' },
 })

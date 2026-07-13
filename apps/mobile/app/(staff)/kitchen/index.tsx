@@ -4,6 +4,7 @@ import { ChefHat, Clock, Utensils, Package, Flame } from 'lucide-react-native'
 import * as ordersApi from '../../../src/api/orders.api'
 import { useOrderEvents } from '../../../src/realtime/useOrderEvents'
 import type { Order } from '../../../src/api/types'
+import { useBrandStore } from '../../../src/stores/brand.store'
 import { colors } from '../../../src/theme/colors'
 
 const KITCHEN_STATUSES = ['ACCEPTED', 'PREPARING']
@@ -39,6 +40,7 @@ function useCountdown(createdAt: string, estMins: number) {
 }
 
 export default function KitchenScreen() {
+  const brandColor = useBrandStore((s) => s.brandColor)
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
@@ -98,7 +100,7 @@ export default function KitchenScreen() {
         keyExtractor={(o) => o.id}
         numColumns={1}
         contentContainerStyle={{ padding: 12, gap: 10, flexGrow: 1 }}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.brand} />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={brandColor} />}
         ListEmptyComponent={
           !loading ? (
             <View style={styles.empty}>

@@ -6,6 +6,7 @@ import * as tablesApi from '../../../src/api/tables.api'
 import * as ordersApi from '../../../src/api/orders.api'
 import { useAuthStore } from '../../../src/stores/auth.store'
 import type { RestaurantTable, TableStatus } from '../../../src/api/types'
+import { useBrandStore } from '../../../src/stores/brand.store'
 import { colors } from '../../../src/theme/colors'
 
 // Mirrors apps/web/app/staff/tables/page.tsx's responsive grid (same 2/3/4-column grid,
@@ -22,6 +23,7 @@ const STATUS_STYLE: Record<TableStatus, { bg: string; label: string }> = {
 }
 
 export default function TablesScreen() {
+  const brandColor = useBrandStore((s) => s.brandColor)
   const { user } = useAuthStore()
   const isOwner = user?.role === 'OWNER'
   const [tables, setTables] = useState<RestaurantTable[]>([])
@@ -130,7 +132,7 @@ export default function TablesScreen() {
               </Pressable>
             </View>
             {billLoading ? (
-              <ActivityIndicator color={colors.brand} style={{ marginVertical: 30 }} />
+              <ActivityIndicator color={brandColor} style={{ marginVertical: 30 }} />
             ) : !bill || !bill.orders?.length ? (
               <Text style={styles.emptyBillText}>No unpaid orders for this table.</Text>
             ) : (
@@ -149,7 +151,7 @@ export default function TablesScreen() {
                 ))}
                 <View style={styles.billTotalRow}>
                   <Text style={styles.billTotalLabel}>Total</Text>
-                  <Text style={styles.billTotalValue}>AED {Number(bill.summary?.total ?? 0).toFixed(2)}</Text>
+                  <Text style={[styles.billTotalValue, { color: brandColor }]}>AED {Number(bill.summary?.total ?? 0).toFixed(2)}</Text>
                 </View>
               </>
             )}
@@ -177,5 +179,5 @@ const styles = StyleSheet.create({
   billItemPrice: { color: colors.textMuted, fontSize: 13 },
   billTotalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 12, marginTop: 4, borderTopWidth: 2, borderTopColor: colors.cardBorder },
   billTotalLabel: { fontWeight: '900', color: colors.textPrimary, fontSize: 15 },
-  billTotalValue: { fontWeight: '900', color: colors.brandDark, fontSize: 15 },
+  billTotalValue: { fontWeight: '900', fontSize: 15 },
 })

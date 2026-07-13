@@ -31,6 +31,13 @@ export class BookingsController {
     return this.bookings.createBooking(req.user.id, dto)
   }
 
+  // Customer skipped pre-order — fire booking-only confirmation email
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/send-confirmation')
+  sendConfirmation(@Param('id') id: string, @Request() req: any) {
+    return this.bookings.sendConfirmationEmail(id, req.user.id)
+  }
+
   // Public — fetch booking details for QR ticket display (no auth required)
   @Get(':id/public')
   getPublicDetails(@Param('id') id: string) {
@@ -83,6 +90,16 @@ export class BookingsController {
     @Query('partySize') partySize: string,
   ) {
     return this.bookings.getAvailableTablesForSlot(date, time, parseInt(partySize, 10))
+  }
+
+  // Customer — same table list, requires login only (no role restriction)
+  @UseGuards(JwtAuthGuard)
+  @Get('customer-tables')
+  getAvailableTablesForCustomer(
+    @Query('date') date: string,
+    @Query('partySize') partySize: string,
+  ) {
+    return this.bookings.getTablesForDate(date, parseInt(partySize, 10))
   }
 
   // Staff — all reservable tables for a date + party size (wizard step 3)

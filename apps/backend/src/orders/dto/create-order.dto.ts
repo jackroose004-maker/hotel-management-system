@@ -64,6 +64,11 @@ export class CreateOrderDto {
   @IsOptional()
   contactPhone?: string
 
+  /** If set, order is held as PRE_ORDER and fires to kitchen on guest arrival */
+  @IsString()
+  @IsOptional()
+  bookingId?: string
+
   /** Set CASH for dine-in "pay when leaving" — registers payment in same request */
   @IsEnum(PaymentMethod)
   @IsOptional()

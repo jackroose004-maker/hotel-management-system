@@ -351,7 +351,7 @@ export default function EmailSection({ cfg, set, token }: { cfg: Cfg; set: <K ex
           smtpSecure:       s?.smtpSecure       ?? false,
           smtpUser:         s?.smtpUser         ?? '',
           smtpPass:         s?.smtpPass         ?? '',
-          emailFromName:    s?.emailFromName    ?? '',
+          emailFromName:    s?.emailFromName    || s?.restaurantName || '',
           emailFromAddress: s?.emailFromAddress ?? '',
           emailReplyTo:     s?.emailReplyTo     ?? '',
           supportEmail:     s?.supportEmail     ?? '',

@@ -7,7 +7,7 @@ import {
   Plus, Minus, ShoppingCart, X, ArrowLeft, ArrowRight, Clock,
   CheckCircle, UtensilsCrossed,
   Loader2, Lock, Banknote, Moon, Sun, Heart, Table2, AlertCircle,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Search,
 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -335,6 +335,7 @@ function MenuPageInner() {
   const urlTrack     = searchParams.get('track')     === '1' // from account page Track button
   const urlNew       = searchParams.get('new')       === '1' // from hero "Order Now" — skip redirect
   const fromBooking  = !!urlTableId && !!urlBookingId
+  const fromPreOrder = !!urlBookingId // pre-order from book confirmation — suppress order redirect
   const fromQr       = !!urlQr
 
   const router = useRouter()
@@ -343,6 +344,11 @@ function MenuPageInner() {
   const [categories, setCategories] = useState<Category[]>([])
   const [categoryPages, setCategoryPages] = useState<Record<string, CategoryPageState>>({})
   const [activeCategory, setActiveCategory] = useState('')
+  // ── Server-side search ──
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQ, setSearchQ] = useState('')
+  const [searchResults, setSearchResults] = useState<MenuItem[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
   const pendingScrollCat = useRef<string | null>(null)
   // Single order kept for payment flow only; multi-order tracking uses activeOrders
   const [order, setOrder] = useState<Order | null>(null)
@@ -596,7 +602,7 @@ function MenuPageInner() {
         if (live.length) {
           setActiveOrders(live)
           // Auto-redirect to orders page unless the guest just scanned a QR to order more
-          if (!urlQr && !urlTrack && !urlNew) router.push('/menu/orders')
+          if (!urlQr && !urlTrack && !urlNew && !fromPreOrder) router.push('/menu/orders')
           // Restore table so guest doesn't have to re-select when ordering again
           if (!urlTableId && !urlQr) {
             const storedTableId = localStorage.getItem('almanzil_table_id')
@@ -630,7 +636,7 @@ function MenuPageInner() {
           if (!newOnes.length) return prev
           return [...newOnes, ...prev]
         })
-        if (!urlQr && !urlTrack && !urlNew) router.push('/menu/orders')
+        if (!urlQr && !urlTrack && !urlNew && !fromPreOrder) router.push('/menu/orders')
         // Restore table from the first server order if not already set
         if (!urlTableId && !urlQr) {
           const firstWithTable = serverOrders.find(o => o.table)
@@ -659,7 +665,7 @@ function MenuPageInner() {
           if (!newOnes.length) return prev
           return [...newOnes, ...prev]
         })
-        if (!urlQr && !urlTrack && !urlNew) router.push('/menu/orders')
+        if (!urlQr && !urlTrack && !urlNew && !fromPreOrder) router.push('/menu/orders')
         if (!urlTableId && !urlQr) {
           const firstWithTable = liveMyOrders.find(o => o.table)
           if (firstWithTable?.table) {
@@ -740,6 +746,7 @@ function MenuPageInner() {
       const { data: newOrder } = await api.post('/orders', {
         type: cart.orderType,
         tableId: cart.orderType === 'DINE_IN' ? tableId : hasDineInSession ? tableId : undefined,
+        ...(fromPreOrder && urlBookingId ? { bookingId: urlBookingId } : {}),
         // Staff ordering for a specific guest: pass their sessionId as guestTabToken
         // '__new__' = staff chose "new guest / separate bill" → no token → backend creates fresh session
         ...(isStaff && selectedSessionId && selectedSessionId !== '__new__'
@@ -858,6 +865,24 @@ function MenuPageInner() {
   const categoryPagesRef = useRef(categoryPages)
   categoryPagesRef.current = categoryPages
 
+  // Debounced server-side search — fires 300ms after the user stops typing
+  useEffect(() => {
+    const q = searchQ.trim()
+    if (q.length < 2) { setSearchResults([]); setSearchLoading(false); return }
+    setSearchLoading(true)
+    const t = setTimeout(async () => {
+      try {
+        const r = await api.get(`/menu/items?q=${encodeURIComponent(q)}`)
+        setSearchResults(r.data?.items ?? [])
+      } catch {
+        setSearchResults([])
+      } finally {
+        setSearchLoading(false)
+      }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [searchQ])
+
   const scrollToSection = useCallback((el: HTMLElement) => {
     const headerH = headerRef.current?.getBoundingClientRect().height ?? 110
     const y = el.getBoundingClientRect().top + window.scrollY - headerH - 8
@@ -872,7 +897,8 @@ function MenuPageInner() {
     if (categories.length === 0) return
     const observer = new IntersectionObserver(
       entries => {
-        if (scrollingProgrammatically.current) return
+        // Block observer while programmatically scrolling OR while waiting for a clicked category to load
+        if (scrollingProgrammatically.current || pendingScrollCat.current) return
         // Pick the topmost intersecting section
         let topEntry: IntersectionObserverEntry | null = null
         for (const e of entries) {
@@ -882,36 +908,30 @@ function MenuPageInner() {
         }
         if (topEntry) setActiveCategory(topEntry.target.id.replace('cat-', ''))
       },
-      { root: null, rootMargin: '-25% 0px -60% 0px', threshold: 0 }
+      { root: null, rootMargin: '-10% 0px -85% 0px', threshold: 0 }
     )
     Object.values(sectionRefs.current).forEach(el => { if (el) observer.observe(el) })
     return () => observer.disconnect()
   }, [categories])
 
-  // Lazy-load + infinite scroll for category items
+  // Lazy-load + infinite scroll for category items.
+  // Runs ONCE when the category list is first populated — never re-runs on item loads.
+  // loadCategoryItems and categoryPagesRef are accessed via refs so they don't need to
+  // be in the dependency array (avoids the re-run loop where setCategories → effect reset).
+  const loadCategoryItemsRef = useRef(loadCategoryItems)
+  loadCategoryItemsRef.current = loadCategoryItems
   useEffect(() => {
     if (categories.length === 0) return
-    // Delay activating scroll-based loading so the initial explicit load (first category
-    // or urlOpenItem category) isn't drowned out by all sentinels firing at mount time
-    scrollObserverReady.current = false
+    // Activate scroll-based loading after a short delay so the initial explicit load
+    // (first category) finishes before sentinels can fire.
     const t = setTimeout(() => {
       scrollObserverReady.current = true
-      // Sentinel elements that were already in the viewport during the 800ms guard window
-      // won't re-fire the observer — scan them manually now.
-      categories.forEach(cat => {
-        const el = loadMoreRefs.current[cat.id]
-        if (!el) return
-        const rect = el.getBoundingClientRect()
-        const inView = rect.top < window.innerHeight + 200
-        if (!inView) return
-        const state = categoryPagesRef.current[cat.id]
-        if (state?.loading || state?.loaded) return
-        loadCategoryItems(cat.id)
-      })
     }, 800)
     const observer = new IntersectionObserver(
       entries => {
         if (!scrollObserverReady.current) return
+        // Don't fire while jumping to a clicked category — only load what the user scrolls to
+        if (scrollingProgrammatically.current || pendingScrollCat.current) return
         for (const entry of entries) {
           if (!entry.isIntersecting) continue
           const catId = entry.target.getAttribute('data-cat-load')
@@ -919,9 +939,9 @@ function MenuPageInner() {
           const state = categoryPagesRef.current[catId]
           if (state?.loading) continue
           if (state?.hasMore && state.nextCursor) {
-            loadCategoryItems(catId, state.nextCursor)
+            loadCategoryItemsRef.current(catId, state.nextCursor)
           } else if (!state?.loaded) {
-            loadCategoryItems(catId)
+            loadCategoryItemsRef.current(catId)
           }
         }
       },
@@ -932,7 +952,8 @@ function MenuPageInner() {
       if (el) observer.observe(el)
     })
     return () => { clearTimeout(t); observer.disconnect() }
-  }, [categories, loadCategoryItems])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categories.length === 0 ? 0 : 1])
 
   // Auto-scroll the category pill into view when activeCategory changes
   useEffect(() => {
@@ -962,7 +983,8 @@ function MenuPageInner() {
       if (!el) return
       scrollToSection(el)
     } else {
-      // Mark pending; the useEffect above will scroll once load commits to DOM
+      // Lock the spy immediately so intersecting sections during load don't override the clicked category
+      scrollingProgrammatically.current = true
       pendingScrollCat.current = id
       if (!state?.loading) loadCategoryItems(id)
     }
@@ -1350,14 +1372,16 @@ function MenuPageInner() {
                   return null  // Pure takeaway: card only
                 }
               })()}
-              {/* Card payment */}
-              <button onClick={() => placeOrder(true)}
-                disabled={placingCash || placingCard || !canOrder}
-                className="w-full py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-40 text-gray-300 hover:text-white"
-                style={{ border: '2px solid #2a2a2a', backgroundColor: 'transparent' }}>
-                {placingCard ? <Loader2 size={18} className="animate-spin" /> : <Lock size={16} />}
-                {t(lang,'cart.payByCard')} · AED {cart.total().toFixed(2)}
-              </button>
+              {/* Card payment — hidden when dine-in guest is ordering takeaway (goes on table bill instead) */}
+              {!(cart.orderType === 'TAKEAWAY' && activeOrders.some(o => o.type === 'DINE_IN') && tableId) && (
+                <button onClick={() => placeOrder(true)}
+                  disabled={placingCash || placingCard || !canOrder}
+                  className="w-full py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-40 text-gray-300 hover:text-white"
+                  style={{ border: '2px solid #2a2a2a', backgroundColor: 'transparent' }}>
+                  {placingCard ? <Loader2 size={18} className="animate-spin" /> : <Lock size={16} />}
+                  {t(lang,'cart.payByCard')} · AED {cart.total().toFixed(2)}
+                </button>
+              )}
               {!fromBooking && cart.orderType === 'DINE_IN' && (
                 <p className="text-center text-[11px] text-gray-600">{t(lang, 'cart.mostGuestsPay')}</p>
               )}
@@ -1660,6 +1684,15 @@ function MenuPageInner() {
                 {ar ? 'EN' : 'ع'}
               </button>
             ) : null
+            const searchBtn = (
+              <button onClick={() => { setSearchOpen(v => { if (v) { setSearchQ('') } return !v }) }}
+                className="flex-shrink-0 p-1.5 rounded-full transition-all"
+                style={searchOpen
+                  ? { backgroundColor: 'var(--brand)', color: '#000' }
+                  : { backgroundColor: '#0d0d0d', color: '#888', border: '1px solid #1e1e1e' }}>
+                <Search size={15} />
+              </button>
+            )
             const cartBtn = (
               <button onClick={() => setView('cart')} className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
                 style={totalQty > 0
@@ -1670,10 +1703,26 @@ function MenuPageInner() {
               </button>
             )
             return ar
-              ? <>{cartBtn}{langBtn}{nameEl}{logoEl}{backBtn}</>
-              : <>{backBtn}{logoEl}{nameEl}{langBtn}{cartBtn}</>
+              ? <>{cartBtn}{searchBtn}{langBtn}{nameEl}{logoEl}{backBtn}</>
+              : <>{backBtn}{logoEl}{nameEl}{langBtn}{searchBtn}{cartBtn}</>
           })()}
         </div>
+
+        {/* Search bar */}
+        {searchOpen && (
+          <div className="px-4 sm:px-8 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ backgroundColor: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <Search size={14} className="text-gray-500 flex-shrink-0" />
+              <input autoFocus value={searchQ} onChange={e => setSearchQ(e.target.value)}
+                placeholder={ar ? 'ابحث عن الأطباق والإضافات...' : 'Search dishes, add-ons...'}
+                className="flex-1 bg-transparent text-sm text-white placeholder-gray-600 outline-none" />
+              {searchLoading && <Loader2 size={14} className="animate-spin text-gray-500 flex-shrink-0" />}
+              {searchQ && (
+                <button onClick={() => setSearchQ('')} className="text-gray-500 hover:text-white flex-shrink-0"><X size={14} /></button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Category pill rail */}
         <div ref={catTabsRef} dir={ar ? 'rtl' : 'ltr'}
@@ -1733,8 +1782,36 @@ function MenuPageInner() {
           </section>
         )}
 
-        {/* All categories */}
-        {categories.map((cat) => (
+        {/* Search results — replace category sections while a query is active */}
+        {searchOpen && searchQ.trim().length >= 2 && (
+          <section className="pt-6 px-5 sm:px-8">
+            <div className="flex items-center gap-4 mb-6">
+              <h2 className="text-2xl font-black text-white tracking-tight">
+                {ar ? 'نتائج البحث' : 'Search Results'}
+                <span className="text-sm text-gray-600 font-semibold ml-2">{searchLoading ? '' : `${searchResults.length}`}</span>
+              </h2>
+              <div className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(var(--brand-rgb),0.35), transparent)' }} />
+            </div>
+            {!searchLoading && searchResults.length === 0 && (
+              <div className="text-center py-16 text-gray-600 text-sm">
+                {ar ? `لا توجد نتائج لـ "${searchQ}"` : `No dishes found for "${searchQ}"`}
+              </div>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+              {searchResults.map((item, i) => (
+                <FoodCard key={item.id} item={item} index={i} lang={lang}
+                  qty={cart.items.filter(ci => ci.menuItemId === item.id).reduce((s, ci) => s + ci.quantity, 0)}
+                  isFav={favs.includes(item.id)} isLoggedIn={isLoggedIn}
+                  onToggleFav={() => { setFavs(prev => prev.includes(item.id) ? prev.filter(f => f !== item.id) : [...prev, item.id]); toggleFavOnServer(item.id) }}
+                  onOpen={() => { if (!item.isAvailable) return; const d: Record<string,string> = {}; item.modifierGroups?.forEach(g => { const o = g.options.find(x => x.isDefault) ?? g.options[0]; if (o) d[g.id] = o.id }); setDrawerItem(item); setSelectedOptions(d); setDrawerNotes('') }}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* All categories — hidden while searching */}
+        {!(searchOpen && searchQ.trim().length >= 2) && categories.map((cat) => (
           <section key={cat.id} ref={el => { sectionRefs.current[cat.id] = el }} id={`cat-${cat.id}`}
             className="pt-6 px-5 sm:px-8">
             {/* Section header */}
@@ -1748,8 +1825,10 @@ function MenuPageInner() {
               <div className="flex-1 h-px" style={{ background: 'linear-gradient(to right, rgba(var(--brand-rgb),0.35), transparent)' }} />
             </div>
 
-            {/* Cards grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+            {/* Cards grid — unloaded sections get a placeholder height so multiple
+                empty sections can't stack inside the viewport and mass-fire the lazy loader */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4"
+              style={!categoryPages[cat.id]?.loaded && cat.items.length === 0 ? { minHeight: '320px' } : undefined}>
               {cat.items.map((item, i) => (
                 <FoodCard key={item.id} item={item} index={i} lang={lang}
                   qty={cart.items.filter(ci => ci.menuItemId === item.id).reduce((s, ci) => s + ci.quantity, 0)}

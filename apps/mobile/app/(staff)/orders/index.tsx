@@ -4,6 +4,7 @@ import { AlertCircle, ChefHat, CheckCircle } from 'lucide-react-native'
 import * as ordersApi from '../../../src/api/orders.api'
 import { useOrderEvents } from '../../../src/realtime/useOrderEvents'
 import type { Order, OrderStatus } from '../../../src/api/types'
+import { useBrandStore } from '../../../src/stores/brand.store'
 import { colors } from '../../../src/theme/colors'
 
 // Mirrors the actual mobile view of apps/web/app/staff/orders/page.tsx (it has its own
@@ -27,6 +28,7 @@ const TABS: { key: 'approval' | 'kitchen' | 'ready'; label: string; dot: string;
 ]
 
 export default function OrdersScreen() {
+  const brandColor = useBrandStore((s) => s.brandColor)
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<Record<string, boolean>>({})
@@ -118,7 +120,7 @@ export default function OrdersScreen() {
               <Text style={styles.tableLabel}>
                 {item.type === 'DINE_IN' ? (item.table?.name ?? `Table ${item.table?.tableNumber ?? '—'}`) : `Takeaway #${item.tokenNumber}`}
               </Text>
-              <Text style={styles.total}>AED {item.total.toFixed(2)}</Text>
+              <Text style={[styles.total, { color: brandColor }]}>AED {item.total.toFixed(2)}</Text>
             </View>
             {item.items.map((line) => (
               <Text key={line.id} style={styles.itemLine}>
@@ -126,7 +128,7 @@ export default function OrdersScreen() {
               </Text>
             ))}
             <View style={styles.actions}>
-              <Pressable style={styles.advanceBtn} onPress={() => advance(item)} disabled={busy[item.id]}>
+              <Pressable style={[styles.advanceBtn, { backgroundColor: brandColor }]} onPress={() => advance(item)} disabled={busy[item.id]}>
                 <Text style={styles.advanceBtnText}>{busy[item.id] ? '…' : NEXT_LABEL[item.status]}</Text>
               </Pressable>
               {item.status === 'PENDING' && (
@@ -154,11 +156,11 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.cardBg, borderRadius: 14, borderWidth: 1, borderColor: colors.cardBorder, padding: 14, gap: 6 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   tableLabel: { fontWeight: '800', fontSize: 15, color: colors.textPrimary },
-  total: { fontWeight: '700', color: colors.brandDark, fontSize: 14 },
+  total: { fontWeight: '700', fontSize: 14 },
   itemLine: { fontSize: 13, color: colors.textMuted },
   actions: { flexDirection: 'row', gap: 8, marginTop: 6 },
-  advanceBtn: { flex: 1, backgroundColor: colors.brand, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
-  advanceBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  advanceBtn: { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  advanceBtnText: { color: '#000', fontWeight: '700', fontSize: 12 },
   cancelBtn: { paddingHorizontal: 14, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.mutedBg },
   cancelBtnText: { color: colors.status.danger.fg, fontWeight: '700', fontSize: 12 },
 })

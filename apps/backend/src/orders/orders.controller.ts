@@ -79,15 +79,15 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'STAFF')
   @Get('closed-bills-today')
-  getClosedBillsToday() {
-    return this.orders.getClosedBillsToday()
+  getClosedBillsToday(@Query('date') date?: string) {
+    return this.orders.getClosedBillsToday(date)
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'STAFF')
   @Get('takeaway-today')
-  getTakeawayBillsToday() {
-    return this.orders.getTakeawayBillsToday()
+  getTakeawayBillsToday(@Query('date') date?: string) {
+    return this.orders.getTakeawayBillsToday(date)
   }
 
   // Claim guest orders: after sign-in, link previously anonymous orders to this user
@@ -124,6 +124,13 @@ export class OrdersController {
   @Get('session/:sessionId/receipt')
   getSessionReceipt(@Param('sessionId') sessionId: string) {
     return this.orders.getSessionReceipt(sessionId)
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post('session/:sessionId/convert-to-takeaway')
+  convertToTakeaway(@Param('sessionId') sessionId: string) {
+    return this.orders.convertSessionToTakeaway(sessionId)
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

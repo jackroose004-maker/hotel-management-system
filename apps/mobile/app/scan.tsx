@@ -7,10 +7,12 @@ import { startNewTableSession } from '../src/stores/guestSession.store'
 import { useCartStore } from '../src/stores/cart.store'
 import { extractQrCode } from '../src/utils/qr'
 import { Button } from '../src/components/Button'
+import { useBrandStore } from '../src/stores/brand.store'
 import { colors } from '../src/theme/colors'
 
 export default function ScanScreen() {
   const router = useRouter()
+  const brandColor = useBrandStore((s) => s.brandColor)
   const [permission, requestPermission] = useCameraPermissions()
   const [scanned, setScanned] = useState(false)
   const [devCode, setDevCode] = useState('')
@@ -60,7 +62,7 @@ export default function ScanScreen() {
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
         onBarcodeScanned={scanned ? undefined : handleScan}
       />
-      <View style={styles.frame} />
+      <View style={[styles.frame, { borderColor: brandColor }]} />
       <Text style={styles.hint}>Point your camera at the QR code on your table</Text>
 
       {__DEV__ && (
@@ -91,7 +93,6 @@ const styles = StyleSheet.create({
     width: '70%',
     height: '30%',
     borderWidth: 3,
-    borderColor: colors.brand,
     borderRadius: 16,
   },
   hint: { position: 'absolute', bottom: 40, alignSelf: 'center', color: '#fff', fontSize: 14 },

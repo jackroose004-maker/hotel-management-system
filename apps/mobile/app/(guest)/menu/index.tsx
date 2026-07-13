@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, SectionList, StyleSheet, Text, View } from 'react-native'
 import { Image } from 'expo-image'
-import { ChevronLeft, Clock, Heart, ShoppingCart } from 'lucide-react-native'
+import { ChevronLeft, Clock, Plus, ShoppingBag } from 'lucide-react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as menuApi from '../../../src/api/menu.api'
@@ -10,33 +10,28 @@ import { useBrandStore, hexToRgbString } from '../../../src/stores/brand.store'
 import type { MenuCategory, MenuItem } from '../../../src/api/types'
 import { order } from '../../../src/theme/colors'
 
-// Mirrors the ACTUAL mobile web menu (apps/web/app/menu/page.tsx): one continuous scroll
-// through every category as a labeled section (not a tab-filtered single-category view,
-// which is what this screen was before — the category pill rail just jumps you to that
-// section, all categories stay mounted and scrollable). All items are fetched once on
-// mount instead of on-demand per pill tap, which also fixes the jank from before: tapping
-// a pill used to trigger a fresh network fetch + re-render every time.
-function chunkPairs<T>(arr: T[]): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < arr.length; i += 2) out.push(arr.slice(i, i + 2))
-  return out
-}
-
 interface Section {
   title: string
   id: string
-  data: MenuItem[][] // rows of up to 2 items
+  data: MenuItem[]
 }
 
+// Compact row-card menu — a native food-delivery pattern (thumbnail + name + one-tap add),
+// not the wide image-card grid the web version uses. Same category-jump / continuous-scroll
+// structure as before, restyled for a phone-native feel. Every accent (active chip, price
+// text, quick-add circle) reads brand.brandColor live — never a static hex — so a brand
+// color change in staff settings shows up here immediately.
 export default function MenuScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const brand = useBrandStore()
-  const listRef = useRef<SectionList<MenuItem[], Section>>(null)
+  const brandRgb = hexToRgbString(brand.brandColor)
+  const listRef = useRef<SectionList<MenuItem, Section>>(null)
   const [categories, setCategories] = useState<MenuCategory[]>([])
-  const [itemsByCategory, setItemsByCategory] = useState<Record<string, MenuItem[]>>({});
+  const [itemsByCategory, setItemsByCategory] = useState<Record<string, MenuItem[]>>({})
   const [loading, setLoading] = useState(true)
-  const { items: cartItems } = useCartStore()
+  const [activeCategory, setActiveCategory] = useState<string | undefined>(undefined)
+  const { items: cartItems, addItem } = useCartStore()
   const cartCount = cartItems.reduce((n, i) => n + i.quantity, 0)
   const cartTotal = cartItems.reduce((s, i) => s + i.price * i.quantity, 0)
 
@@ -45,15 +40,13 @@ export default function MenuScreen() {
     try {
       const cats = await menuApi.getCategories()
       setCategories(cats)
-      // Fetch every category's items in parallel once — a single restaurant menu is small
-      // enough (a few dozen to ~100 items total) that this is one fast burst of requests
-      // instead of a fetch-on-every-tap loop.
       const results = await Promise.all(cats.map((c) => menuApi.getCategoryItems(c.id)))
       const map: Record<string, MenuItem[]> = {}
       cats.forEach((c, i) => {
         map[c.id] = results[i].items
       })
       setItemsByCategory(map)
+      if (cats.length) setActiveCategory(cats[0].id)
     } finally {
       setLoading(false)
     }
@@ -67,58 +60,57 @@ export default function MenuScreen() {
     () =>
       categories
         .filter((c) => (itemsByCategory[c.id]?.length ?? 0) > 0)
-        .map((c) => ({ title: c.name, id: c.id, data: chunkPairs(itemsByCategory[c.id] ?? []) })),
+        .map((c) => ({ title: c.name, id: c.id, data: itemsByCategory[c.id] ?? [] })),
     [categories, itemsByCategory],
   )
 
   function jumpToCategory(categoryId: string) {
     const sectionIndex = sections.findIndex((s) => s.id === categoryId)
     if (sectionIndex === -1) return
+    setActiveCategory(categoryId)
     listRef.current?.scrollToLocation({ sectionIndex, itemIndex: 0, viewOffset: 0, animated: true })
   }
 
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: { section?: Section }[] }) => {
+    const first = viewableItems.find((v) => v.section)?.section
+    if (first) setActiveCategory(first.id)
+  }).current
+
   return (
     <View style={styles.container}>
-      {/* Sticky header: brand + cart pill */}
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <View style={styles.headerRow}>
-          {/* Explicit back-chevron icon, not just tappable text — plain text alone isn't a
-              strong enough "this is a button" signal, which is why it wasn't discoverable. */}
           <Pressable style={styles.homeLink} onPress={() => router.push('/')} hitSlop={8}>
             <ChevronLeft size={20} color={order.textPrimary} />
-            <View>
-              <Text style={styles.brandName}>{brand.name.toUpperCase()}</Text>
-              <Text style={[styles.brandTagline, { color: brand.brandColor }]}>{brand.tagline || 'Restaurant'}</Text>
-            </View>
+            <Text style={styles.brandName}>{brand.name}</Text>
           </Pressable>
           <Pressable
             style={[styles.cartPill, cartCount > 0 && { backgroundColor: brand.brandColor, borderColor: brand.brandColor }]}
             onPress={() => router.push('/(guest)/cart')}
           >
-            <ShoppingCart size={15} color={cartCount > 0 ? '#000' : order.textSecondary} />
-            {cartCount > 0 && (
-              <Text style={styles.cartPillText}>
-                {cartCount} · AED {cartTotal.toFixed(0)}
-              </Text>
-            )}
+            <ShoppingBag size={15} color={cartCount > 0 ? '#000' : order.textSecondary} />
+            {cartCount > 0 && <Text style={styles.cartPillText}>{cartCount}</Text>}
           </Pressable>
         </View>
 
-        {/* Category pill rail — jumps to the section, does not filter. `style={{ flexGrow: 0 }}`
-            keeps this ScrollView's own bounding box from being miscalculated inside the
-            header (same class of issue as the hero screen's missing ScrollView style —
-            see app/index.tsx), which is what made it feel unresponsive/inconsistent. */}
         <ScrollView
           horizontal
           style={styles.pillRailScroll}
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.pillRail}
         >
-          {categories.map((c) => (
-            <Pressable key={c.id} onPress={() => jumpToCategory(c.id)} style={styles.pill}>
-              <Text style={styles.pillText}>{c.name}</Text>
-            </Pressable>
-          ))}
+          {categories.map((c) => {
+            const isActive = c.id === activeCategory
+            return (
+              <Pressable
+                key={c.id}
+                onPress={() => jumpToCategory(c.id)}
+                style={[styles.pill, isActive && { backgroundColor: brand.brandColor, borderColor: brand.brandColor }]}
+              >
+                <Text style={[styles.pillText, isActive && styles.pillTextActive]}>{c.name}</Text>
+              </Pressable>
+            )
+          })}
         </ScrollView>
       </View>
 
@@ -128,104 +120,104 @@ export default function MenuScreen() {
         <SectionList
           ref={listRef}
           sections={sections}
-          keyExtractor={(row, idx) => row.map((i) => i.id).join('-') || String(idx)}
-          contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 140 }}
           stickySectionHeadersEnabled={false}
           onScrollToIndexFailed={() => {}}
-          decelerationRate="normal"
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={{ itemVisiblePercentThreshold: 30 }}
           removeClippedSubviews
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          windowSize={7}
-          renderSectionHeader={({ section }) => (
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{section.title}</Text>
-              <Text style={styles.sectionCount}>{(itemsByCategory[section.id] ?? []).length} dishes</Text>
-            </View>
-          )}
-          renderItem={({ item: row }) => (
-            <View style={styles.row}>
-              {row.map((item) => (
-                <FoodCard
-                  key={item.id}
-                  item={item}
-                  qty={cartItems.filter((ci) => ci.menuItemId === item.id).reduce((s, ci) => s + ci.quantity, 0)}
-                  onPress={() => router.push(`/(guest)/menu/item/${item.id}`)}
-                />
-              ))}
-              {row.length === 1 && <View style={{ flex: 1 }} />}
-            </View>
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={9}
+          renderSectionHeader={({ section }) => <Text style={styles.sectionTitle}>{section.title}</Text>}
+          renderItem={({ item }) => (
+            <FoodRow
+              item={item}
+              qty={cartItems.filter((ci) => ci.menuItemId === item.id).reduce((s, ci) => s + ci.quantity, 0)}
+              brandColor={brand.brandColor}
+              brandRgb={brandRgb}
+              onPress={() => router.push(`/(guest)/menu/item/${item.id}`)}
+              onQuickAdd={() => {
+                if (item.modifierGroups?.length) {
+                  router.push(`/(guest)/menu/item/${item.id}`)
+                  return
+                }
+                addItem({ menuItemId: item.id, name: item.name, basePrice: item.price, modifiers: [], prepTimeMins: item.prepTimeMins })
+              }}
+            />
           )}
         />
       )}
 
       {cartCount > 0 && (
-        <Pressable style={[styles.cartBar, { backgroundColor: brand.brandColor }]} onPress={() => router.push('/(guest)/cart')}>
+        <Pressable
+          style={[styles.cartBar, { backgroundColor: brand.brandColor, bottom: insets.bottom + 84 }]}
+          onPress={() => router.push('/(guest)/cart')}
+        >
           <Text style={styles.cartBarText}>
-            View Cart · {cartCount} item{cartCount === 1 ? '' : 's'} · AED {cartTotal.toFixed(2)}
+            View cart · {cartCount} item{cartCount === 1 ? '' : 's'}
           </Text>
+          <Text style={styles.cartBarTotal}>AED {cartTotal.toFixed(2)}</Text>
         </Pressable>
       )}
     </View>
   )
 }
 
-function FoodCard({ item, qty, onPress }: { item: MenuItem; qty: number; onPress: () => void }) {
-  const brandColor = useBrandStore((s) => s.brandColor)
-  const brandRgb = hexToRgbString(brandColor)
+function FoodRow({
+  item,
+  qty,
+  brandColor,
+  brandRgb,
+  onPress,
+  onQuickAdd,
+}: {
+  item: MenuItem
+  qty: number
+  brandColor: string
+  brandRgb: string
+  onPress: () => void
+  onQuickAdd: () => void
+}) {
   const vatInclusive = item.price * 1.05
-  const modifierPreview = item.modifierGroups?.flatMap((g) => g.options).slice(0, 3) ?? []
 
   return (
     <Pressable
-      style={[styles.card, qty > 0 && { backgroundColor: `rgba(${brandRgb},0.06)`, borderColor: `rgba(${brandRgb},0.4)` }]}
+      style={[styles.row, qty > 0 && { backgroundColor: `rgba(${brandRgb},0.06)`, borderColor: `rgba(${brandRgb},0.35)` }]}
       onPress={onPress}
       disabled={!item.isAvailable}
     >
-      <View style={styles.cardImageWrap}>
-        <Image source={{ uri: item.imageUrl }} style={styles.cardImage} contentFit="cover" transition={150} />
-        <Pressable style={styles.favHeart} hitSlop={8}>
-          <Heart size={13} color="#fff" />
-        </Pressable>
-        {qty > 0 && (
-          <View style={[styles.qtyBadge, { backgroundColor: brandColor }]}>
-            <Text style={styles.qtyBadgeText}>{qty}</Text>
-          </View>
-        )}
+      <View style={styles.thumbWrap}>
+        <Image source={{ uri: item.imageUrl }} style={styles.thumb} contentFit="cover" transition={150} />
         {!item.isAvailable && (
           <View style={styles.unavailableOverlay}>
-            <Text style={styles.unavailableText}>Unavailable</Text>
+            <Text style={styles.unavailableText}>Sold out</Text>
           </View>
         )}
-        <View style={styles.cardPriceRow}>
-          <Text style={[styles.cardPrice, { color: brandColor }]}>AED {vatInclusive.toFixed(2)}</Text>
-          <View style={styles.prepTime}>
-            <Clock size={9} color="rgba(255,255,255,0.75)" />
-            <Text style={styles.prepTimeText}>{item.prepTimeMins}m</Text>
-          </View>
+      </View>
+
+      <View style={styles.rowInfo}>
+        <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+        {item.description ? (
+          <Text style={styles.rowDesc} numberOfLines={1}>{item.description}</Text>
+        ) : null}
+        <View style={styles.rowMeta}>
+          <Clock size={10} color={order.textFaint} />
+          <Text style={styles.rowMetaText}>{item.prepTimeMins} min</Text>
         </View>
       </View>
 
-      <Text style={styles.cardName} numberOfLines={1}>
-        {item.name}
-      </Text>
-      {item.description ? (
-        <Text style={styles.cardDesc} numberOfLines={2}>
-          {item.description}
-        </Text>
-      ) : null}
-
-      {modifierPreview.length > 0 && (
-        <View style={styles.modTagRow}>
-          {modifierPreview.map((opt) => (
-            <View key={opt.id} style={styles.modTag}>
-              <Text style={styles.modTagText} numberOfLines={1}>
-                {opt.name}
-              </Text>
-            </View>
-          ))}
-        </View>
-      )}
+      <View style={styles.rowRight}>
+        <Text style={[styles.rowPrice, { color: brandColor }]}>AED {vatInclusive.toFixed(0)}</Text>
+        <Pressable
+          style={[styles.addCircle, { backgroundColor: qty > 0 ? brandColor : order.pillBg, borderColor: qty > 0 ? brandColor : order.border }]}
+          onPress={onQuickAdd}
+          hitSlop={8}
+        >
+          {qty > 0 ? <Text style={styles.addCircleQty}>{qty}</Text> : <Plus size={13} color={order.textSecondary} />}
+        </Pressable>
+      </View>
     </Pressable>
   )
 }
@@ -233,37 +225,34 @@ function FoodCard({ item, qty, onPress }: { item: MenuItem; qty: number; onPress
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: order.pageBg },
   header: { backgroundColor: order.headerBg, borderBottomWidth: 1, borderBottomColor: order.borderFaint },
-  headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 10, gap: 10 },
-  homeLink: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 2 },
-  brandName: { color: order.textPrimary, fontWeight: '900', fontSize: 14, letterSpacing: 0.5 },
-  brandTagline: { fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 10, gap: 10 },
+  homeLink: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  brandName: { color: order.textPrimary, fontWeight: '500', fontSize: 16 },
   cartPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: order.pillBg, borderWidth: 1, borderColor: order.border },
-  cartPillText: { color: '#000', fontWeight: '800', fontSize: 12 },
+  cartPillText: { color: '#000', fontWeight: '500', fontSize: 12 },
   pillRailScroll: { flexGrow: 0, flexShrink: 0 },
   pillRail: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
-  pill: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  pillText: { color: order.textMuted, fontWeight: '700', fontSize: 11 },
-  sectionHeader: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 20, marginBottom: 12 },
-  sectionTitle: { color: order.textPrimary, fontWeight: '900', fontSize: 19 },
-  sectionCount: { color: order.textFaint, fontSize: 12 },
-  row: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  card: { flex: 1, borderRadius: 16, overflow: 'hidden', backgroundColor: order.cardBg, borderWidth: 1, borderColor: order.border, paddingBottom: 10 },
-  cardImageWrap: { height: 110, width: '100%', position: 'relative' },
-  cardImage: { width: '100%', height: '100%' },
-  favHeart: { position: 'absolute', top: 6, left: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
-  qtyBadge: { position: 'absolute', top: 6, right: 6, minWidth: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
-  qtyBadgeText: { color: '#000', fontWeight: '900', fontSize: 11 },
-  unavailableOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' },
-  unavailableText: { color: '#fff', fontWeight: '800', fontSize: 11, backgroundColor: 'rgba(239,68,68,0.9)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  cardPriceRow: { position: 'absolute', left: 8, right: 8, bottom: 6, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardPrice: { fontWeight: '900', fontSize: 12, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: 'hidden' },
-  prepTime: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6 },
-  prepTimeText: { color: 'rgba(255,255,255,0.85)', fontSize: 9 },
-  cardName: { color: order.textPrimary, fontWeight: '800', fontSize: 13, paddingHorizontal: 10, paddingTop: 8 },
-  cardDesc: { color: order.textMuted, fontSize: 11, paddingHorizontal: 10, marginTop: 3, lineHeight: 15 },
-  modTagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, paddingHorizontal: 10, marginTop: 6 },
-  modTag: { backgroundColor: order.pillBg, borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2, maxWidth: '100%' },
-  modTagText: { color: order.textMuted, fontSize: 9, fontWeight: '600' },
-  cartBar: { position: 'absolute', bottom: 16, left: 16, right: 16, borderRadius: 16, paddingVertical: 15, alignItems: 'center' },
-  cartBarText: { color: '#000', fontWeight: '800', fontSize: 14 },
+  pill: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, backgroundColor: order.pillBg, borderWidth: 1, borderColor: order.border },
+  pillText: { color: order.textMuted, fontWeight: '500', fontSize: 12 },
+  pillTextActive: { color: '#000' },
+  sectionTitle: { color: order.textPrimary, fontWeight: '500', fontSize: 17, marginTop: 20, marginBottom: 10 },
+
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, padding: 8, marginBottom: 8, backgroundColor: order.cardBg, borderWidth: 1, borderColor: order.border },
+  thumbWrap: { width: 64, height: 64, borderRadius: 12, overflow: 'hidden', backgroundColor: order.pillBg },
+  thumb: { width: '100%', height: '100%' },
+  unavailableOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center' },
+  unavailableText: { color: '#fff', fontSize: 8, fontWeight: '500' },
+  rowInfo: { flex: 1, minWidth: 0 },
+  rowName: { color: order.textPrimary, fontWeight: '500', fontSize: 14 },
+  rowDesc: { color: order.textMuted, fontSize: 11, marginTop: 2 },
+  rowMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 5 },
+  rowMetaText: { color: order.textFaint, fontSize: 10 },
+  rowRight: { alignItems: 'flex-end', gap: 8 },
+  rowPrice: { fontWeight: '500', fontSize: 13 },
+  addCircle: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  addCircleQty: { color: '#000', fontWeight: '500', fontSize: 12 },
+
+  cartBar: { position: 'absolute', left: 16, right: 16, borderRadius: 16, paddingVertical: 14, paddingHorizontal: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  cartBarText: { color: '#000', fontWeight: '500', fontSize: 13 },
+  cartBarTotal: { color: '#000', fontWeight: '500', fontSize: 13 },
 })

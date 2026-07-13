@@ -5,7 +5,7 @@ import { useFocusEffect } from 'expo-router'
 import { Receipt, Banknote, CreditCard, History } from 'lucide-react-native'
 import * as ordersApi from '../../../src/api/orders.api'
 import * as paymentsApi from '../../../src/api/payments.api'
-import { useBrandStore } from '../../../src/stores/brand.store'
+import { useBrandStore, hexToRgbString } from '../../../src/stores/brand.store'
 import { colors } from '../../../src/theme/colors'
 
 // Mirrors apps/web/app/staff/bills/page.tsx: this page is a single scroll of stacked
@@ -15,6 +15,7 @@ import { colors } from '../../../src/theme/colors'
 // that's a lower-frequency admin action, same descope rationale as Menu Admin/Analytics.
 export default function BillsScreen() {
   const brandColor = useBrandStore((s) => s.brandColor)
+  const brandRgb = hexToRgbString(brandColor)
   const [active, setActive] = useState<any[]>([])
   const [closed, setClosed] = useState<any[]>([])
   const [takeaway, setTakeaway] = useState<any[]>([])
@@ -77,15 +78,15 @@ export default function BillsScreen() {
           <Receipt size={14} color={brandColor} />
           <Text style={styles.sectionTitle}>Active Bills</Text>
           {active.length > 0 && (
-            <View style={[styles.countBadge, { backgroundColor: colors.brandLight }]}>
-              <Text style={[styles.countBadgeText, { color: colors.brandDark }]}>{active.length}</Text>
+            <View style={[styles.countBadge, { backgroundColor: `rgba(${brandRgb},0.12)` }]}>
+              <Text style={[styles.countBadgeText, { color: brandColor }]}>{active.length}</Text>
             </View>
           )}
         </View>
 
         {active.length === 0 ? (
           <View style={styles.emptyCard}>
-            <View style={[styles.emptyIcon, { backgroundColor: colors.brandLight }]}>
+            <View style={[styles.emptyIcon, { backgroundColor: `rgba(${brandRgb},0.12)` }]}>
               <Receipt size={20} color={brandColor} />
             </View>
             <Text style={styles.emptyTitle}>No active bills right now</Text>
@@ -101,7 +102,7 @@ export default function BillsScreen() {
                     {item.tabs.length} tab{item.tabs.length === 1 ? '' : 's'}
                   </Text>
                 </View>
-                <Text style={[styles.total, { color: colors.brandDark }]}>AED {Number(item.combined?.total ?? 0).toFixed(2)}</Text>
+                <Text style={[styles.total, { color: brandColor }]}>AED {Number(item.combined?.total ?? 0).toFixed(2)}</Text>
                 <View style={styles.actions}>
                   <Pressable
                     style={[styles.settleBtn, { backgroundColor: brandColor }]}

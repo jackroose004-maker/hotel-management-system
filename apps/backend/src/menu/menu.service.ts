@@ -56,6 +56,32 @@ export class MenuService {
     }
   }
 
+  // Server-side search: matches item name/description (EN+AR), category name,
+  // and modifier group/option names (e.g. searching "extra cheese" finds items having that option)
+  async searchItems(q: string, limit = 20) {
+    const query = q.trim()
+    if (query.length < 2) return { items: [] }
+    const take = Math.min(Math.max(limit, 1), 50)
+    const items = await this.prisma.menuItem.findMany({
+      where: {
+        isAvailable: true,
+        OR: [
+          { name: { contains: query, mode: 'insensitive' } },
+          { nameAr: { contains: query, mode: 'insensitive' } },
+          { description: { contains: query, mode: 'insensitive' } },
+          { descriptionAr: { contains: query, mode: 'insensitive' } },
+          { category: { name: { contains: query, mode: 'insensitive' } } },
+          { modifierGroups: { some: { name: { contains: query, mode: 'insensitive' } } } },
+          { modifierGroups: { some: { options: { some: { name: { contains: query, mode: 'insensitive' } } } } } },
+        ],
+      },
+      take,
+      orderBy: [{ name: 'asc' }],
+      include: { category: { select: { id: true, name: true, nameAr: true } }, ...this.itemInclude },
+    })
+    return { items }
+  }
+
   getAllCategories() {
     return this.prisma.menuCategory.findMany({ orderBy: { sortOrder: 'asc' } })
   }

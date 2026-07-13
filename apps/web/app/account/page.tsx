@@ -382,7 +382,7 @@ function AccountContent() {
     try {
       const r = await authFetch(`${API}/bookings/${id}/cancel`, { method: 'POST' })
       if (!r.ok) { const d = await r.json(); toast.error((d?.data ?? d)?.message ?? 'Cannot cancel') }
-      else { toast.success('Booking cancelled'); setBookingsLoaded(false); loadBookings() }
+      else { toast.success('Booking cancelled'); setBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'CANCELLED' } : b)) }
     } finally { setCancellingId(null) }
   }
 

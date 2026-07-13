@@ -19,7 +19,7 @@ interface Order {
   isRush?: boolean
   table?: { id: string; tableNumber: number; name?: string }
   user?: { name: string } | null
-  items: { quantity: number; unitPrice: number; notes?: string | null; menuItem: { id: string; name: string; prepTimeMins?: number } }[]
+  items: { quantity: number; unitPrice: number; notes?: string | null; menuItem: { id: string; name: string; prepTimeMins?: number }; modifiers?: { name: string; priceAdd: number }[] }[]
 }
 
 const NEXT_STATUS: Record<string, string>  = { PENDING: 'ACCEPTED', ACCEPTED: 'PREPARING', PREPARING: 'READY', READY: 'DELIVERED' }
@@ -183,9 +183,16 @@ function OrderCard({ order, onAdvance, onCancel, onVoid, onAddItems, onRush, onR
                       <span className="text-[11px] font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>{item.menuItem.name}</span>
                     </div>
                     <span className="text-[10px] flex-shrink-0 tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                      AED {(item.quantity * Number(item.unitPrice)).toFixed(2)}
+                      AED {(item.quantity * (Number(item.unitPrice) + (item.modifiers ?? []).reduce((s, m) => s + Number(m.priceAdd), 0))).toFixed(2)}
                     </span>
                   </div>
+                  {item.modifiers && item.modifiers.length > 0 && (
+                    <div className="mt-0.5 ml-4 space-y-0.5">
+                      {item.modifiers.map((m, mi) => (
+                        <p key={mi} className="text-[10px] text-blue-400">+ {m.name}</p>
+                      ))}
+                    </div>
+                  )}
                   {item.notes && (
                     <div className="mt-1 rounded px-2 py-1"
                       style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.25)' }}>
@@ -345,7 +352,7 @@ function CompletedCard({ order }: { order: Order }) {
           {order.items.map((item, i) => (
             <div key={i} className="flex justify-between text-xs">
               <span style={{ color: 'var(--text-muted)' }}><span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.quantity}×</span> {item.menuItem.name}</span>
-              <span style={{ color: 'var(--text-muted)' }}>{(item.quantity * Number(item.unitPrice)).toFixed(2)}</span>
+              <span style={{ color: 'var(--text-muted)' }}>{(item.quantity * (Number(item.unitPrice) + (item.modifiers ?? []).reduce((s, m) => s + Number(m.priceAdd), 0))).toFixed(2)}</span>
             </div>
           ))}
           <div className="flex justify-between text-xs pt-2 mt-1" style={{ borderTop: '1px solid var(--card-border)' }}>
@@ -1264,7 +1271,9 @@ function OrdersPageInner() {
     setBusy(p => ({ ...p, [id]: true }))
     try {
       await api.patch(`/orders/${id}/status`, { status })
-      setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o))
+      // No optimistic update — socket events (order:updated / order:ready) handle state.
+      // Optimistic update caused a race: PREPARING socket arrived before the HTTP response
+      // resolved, so the optimistic READY write would overwrite the correct PREPARING state.
     } finally { setBusy(p => ({ ...p, [id]: false })) }
   }
 

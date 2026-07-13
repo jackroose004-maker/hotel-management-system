@@ -20,7 +20,7 @@ interface BillOrder {
   id: string; status: string; paymentStatus: string; paymentMethod?: string
   createdAt: string; subtotal: number; vatAmount: number; total: number
   user?: { name: string } | null
-  items: { quantity: number; unitPrice: number; menuItem: { name: string } }[]
+  items: { quantity: number; unitPrice: number; menuItem: { name: string }; modifiers?: { name: string; priceAdd: number }[] }[]
 }
 interface BillSummary { subtotal: number; vatAmount: number; discount?: number; tipAmount?: number; total: number; allPaid: boolean; anyUnpaid: boolean; orderCount: number; settledBy?: { name: string } | null; settledAt?: string | null }
 interface Tab { sessionId: string; orders: BillOrder[]; summary: BillSummary }
@@ -622,6 +622,7 @@ function TabRow({ tab, idx, tableName, onSettle, onTransferDone, busy, isManager
   const [showSplit, setShowSplit] = useState(false)
   const [settleError, setSettleError] = useState('')
   const [showTransfer, setShowTransfer] = useState(false)
+  const [converting, setConverting] = useState(false)
   const label = tabLabel(tab, idx)
   const isMember = !!tab.orders.find(o => o.user)
   const total = Number(tab.summary.total)
@@ -629,14 +630,30 @@ function TabRow({ tab, idx, tableName, onSettle, onTransferDone, busy, isManager
   const hasUnapproved = tab.orders.some(
     o => ['PENDING', 'ACCEPTED', 'PREPARING'].includes(o.status) && o.paymentStatus !== 'PAID'
   )
+  const isDineIn = tab.orders.some(o => o.type === 'DINE_IN' && o.paymentStatus === 'UNPAID')
 
-  const itemMap = new Map<string, { name: string; qty: number; price: number }>()
+  async function convertToTakeaway() {
+    if (!tab.sessionId) return
+    setConverting(true)
+    try {
+      await api.post(`/orders/session/${tab.sessionId}/convert-to-takeaway`)
+      notify.success('Converted to takeaway — bill stays open until settled')
+      onTransferDone() // refresh so bill shows updated type
+    } catch (e: any) {
+      notify.error(e?.response?.data?.message ?? 'Could not convert')
+    } finally { setConverting(false) }
+  }
+
+  const itemMap = new Map<string, { name: string; qty: number; price: number; modifiers: { name: string; priceAdd: number }[] }>()
   for (const o of tab.orders) {
     for (const i of o.items) {
-      const k = i.menuItem.name
+      const mods = (i.modifiers ?? []).sort((a, b) => a.name.localeCompare(b.name))
+      const modExtra = mods.reduce((s, m) => s + Number(m.priceAdd), 0)
+      const linePrice = (Number(i.unitPrice) + modExtra) * i.quantity
+      const k = i.menuItem.name + (mods.length ? '|' + mods.map(m => m.name).join(',') : '')
       const existing = itemMap.get(k)
-      if (existing) { existing.qty += i.quantity; existing.price += i.quantity * Number(i.unitPrice) }
-      else itemMap.set(k, { name: k, qty: i.quantity, price: i.quantity * Number(i.unitPrice) })
+      if (existing) { existing.qty += i.quantity; existing.price += linePrice }
+      else itemMap.set(k, { name: i.menuItem.name, qty: i.quantity, price: linePrice, modifiers: mods })
     }
   }
   const items = [...itemMap.values()]
@@ -679,11 +696,22 @@ function TabRow({ tab, idx, tableName, onSettle, onTransferDone, busy, isManager
       {expanded && (
         <div className="px-3 py-2.5 space-y-1.5" style={{ backgroundColor: 'var(--card-bg)' }}>
           {items.map((item, i) => (
-            <div key={i} className="flex justify-between text-xs">
-              <span className="text-gray-600 dark:text-gray-300">
-                <span className="font-semibold">{item.qty}×</span> {item.name}
-              </span>
-              <span className="text-gray-400">AED {item.price.toFixed(2)}</span>
+            <div key={i} className="text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold">{item.qty}×</span> {item.name}
+                </span>
+                <span className="text-gray-400">AED {item.price.toFixed(2)}</span>
+              </div>
+              {item.modifiers.length > 0 && (
+                <div className="ml-4 mt-0.5 space-y-0.5">
+                  {item.modifiers.map((m, mi) => (
+                    <p key={mi} className="text-[10px] text-blue-500 dark:text-blue-400">
+                      + {m.name}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
 
@@ -701,6 +729,13 @@ function TabRow({ tab, idx, tableName, onSettle, onTransferDone, busy, isManager
 
           <TotalsBlock subtotal={Number(tab.summary.subtotal)} vat={Number(tab.summary.vatAmount)} total={total} />
 
+          {isDineIn && (
+            <button onClick={convertToTakeaway} disabled={converting}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors hover:bg-[var(--muted-bg)] disabled:opacity-50 mb-1"
+              style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+              <Package size={11} /> {converting ? 'Converting…' : 'Convert to Takeaway'}
+            </button>
+          )}
           <div className="flex items-center gap-2 pt-1">
             {!tab.summary.allPaid ? (
               <>
@@ -895,14 +930,16 @@ function ClosedSessionCard({ s, onRefund }: { s: ClosedSession; onRefund: () => 
   const tableName = s.table.name ?? `Table ${s.table.tableNumber}`
   const guestName = s.orders.find(o => o.user)?.user?.name?.split(' ')[0] ?? 'Guest'
 
-  // Aggregate items across all orders
-  const itemMap = new Map<string, { name: string; qty: number; price: number }>()
+  const itemMap = new Map<string, { name: string; qty: number; price: number; modifiers: { name: string; priceAdd: number }[] }>()
   for (const o of s.orders) {
     for (const i of o.items) {
-      const k = i.menuItem.name
+      const mods = (i.modifiers ?? []).sort((a, b) => a.name.localeCompare(b.name))
+      const modExtra = mods.reduce((s, m) => s + Number(m.priceAdd), 0)
+      const linePrice = (Number(i.unitPrice) + modExtra) * i.quantity
+      const k = i.menuItem.name + (mods.length ? '|' + mods.map(m => m.name).join(',') : '')
       const ex = itemMap.get(k)
-      if (ex) { ex.qty += i.quantity; ex.price += i.quantity * Number(i.unitPrice) }
-      else itemMap.set(k, { name: k, qty: i.quantity, price: i.quantity * Number(i.unitPrice) })
+      if (ex) { ex.qty += i.quantity; ex.price += linePrice }
+      else itemMap.set(k, { name: i.menuItem.name, qty: i.quantity, price: linePrice, modifiers: mods })
     }
   }
   const items = [...itemMap.values()]
@@ -950,14 +987,15 @@ function ClosedSessionCard({ s, onRefund }: { s: ClosedSession; onRefund: () => 
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0">
-          {/* Payment method pill */}
-          <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
-            style={{ backgroundColor: `${methodColor}18`, color: methodColor, border: `1px solid ${methodColor}44` }}>
-            {methodIcon} {methodLabel}
-          </span>
-          <div className="text-right">
+          <div className="text-right flex flex-col items-end gap-0.5">
             <div className="text-sm font-black" style={{ color: 'var(--text-primary)' }}>AED {Number(s.summary.total).toFixed(2)}</div>
-            <div className="text-[10px] font-semibold" style={{ color: 'var(--c-success-fg)' }}>✓ Settled</div>
+            <div className="flex items-center gap-1">
+              <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                style={{ backgroundColor: `${methodColor}22`, color: methodColor }}>
+                {methodIcon} {methodLabel}
+              </span>
+              <span className="text-[10px] font-semibold" style={{ color: 'var(--c-success-fg)' }}>✓ Settled</span>
+            </div>
           </div>
           {expanded ? <ChevronDown size={13} style={{ color: 'var(--text-muted)' }} /> : <ChevronRight size={13} style={{ color: 'var(--text-muted)' }} />}
         </div>
@@ -969,11 +1007,22 @@ function ClosedSessionCard({ s, onRefund }: { s: ClosedSession; onRefund: () => 
           {/* Items */}
           <div className="space-y-1">
             {items.map((item, i) => (
-              <div key={i} className="flex justify-between text-xs">
-                <span style={{ color: 'var(--text-muted)' }}>
-                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.qty}×</span> {item.name}
-                </span>
-                <span style={{ color: 'var(--text-muted)' }}>AED {item.price.toFixed(2)}</span>
+              <div key={i} className="text-xs">
+                <div className="flex justify-between">
+                  <span style={{ color: 'var(--text-muted)' }}>
+                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.qty}×</span> {item.name}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>AED {item.price.toFixed(2)}</span>
+                </div>
+                {item.modifiers.length > 0 && (
+                  <div className="ml-4 mt-0.5 space-y-0.5">
+                    {item.modifiers.map((m, mi) => (
+                      <p key={mi} className="text-[10px] text-blue-500 dark:text-blue-400">
+                        + {m.name}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -1054,6 +1103,12 @@ function TakeawayCard({ entry }: { entry: TakeawayEntry }) {
   })()
   const label = entry.customer?.name ?? entry.contactPhone ?? `Token #${entry.tokenNumber}`
   const time = new Date(entry.createdAt).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })
+  const paymentMethod = entry.orders.find(o => o.paymentMethod)?.paymentMethod
+  const methodIcon = paymentMethod === 'CARD' ? <CreditCard size={10} />
+    : paymentMethod === 'SPLIT' ? <><Banknote size={10} /><span>+</span><CreditCard size={10} /></>
+    : <Banknote size={10} />
+  const methodLabel = paymentMethod === 'CARD' ? 'Card' : paymentMethod === 'SPLIT' ? 'Split' : 'Cash'
+  const methodColor = paymentMethod === 'CARD' ? '#60a5fa' : paymentMethod === 'SPLIT' ? '#a78bfa' : '#4ade80'
 
   function printTakeawayReceipt() {
     const rows = items.map(i => ({ name: i.name, qty: i.qty, total: i.price }))
@@ -1079,7 +1134,18 @@ function TakeawayCard({ entry }: { entry: TakeawayEntry }) {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
-          <StatusBadge variant="delivered" label={entry.latestStatus} size="xs" />
+          <div className="text-right flex flex-col items-end gap-0.5">
+            <div className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>AED {Number(entry.summary.total).toFixed(2)}</div>
+            <div className="flex items-center gap-1">
+              {paymentMethod && (
+                <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ backgroundColor: `${methodColor}22`, color: methodColor }}>
+                  {methodIcon} {methodLabel}
+                </span>
+              )}
+              <StatusBadge variant="delivered" label={entry.latestStatus} size="xs" />
+            </div>
+          </div>
           {expanded ? <ChevronDown size={13} className="text-gray-400" /> : <ChevronRight size={13} className="text-gray-400" />}
         </div>
       </button>
@@ -1589,18 +1655,34 @@ export default function BillsPage() {
   const [takeaway, setTakeaway]     = useState<TakeawayEntry[]>([])
   const [pendingRefunds, setPendingRefunds] = useState<any[]>([])
   const [loading, setLoading]       = useState(true)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const [busySession, setBusySession] = useState<Record<string, boolean>>({})
   const [approvingRefund, setApprovingRefund] = useState<Record<string, boolean>>({})
   const [settledReceipt, setSettledReceipt] = useState<{ sessionId: string; total: number; method: string } | null>(null)
   const [billFeatures, setBillFeatures] = useState({ splitPaymentEnabled: true, tipEnabled: true, discountEnabled: true })
+  const d = new Date()
+  const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const [historyDate, setHistoryDate] = useState(todayStr)
+
+  const loadHistory = useCallback(async (date: string) => {
+    setHistoryLoading(true)
+    try {
+      const [closedRes, takeawayRes] = await Promise.all([
+        api.get(`/orders/closed-bills-today?date=${date}`),
+        api.get(`/orders/takeaway-today?date=${date}`),
+      ])
+      setClosed(closedRes.data ?? [])
+      setTakeaway(takeawayRes.data ?? [])
+    } finally { setHistoryLoading(false) }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const requests: Promise<any>[] = [
         api.get('/orders/active-bills'),
-        api.get('/orders/closed-bills-today'),
-        api.get('/orders/takeaway-today'),
+        api.get(`/orders/closed-bills-today?date=${historyDate}`),
+        api.get(`/orders/takeaway-today?date=${historyDate}`),
         api.get('/settings'),
       ]
       if (isManager) requests.push(api.get('/orders/pending-refunds'))
@@ -1616,7 +1698,7 @@ export default function BillsPage() {
       })
       if (refundsRes) setPendingRefunds(refundsRes.data ?? [])
     } finally { setLoading(false) }
-  }, [isManager])
+  }, [isManager, historyDate])
 
   useEffect(() => { load() }, [load])
 
@@ -1699,7 +1781,7 @@ export default function BillsPage() {
           {todayRevenue > 0 && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full hidden sm:inline"
               style={{ backgroundColor: 'var(--c-success-bg)', color: 'var(--c-success-fg)' }}>
-              AED {todayRevenue.toFixed(2)} today
+              AED {todayRevenue.toFixed(2)} {historyDate === todayStr ? 'today' : historyDate.split('-').reverse().join('/')}
             </span>
           )}
         </div>
@@ -1802,27 +1884,59 @@ export default function BillsPage() {
           />
         )}
 
-        {/* ── Section 2: Today's history (closed dine-in + takeaway, all settled) ── */}
-        {!loading && historyCount > 0 && (
+        {/* ── Section 2: Settled bills — browseable by date ── */}
+        {!loading && (
           <section>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between mb-3 gap-3">
+              <div className="flex items-center gap-2 min-w-0">
                 <History size={14} style={{ color: 'var(--text-muted)' }} />
-                <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Settled Today</h2>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                  style={{ backgroundColor: 'var(--c-success-bg)', color: 'var(--c-success-fg)' }}>
-                  {historyCount}
-                </span>
+                <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                  {historyDate === todayStr ? 'Settled Today' : 'Settled Bills'}
+                </h2>
+                {historyCount > 0 && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    style={{ backgroundColor: 'var(--c-success-bg)', color: 'var(--c-success-fg)' }}>
+                    {historyCount}
+                  </span>
+                )}
               </div>
-              <span className="text-sm font-black" style={{ color: 'var(--c-success-fg)' }}>
-                AED {todayRevenue.toFixed(2)}
-              </span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {todayRevenue > 0 && (
+                  <span className="text-sm font-black" style={{ color: 'var(--c-success-fg)' }}>
+                    AED {todayRevenue.toFixed(2)}
+                  </span>
+                )}
+                <input
+                  type="date"
+                  value={historyDate}
+                  max={todayStr}
+                  onChange={e => {
+                    const d = e.target.value
+                    setHistoryDate(d)
+                    loadHistory(d)
+                  }}
+                  className="text-xs px-2.5 py-1.5 rounded-lg outline-none"
+                  style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }}
+                />
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {closed.map(s => <ClosedSessionCard key={s.sessionId} s={s} onRefund={load} />)}
-              {takeaway.map(e => <TakeawayCard key={e.tokenNumber} entry={e} />)}
-            </div>
+            {historyLoading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 animate-pulse">
+                {[1,2,3].map(i => <div key={i} className="h-16 rounded-2xl" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }} />)}
+              </div>
+            ) : historyCount === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 rounded-2xl border border-dashed"
+                style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
+                <History size={18} style={{ color: 'var(--text-muted)' }} />
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No settled bills for this date</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {closed.map(s => <ClosedSessionCard key={s.sessionId} s={s} onRefund={load} />)}
+                {takeaway.map(e => <TakeawayCard key={e.tokenNumber} entry={e} />)}
+              </div>
+            )}
           </section>
         )}
       </div>

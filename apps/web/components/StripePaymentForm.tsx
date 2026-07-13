@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js'
 import { Loader2, Lock } from 'lucide-react'
+import { useAuthStore } from '@/store/auth'
 
 interface Props {
   orderId: string
@@ -15,6 +16,7 @@ export default function StripePaymentForm({ orderId, total, onSuccess, onCancel 
   const elements = useElements()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const user = useAuthStore(s => s.user)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,7 +30,10 @@ export default function StripePaymentForm({ orderId, total, onSuccess, onCancel 
       redirect: 'if_required',
       confirmParams: {
         payment_method_data: {
-          billing_details: { name: 'Guest', email: undefined, phone: undefined, address: undefined },
+          billing_details: {
+            name: user?.name || 'Guest',
+            email: user?.email || 'guest@almanzil.ae',
+          },
         },
       },
     })
@@ -53,7 +58,7 @@ export default function StripePaymentForm({ orderId, total, onSuccess, onCancel 
         <PaymentElement options={{
           layout: 'accordion',
           wallets: { link: 'never', applePay: 'never', googlePay: 'never' },
-          fields: { billingDetails: { name: 'never', email: 'never', phone: 'never', address: 'never' } },
+          fields: { billingDetails: { name: 'never', email: 'never' } },
         }} />
       </div>
 

@@ -1,14 +1,15 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChefHat, Clock, Utensils, Package, RefreshCw, Flame, ChevronDown } from 'lucide-react'
 import api from '@/lib/api'
 import { notify } from '@/lib/notify'
 import { getSocket } from '@/lib/socket'
 
+interface Modifier { name: string; priceAdd: number }
 interface Order {
-  id: string; type: string; status: string; createdAt: string; tokenNumber?: number; notes?: string
+  id: string; type: string; status: string; isVoided?: boolean; createdAt: string; tokenNumber?: number; notes?: string
   table?: { tableNumber: number; name?: string | null }
-  items: { quantity: number; notes?: string; menuItem: { name: string; prepTimeMins: number } }[]
+  items: { quantity: number; notes?: string; menuItem: { name: string; prepTimeMins: number }; modifiers?: Modifier[] }[]
 }
 
 function formatElapsed(ms: number) {
@@ -39,7 +40,7 @@ function useElapsed(createdAt: string) {
 
 // ── Passive ticket: no buttons, click to expand items ─────────────────────────
 function PassiveTicket({ order }: { order: Order }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
   const elapsed = useElapsed(order.createdAt)
   const mins = Math.floor(elapsed / 60000)
   const late = mins > 20
@@ -87,6 +88,13 @@ function PassiveTicket({ order }: { order: Order }) {
               </span>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-900 dark:text-white leading-tight">{item.menuItem.name}</p>
+                {item.modifiers && item.modifiers.length > 0 && (
+                  <div className="mt-0.5 space-y-0.5">
+                    {item.modifiers.map((m, mi) => (
+                      <p key={mi} className="text-[11px] text-blue-500 dark:text-blue-400 font-medium">+ {m.name}</p>
+                    ))}
+                  </div>
+                )}
                 {item.notes && <p className="text-xs text-orange-500 dark:text-orange-400 mt-0.5">↳ {item.notes}</p>}
               </div>
             </div>
@@ -195,6 +203,7 @@ export default function KitchenPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
   const [thermal, setThermal] = useState<boolean | null>(null)
+  const thermalRef = useRef<boolean | null>(null)
 
   const ACTIVE_STATUSES = ['PENDING', 'ACCEPTED', 'PREPARING', 'READY']
 
@@ -205,6 +214,7 @@ export default function KitchenPage() {
       api.get('/settings'),
     ]).then(([ordersRes, settingsRes]) => {
       const isThermal = !!settingsRes.data.thermalEnabled
+      thermalRef.current = isThermal
       setThermal(isThermal)
       const statuses = isThermal ? ACTIVE_STATUSES : ['ACCEPTED', 'PREPARING']
       setOrders(ordersRes.data.filter((o: Order) => statuses.includes(o.status)))
@@ -216,7 +226,11 @@ export default function KitchenPage() {
   useEffect(() => {
     const s = getSocket()
     s.on('order:new', (o: Order) => {
-      if (o.status === 'ACCEPTED') {
+      // Thermal mode: show new PENDING orders immediately (no accept step)
+      // Non-thermal: only show once staff accepts (ACCEPTED status)
+      const isThermal = thermalRef.current
+      const shouldShow = isThermal ? o.status === 'PENDING' : o.status === 'ACCEPTED'
+      if (shouldShow) {
         setOrders(p => [o, ...p])
         const label = o.type === 'DINE_IN'
           ? (o.table?.name ?? `Table ${o.table?.tableNumber}`)
@@ -225,9 +239,10 @@ export default function KitchenPage() {
       }
     })
     s.on('order:updated', (o: Order) => {
-      if (['DELIVERED', 'CANCELLED'].includes(o.status)) {
+      if (['DELIVERED', 'CANCELLED'].includes(o.status) || o.isVoided) {
         setOrders(p => p.filter(x => x.id !== o.id))
-      } else if (o.status === 'ACCEPTED') {
+      } else if (o.status === 'ACCEPTED' || (thermalRef.current && o.status === 'PENDING')) {
+        // Add to list if not already present (could arrive via update not new)
         setOrders(p => p.some(x => x.id === o.id) ? p.map(x => x.id === o.id ? o : x) : [o, ...p])
       } else {
         setOrders(p => p.map(x => x.id === o.id ? o : x))

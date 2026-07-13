@@ -6,11 +6,14 @@ import * as menuApi from '../../../../src/api/menu.api'
 import { useCartStore, type SelectedModifier } from '../../../../src/stores/cart.store'
 import type { MenuItem } from '../../../../src/api/types'
 import { GlassButton } from '../../../../src/components/GlassButton'
+import { useBrandStore, hexToRgbString } from '../../../../src/stores/brand.store'
 import { order } from '../../../../src/theme/colors'
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const router = useRouter()
+  const brandColor = useBrandStore((s) => s.brandColor)
+  const brandRgb = hexToRgbString(brandColor)
   const addItem = useCartStore((s) => s.addItem)
   const [item, setItem] = useState<MenuItem | null>(null)
   const [selected, setSelected] = useState<Record<string, string[]>>({}) // groupId -> optionIds
@@ -62,7 +65,7 @@ export default function ItemDetailScreen() {
   if (!item) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color={order.brand} />
+        <ActivityIndicator color={brandColor} />
       </View>
     )
   }
@@ -76,7 +79,7 @@ export default function ItemDetailScreen() {
         <View style={styles.body}>
           <Text style={styles.name}>{item.name}</Text>
           {item.description ? <Text style={styles.description}>{item.description}</Text> : null}
-          <Text style={styles.price}>
+          <Text style={[styles.price, { color: brandColor }]}>
             AED {previewPrice.toFixed(2)} <Text style={styles.priceHint}>incl. VAT</Text>
           </Text>
 
@@ -90,7 +93,7 @@ export default function ItemDetailScreen() {
                 return (
                   <Pressable
                     key={opt.id}
-                    style={[styles.option, isSelected && styles.optionSelected]}
+                    style={[styles.option, isSelected && { borderColor: brandColor, backgroundColor: `rgba(${brandRgb},0.08)` }]}
                     onPress={() => toggleOption(group.id, opt.id, group.maxSelect)}
                   >
                     <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{opt.name}</Text>
@@ -141,8 +144,8 @@ const styles = StyleSheet.create({
   body: { padding: 18, gap: 4 },
   name: { fontSize: 22, fontWeight: '900', color: order.textPrimary },
   description: { fontSize: 14, color: order.textSecondary, marginTop: 4, lineHeight: 20 },
-  price: { fontSize: 18, fontWeight: '900', color: order.brand, marginTop: 10 },
-  priceHint: { fontSize: 10, fontWeight: '400', color: 'rgba(252,211,77,0.7)' },
+  price: { fontSize: 18, fontWeight: '900', marginTop: 10 },
+  priceHint: { fontSize: 10, fontWeight: '400', color: order.textMuted },
   group: { marginTop: 22 },
   groupTitle: { fontSize: 13, fontWeight: '800', color: order.textPrimary, marginBottom: 10 },
   groupHint: { fontWeight: '400', color: order.textMuted, fontSize: 11 },
@@ -158,7 +161,6 @@ const styles = StyleSheet.create({
     borderColor: order.border,
     marginBottom: 8,
   },
-  optionSelected: { borderColor: order.brand, backgroundColor: `rgba(${order.brandRgb},0.08)` },
   optionText: { fontSize: 14, color: order.textSecondary },
   optionTextSelected: { color: order.textPrimary, fontWeight: '700' },
   optionPrice: { fontSize: 12, color: order.textMuted },

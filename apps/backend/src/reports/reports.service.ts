@@ -120,7 +120,7 @@ export class ReportsService {
       totalOrders,
       cancelledOrders,
       pendingOrders,
-      paidOrders: paidOrders.length,
+      orderCount: paidOrders.length,
       grossRevenue,
       avgRating,
     }

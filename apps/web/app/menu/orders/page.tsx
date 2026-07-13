@@ -21,7 +21,7 @@ interface Order {
   paymentMethod?: string | null; stripeIntentId?: string | null; userId?: string | null
   expectedReadyAt?: string | null
   table?: { id: string; name: string | null; tableNumber: number } | null
-  items: { quantity: number; notes?: string | null; unitPrice: number; menuItem: { name: string } }[]
+  items: { quantity: number; notes?: string | null; unitPrice: number; menuItem: { name: string }; modifiers?: { name: string; priceAdd: number }[] }[]
 }
 
 const STATUS_STEP: Record<string, number> = { PENDING: 0, ACCEPTED: 1, PREPARING: 2, READY: 3, DELIVERED: 4 }
@@ -654,9 +654,16 @@ function OrderTrackCard({ o, lang, thermalMode, onCancel, onOpenChat, hasUnread 
                         {item.menuItem.name}
                       </span>
                       <span className="text-[11px] tabular-nums flex-shrink-0" style={{ color: '#555' }}>
-                        AED {(item.quantity * Number(item.unitPrice)).toFixed(2)}
+                        AED {(item.quantity * (Number(item.unitPrice) + (item.modifiers ?? []).reduce((s, m) => s + Number(m.priceAdd), 0))).toFixed(2)}
                       </span>
                     </div>
+                    {item.modifiers && item.modifiers.length > 0 && (
+                      <div className="mt-0.5 ml-4 space-y-0.5">
+                        {item.modifiers.map((m, mi) => (
+                          <p key={mi} className="text-[10px] text-blue-400">+ {m.name}</p>
+                        ))}
+                      </div>
+                    )}
                     {item.notes && (
                       <p className="text-[10px] mt-1 px-2 py-1 rounded-lg"
                         style={{ background: 'rgba(var(--brand-rgb),0.08)', color: 'var(--brand)' }}>
