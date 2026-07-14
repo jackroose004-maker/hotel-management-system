@@ -169,6 +169,13 @@ function KdsTicket({ order, onUpdate }: { order: Order; onUpdate: (id: string, s
             </span>
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900 dark:text-white leading-tight">{item.menuItem.name}</p>
+              {item.modifiers && item.modifiers.length > 0 && (
+                <div className="mt-0.5 space-y-0.5">
+                  {item.modifiers.map((m, mi) => (
+                    <p key={mi} className="text-[11px] text-blue-500 dark:text-blue-400 font-medium">+ {m.name}</p>
+                  ))}
+                </div>
+              )}
               {item.notes && <p className="text-xs text-orange-500 dark:text-orange-400 mt-0.5">↳ {item.notes}</p>}
             </div>
           </div>

@@ -200,6 +200,7 @@ export class SettingsService {
     splitPaymentEnabled: boolean
     tipEnabled: boolean
     discountEnabled: boolean
+    packingCharge: number
     preOrderEnabled: boolean
     // Email config
     smtpHost: string; smtpPort: number; smtpSecure: boolean

@@ -17,7 +17,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface TableRow { id: string; tableNumber: number; name: string | null; status: string; capacity: number }
 interface BillOrder {
-  id: string; status: string; paymentStatus: string; paymentMethod?: string
+  id: string; status: string; paymentStatus: string; paymentMethod?: string; type?: string
   createdAt: string; subtotal: number; vatAmount: number; total: number
   user?: { name: string } | null
   items: { quantity: number; unitPrice: number; menuItem: { name: string }; modifiers?: { name: string; priceAdd: number }[] }[]
@@ -80,12 +80,17 @@ function openPrint(html: string) {
 }
 
 // ── Totals row ────────────────────────────────────────────────────────────────
-function TotalsBlock({ subtotal, vat, total }: { subtotal: number; vat: number; total: number }) {
+function TotalsBlock({ subtotal, vat, total, packing }: { subtotal: number; vat: number; total: number; packing?: number }) {
   return (
     <div className="space-y-0.5 pt-2 mt-2 border-t" style={{ borderColor: 'var(--card-border)' }}>
       <div className="flex justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
         <span>Subtotal</span><span>AED {subtotal.toFixed(2)}</span>
       </div>
+      {(packing ?? 0) > 0 && (
+        <div className="flex justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
+          <span>📦 Packing charge</span><span>AED {(packing ?? 0).toFixed(2)}</span>
+        </div>
+      )}
       <div className="flex justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
         <span>VAT (5%)</span><span>AED {vat.toFixed(2)}</span>
       </div>
@@ -623,21 +628,25 @@ function TabRow({ tab, idx, tableName, onSettle, onTransferDone, busy, isManager
   const [settleError, setSettleError] = useState('')
   const [showTransfer, setShowTransfer] = useState(false)
   const [converting, setConverting] = useState(false)
+  const [showConvert, setShowConvert] = useState(false)
+  const [convertSel, setConvertSel] = useState<Set<string>>(new Set())
   const label = tabLabel(tab, idx)
   const isMember = !!tab.orders.find(o => o.user)
   const total = Number(tab.summary.total)
-  // Block settle while any unpaid order is still being prepared (not yet READY or DELIVERED)
+  // Block settle until every unpaid order has actually been SERVED (DELIVERED).
+  // READY is not enough — food still on the pass means the meal isn't over.
   const hasUnapproved = tab.orders.some(
-    o => ['PENDING', 'ACCEPTED', 'PREPARING'].includes(o.status) && o.paymentStatus !== 'PAID'
+    o => ['PENDING', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.status) && o.paymentStatus !== 'PAID'
   )
   const isDineIn = tab.orders.some(o => o.type === 'DINE_IN' && o.paymentStatus === 'UNPAID')
 
-  async function convertToTakeaway() {
-    if (!tab.sessionId) return
+  async function convertToTakeaway(orderIds: string[]) {
+    if (!tab.sessionId || !orderIds.length) return
     setConverting(true)
     try {
-      await api.post(`/orders/session/${tab.sessionId}/convert-to-takeaway`)
-      notify.success('Converted to takeaway — bill stays open until settled')
+      await api.post(`/orders/session/${tab.sessionId}/convert-to-takeaway`, { orderIds })
+      notify.success(`${orderIds.length} order${orderIds.length !== 1 ? 's' : ''} converted to takeaway — bill stays open until settled`)
+      setShowConvert(false)
       onTransferDone() // refresh so bill shows updated type
     } catch (e: any) {
       notify.error(e?.response?.data?.message ?? 'Could not convert')
@@ -694,47 +703,110 @@ function TabRow({ tab, idx, tableName, onSettle, onTransferDone, busy, isManager
       </button>
 
       {expanded && (
-        <div className="px-3 py-2.5 space-y-1.5" style={{ backgroundColor: 'var(--card-bg)' }}>
-          {items.map((item, i) => (
-            <div key={i} className="text-xs">
-              <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-300">
-                  <span className="font-semibold">{item.qty}×</span> {item.name}
-                </span>
-                <span className="text-gray-400">AED {item.price.toFixed(2)}</span>
+        <div className="px-3 py-2.5 space-y-2" style={{ backgroundColor: 'var(--card-bg)' }}>
+          {tab.orders.map((o, oi) => (
+            <div key={o.id} className="grid gap-x-3" style={{ gridTemplateColumns: '58px 1fr auto' }}>
+              {/* Col 1: order number + time */}
+              <div className="text-[10px] text-gray-400 pt-0.5">
+                <div className="font-semibold flex items-center gap-1"><Clock size={8} /> Ord {oi + 1}</div>
+                <div>{new Date(o.createdAt).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })}</div>
+                {o.paymentMethod === 'CARD' && o.paymentStatus === 'PAID' && (
+                  <div className="font-semibold" style={{ color: 'var(--c-success-fg)' }}>card paid</div>
+                )}
               </div>
-              {item.modifiers.length > 0 && (
-                <div className="ml-4 mt-0.5 space-y-0.5">
-                  {item.modifiers.map((m, mi) => (
-                    <p key={mi} className="text-[10px] text-blue-500 dark:text-blue-400">
-                      + {m.name}
-                    </p>
-                  ))}
-                </div>
-              )}
+              {/* Col 2 + 3: item names / prices */}
+              <div className="space-y-0.5 min-w-0">
+                {o.items.map((item, i) => (
+                  <div key={i}>
+                    <div className="text-xs text-gray-600 dark:text-gray-300 truncate">
+                      <span className="font-semibold">{item.quantity}×</span> {item.menuItem.name}
+                    </div>
+                    {(item.modifiers ?? []).map((m, mi) => (
+                      <div key={mi} className="text-[10px] text-blue-500 dark:text-blue-400 ml-4 truncate">+ {m.name}</div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-0.5 text-right">
+                {o.items.map((item, i) => (
+                  <div key={i}>
+                    <div className="text-xs text-gray-400">AED {(Number(item.unitPrice) * item.quantity).toFixed(2)}</div>
+                    {(item.modifiers ?? []).map((m, mi) => (
+                      <div key={mi} className="text-[10px] text-blue-500 dark:text-blue-400">
+                        {Number(m.priceAdd) > 0 ? `AED ${(Number(m.priceAdd) * item.quantity).toFixed(2)}` : '—'}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
 
-          <div className="pt-1">
-            {tab.orders.map((o, i) => (
-              <div key={o.id} className="flex items-center gap-1 text-[10px] text-gray-400">
-                <Clock size={8} />
-                Order {i + 1} — {new Date(o.createdAt).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })}
-                {o.paymentMethod === 'CARD' && (
-                  <span className="font-semibold" style={{ color: 'var(--c-success-fg)' }}>· card paid</span>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <TotalsBlock subtotal={Number(tab.summary.subtotal)} vat={Number(tab.summary.vatAmount)} total={total} />
+          <TotalsBlock subtotal={Number(tab.summary.subtotal)} vat={Number(tab.summary.vatAmount)} total={total} packing={Number((tab.summary as any).packingCharge ?? 0)} />
 
           {isDineIn && (
-            <button onClick={convertToTakeaway} disabled={converting}
-              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors hover:bg-[var(--muted-bg)] disabled:opacity-50 mb-1"
+            <button
+              onClick={() => {
+                // Pre-select all convertible orders, then let staff refine in the modal
+                const convertible = tab.orders.filter(o => o.type === 'DINE_IN' && o.paymentStatus === 'UNPAID' && o.status !== 'CANCELLED')
+                setConvertSel(new Set(convertible.map(o => o.id)))
+                setShowConvert(true)
+              }}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors hover:bg-[var(--muted-bg)] mb-1"
               style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
-              <Package size={11} /> {converting ? 'Converting…' : 'Convert to Takeaway'}
+              <Package size={11} /> Convert to Takeaway…
             </button>
+          )}
+
+          {showConvert && (
+            <ModalBackdrop onClick={() => setShowConvert(false)} className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
+              <div className="w-full max-w-sm rounded-2xl p-4 space-y-3" style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)' }}
+                onClick={e => e.stopPropagation()}>
+                <div>
+                  <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Convert to Takeaway</h3>
+                  <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    Pick which orders to pack to go. They stay on this bill and are settled normally.
+                  </p>
+                </div>
+                <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                  {tab.orders.filter(o => o.type === 'DINE_IN' && o.paymentStatus === 'UNPAID' && o.status !== 'CANCELLED').map((o, oi) => {
+                    const checked = convertSel.has(o.id)
+                    const itemsLabel = o.items.map(i => `${i.quantity}× ${i.menuItem.name}`).join(', ')
+                    const orderTotal = o.items.reduce((s, i) => s + (Number(i.unitPrice) + (i.modifiers ?? []).reduce((ms, m) => ms + Number(m.priceAdd), 0)) * i.quantity, 0)
+                    return (
+                      <label key={o.id} className="flex items-start gap-2.5 p-2.5 rounded-xl cursor-pointer border transition-colors"
+                        style={{ borderColor: checked ? 'var(--brand)' : 'var(--card-border)', backgroundColor: checked ? 'rgba(var(--brand-rgb),0.06)' : 'transparent' }}>
+                        <input type="checkbox" checked={checked} className="mt-0.5 accent-[var(--brand)]"
+                          onChange={() => setConvertSel(prev => {
+                            const next = new Set(prev)
+                            if (next.has(o.id)) next.delete(o.id); else next.add(o.id)
+                            return next
+                          })} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex justify-between text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                            <span>Order {oi + 1} · {new Date(o.createdAt).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>AED {orderTotal.toFixed(2)}</span>
+                          </div>
+                          <div className="text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{itemsLabel}</div>
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setShowConvert(false)}
+                    className="flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors"
+                    style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+                    Cancel
+                  </button>
+                  <button onClick={() => convertToTakeaway([...convertSel])} disabled={converting || convertSel.size === 0}
+                    className="flex-1 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50"
+                    style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                    {converting ? 'Converting…' : `Convert ${convertSel.size} order${convertSel.size !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            </ModalBackdrop>
           )}
           <div className="flex items-center gap-2 pt-1">
             {!tab.summary.allPaid ? (
@@ -744,7 +816,9 @@ function TabRow({ tab, idx, tableName, onSettle, onTransferDone, busy, isManager
                   style={{ backgroundColor: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b' }}>
                   {tab.orders.some(o => o.status === 'PENDING' && o.paymentStatus !== 'PAID')
                     ? '⏳ Waiting for kitchen to accept'
-                    : '🍳 Food still being prepared'}
+                    : tab.orders.some(o => o.status === 'READY' && o.paymentStatus !== 'PAID')
+                      ? '🛎 Food ready — serve it before settling'
+                      : '🍳 Food still being prepared'}
                 </div>
               )}
               {!hasUnapproved && (
@@ -839,12 +913,26 @@ function ActiveTableCard({ entry, onSettle, onTransferDone, busySession, isManag
   discountEnabled?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
+  const brand = useBrandStore(useShallow(s => ({ name: s.restaurantName, tagline: s.tagline })))
   const tableName = entry.table.name ?? `Table ${entry.table.tableNumber}`
   const pendingTabs = entry.tabs.filter(t => t.summary.anyUnpaid).length
   const allSettled = pendingTabs === 0
 
+  // One combined receipt: all guests' items on a single printout with the table's combined totals
   const printCombined = () => {
-    entry.tabs.forEach(t => window.open(`/receipt/${t.sessionId}`, '_blank'))
+    const rows = entry.tabs.flatMap(t =>
+      t.orders.flatMap(o => o.items.map(i => {
+        const mods = i.modifiers ?? []
+        const modExtra = mods.reduce((s, m) => s + Number(m.priceAdd), 0)
+        return {
+          name: mods.length ? `${i.menuItem.name} (${mods.map(m => `+ ${m.name}`).join(', ')})` : i.menuItem.name,
+          qty: i.quantity,
+          total: (Number(i.unitPrice) + modExtra) * i.quantity,
+        }
+      }))
+    )
+    const html = buildReceiptHtml(`${tableName} — Combined`, rows, entry.combined, brand)
+    openPrint(html)
   }
 
   return (
@@ -1006,28 +1094,33 @@ function ClosedSessionCard({ s, onRefund }: { s: ClosedSession; onRefund: () => 
         <div className="border-t px-4 pb-4 pt-3 space-y-3" style={{ borderColor: 'var(--card-border)' }}>
           {/* Items */}
           <div className="space-y-1">
-            {items.map((item, i) => (
-              <div key={i} className="text-xs">
-                <div className="flex justify-between">
-                  <span style={{ color: 'var(--text-muted)' }}>
-                    <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.qty}×</span> {item.name}
-                  </span>
-                  <span style={{ color: 'var(--text-muted)' }}>AED {item.price.toFixed(2)}</span>
-                </div>
-                {item.modifiers.length > 0 && (
-                  <div className="ml-4 mt-0.5 space-y-0.5">
-                    {item.modifiers.map((m, mi) => (
-                      <p key={mi} className="text-[10px] text-blue-500 dark:text-blue-400">
-                        + {m.name}
-                      </p>
-                    ))}
+            {items.map((item, i) => {
+              const modExtraPerUnit = item.modifiers.reduce((sum, m) => sum + Number(m.priceAdd), 0)
+              const basePrice = item.price - modExtraPerUnit * item.qty
+              return (
+                <div key={i} className="text-xs">
+                  <div className="flex justify-between">
+                    <span style={{ color: 'var(--text-muted)' }}>
+                      <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{item.qty}×</span> {item.name}
+                    </span>
+                    <span style={{ color: 'var(--text-muted)' }}>AED {basePrice.toFixed(2)}</span>
                   </div>
-                )}
-              </div>
-            ))}
+                  {item.modifiers.length > 0 && (
+                    <div className="ml-4 mt-0.5 space-y-0.5">
+                      {item.modifiers.map((m, mi) => (
+                        <div key={mi} className="flex justify-between text-[10px] text-blue-500 dark:text-blue-400">
+                          <span>+ {m.name}</span>
+                          {Number(m.priceAdd) > 0 && <span>AED {(Number(m.priceAdd) * item.qty).toFixed(2)}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
-          <TotalsBlock subtotal={Number(s.summary.subtotal)} vat={Number(s.summary.vatAmount)} total={Number(s.summary.total)} />
+          <TotalsBlock subtotal={Number(s.summary.subtotal)} vat={Number(s.summary.vatAmount)} total={Number(s.summary.total)} packing={Number((s.summary as any).packingCharge ?? 0)} />
 
           {/* Action row */}
           <div className="flex items-center gap-2 pt-1">
@@ -1086,23 +1179,41 @@ function ClosedSessionCard({ s, onRefund }: { s: ClosedSession; onRefund: () => 
 }
 
 // ── Takeaway card ─────────────────────────────────────────────────────────────
-function TakeawayCard({ entry }: { entry: TakeawayEntry }) {
-  const brand = useBrandStore(useShallow(s => ({ name: s.restaurantName, tagline: s.tagline })))
+function TakeawayCard({ entry, onRefresh }: { entry: TakeawayEntry; onRefresh?: () => void }) {
   const [expanded, setExpanded] = useState(false)
+  const [collecting, setCollecting] = useState(false)
+
+  async function collect(method: 'CASH' | 'CARD') {
+    setCollecting(true)
+    try {
+      const unpaid = entry.orders.filter(o => o.paymentStatus !== 'PAID')
+      for (const o of unpaid) {
+        await api.post(`/payments/order/${o.id}/collect`, { method })
+      }
+      notify.success(`Payment collected — ${method === 'CASH' ? 'cash' : 'card'}`)
+      onRefresh?.()
+    } catch (e: any) {
+      notify.error(e?.response?.data?.message ?? 'Could not collect payment')
+    } finally { setCollecting(false) }
+  }
   const items = (() => {
-    const m = new Map<string, { name: string; qty: number; price: number }>()
+    const m = new Map<string, { name: string; qty: number; price: number; modifiers: { name: string; priceAdd: number }[] }>()
     for (const o of entry.orders) {
       for (const i of o.items) {
-        const k = i.menuItem.name
+        const mods = (i.modifiers ?? []).sort((a, b) => a.name.localeCompare(b.name))
+        const modExtra = mods.reduce((s, mm) => s + Number(mm.priceAdd), 0)
+        const linePrice = (Number(i.unitPrice) + modExtra) * i.quantity
+        const k = i.menuItem.name + (mods.length ? '|' + mods.map(mm => mm.name).join(',') : '')
         const ex = m.get(k)
-        if (ex) { ex.qty += i.quantity; ex.price += i.quantity * Number(i.unitPrice) }
-        else m.set(k, { name: k, qty: i.quantity, price: i.quantity * Number(i.unitPrice) })
+        if (ex) { ex.qty += i.quantity; ex.price += linePrice }
+        else m.set(k, { name: i.menuItem.name, qty: i.quantity, price: linePrice, modifiers: mods })
       }
     }
     return [...m.values()]
   })()
   const label = entry.customer?.name ?? entry.contactPhone ?? `Token #${entry.tokenNumber}`
   const time = new Date(entry.createdAt).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })
+  const allPaid = entry.orders.length > 0 && entry.orders.every(o => o.paymentStatus === 'PAID')
   const paymentMethod = entry.orders.find(o => o.paymentMethod)?.paymentMethod
   const methodIcon = paymentMethod === 'CARD' ? <CreditCard size={10} />
     : paymentMethod === 'SPLIT' ? <><Banknote size={10} /><span>+</span><CreditCard size={10} /></>
@@ -1111,10 +1222,10 @@ function TakeawayCard({ entry }: { entry: TakeawayEntry }) {
   const methodColor = paymentMethod === 'CARD' ? '#60a5fa' : paymentMethod === 'SPLIT' ? '#a78bfa' : '#4ade80'
 
   function printTakeawayReceipt() {
-    const rows = items.map(i => ({ name: i.name, qty: i.qty, total: i.price }))
-    const html = buildReceiptHtml(`Takeaway #${entry.tokenNumber}`, rows, entry.summary, brand, '✓ PAID BY CARD')
-      .replace('Receipt #', `Token #${entry.tokenNumber} · Receipt #`)
-    openPrint(html)
+    // Use the configurable receipt template. Session id if the takeaway is linked to a
+    // table session (converted dine-in); otherwise the order id (backend falls back to it).
+    const target = (entry.orders[0] as any)?.tableSessionId ?? entry.orders[0]?.id
+    if (target) window.open(`/receipt/${target}`, '_blank')
   }
 
   return (
@@ -1137,10 +1248,15 @@ function TakeawayCard({ entry }: { entry: TakeawayEntry }) {
           <div className="text-right flex flex-col items-end gap-0.5">
             <div className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>AED {Number(entry.summary.total).toFixed(2)}</div>
             <div className="flex items-center gap-1">
-              {paymentMethod && (
+              {allPaid && paymentMethod ? (
                 <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                   style={{ backgroundColor: `${methodColor}22`, color: methodColor }}>
                   {methodIcon} {methodLabel}
+                </span>
+              ) : (
+                <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+                  Unpaid{paymentMethod === 'CASH' ? ' · Cash' : ''}
                 </span>
               )}
               <StatusBadge variant="delivered" label={entry.latestStatus} size="xs" />
@@ -1153,15 +1269,44 @@ function TakeawayCard({ entry }: { entry: TakeawayEntry }) {
       {expanded && (
         <div className="px-4 pb-4 space-y-1.5">
           {items.map((item, i) => (
-            <div key={i} className="flex justify-between text-xs">
-              <span className="text-gray-600 dark:text-gray-300"><span className="font-semibold">{item.qty}×</span> {item.name}</span>
-              <span className="text-gray-400">AED {item.price.toFixed(2)}</span>
+            <div key={i} className="text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-300"><span className="font-semibold">{item.qty}×</span> {item.name}</span>
+                <span className="text-gray-400">AED {((item.price / item.qty - item.modifiers.reduce((s, mm) => s + Number(mm.priceAdd), 0)) * item.qty).toFixed(2)}</span>
+              </div>
+              {item.modifiers.length > 0 && (
+                <div className="ml-4 mt-0.5 space-y-0.5">
+                  {item.modifiers.map((m, mi) => (
+                    <div key={mi} className="flex justify-between text-[10px] text-blue-500 dark:text-blue-400">
+                      <span>+ {m.name}</span>
+                      {Number(m.priceAdd) > 0 && <span>AED {(Number(m.priceAdd) * item.qty).toFixed(2)}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
-          <TotalsBlock subtotal={Number(entry.summary.subtotal)} vat={Number(entry.summary.vatAmount)} total={Number(entry.summary.total)} />
+          <TotalsBlock subtotal={Number(entry.summary.subtotal)} vat={Number(entry.summary.vatAmount)} total={Number(entry.summary.total)} packing={Number((entry.summary as any).packingCharge ?? 0)} />
+          {!allPaid && (
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => collect('CASH')} disabled={collecting}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50"
+                style={{ backgroundColor: '#16a34a', color: '#fff' }}>
+                <Banknote size={12} /> {collecting ? 'Collecting…' : 'Collect Cash'}
+              </button>
+              <button onClick={() => collect('CARD')} disabled={collecting}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold border transition-colors disabled:opacity-50"
+                style={{ borderColor: 'var(--card-border)', color: 'var(--text-primary)' }}>
+                <CreditCard size={12} /> Card
+              </button>
+            </div>
+          )}
           <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: 'var(--c-success-fg)' }}>
-              <CreditCard size={10} /> Paid by card
+            <div className="flex items-center gap-1 text-[10px] font-semibold"
+              style={{ color: allPaid ? 'var(--c-success-fg)' : '#f59e0b' }}>
+              {allPaid
+                ? <>{paymentMethod === 'CARD' ? <CreditCard size={10} /> : <Banknote size={10} />} Paid by {methodLabel.toLowerCase()}</>
+                : <>Payment pending{paymentMethod === 'CASH' ? ' — cash at counter' : ''}</>}
             </div>
             <button onClick={printTakeawayReceipt}
               className="flex items-center gap-1.5 text-xs border px-3 py-1.5 rounded-lg transition-colors">
@@ -1747,10 +1892,13 @@ export default function BillsPage() {
 
   const totalTabs    = active.reduce((s, e) => s + e.tabs.length, 0)
   const pendingTabs  = active.reduce((s, e) => s + e.tabs.filter(t => t.summary.anyUnpaid).length, 0)
+  // Unpaid takeaways (cash at counter, not yet collected) are NOT settled — separate them
+  const paidTakeaway   = takeaway.filter(t => t.orders.length > 0 && t.orders.every(o => o.paymentStatus === 'PAID'))
+  const unpaidTakeaway = takeaway.filter(t => !(t.orders.length > 0 && t.orders.every(o => o.paymentStatus === 'PAID')))
   const closedRevenue  = closed.reduce((s, c) => s + Number(c.summary.total), 0)
-  const takeawayRevenue = takeaway.reduce((s, t) => s + Number(t.summary.total), 0)
+  const takeawayRevenue = paidTakeaway.reduce((s, t) => s + Number(t.summary.total), 0)
   const todayRevenue = closedRevenue + takeawayRevenue
-  const historyCount = closed.length + takeaway.length
+  const historyCount = closed.length + paidTakeaway.length
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
@@ -1865,7 +2013,7 @@ export default function BillsPage() {
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Bills appear here when guests place dine-in orders</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
                 {active.map(e => (
                   <ActiveTableCard key={e.table.id} entry={e} onSettle={settle} onTransferDone={load} busySession={busySession} isManager={isManager} {...billFeatures} />
                 ))}
@@ -1882,6 +2030,23 @@ export default function BillsPage() {
             method={settledReceipt.method}
             onClose={() => setSettledReceipt(null)}
           />
+        )}
+
+        {/* ── Awaiting payment: delivered takeaways where cash hasn't been collected yet ── */}
+        {!loading && unpaidTakeaway.length > 0 && (
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Banknote size={14} style={{ color: '#f59e0b' }} />
+              <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Takeaway — Awaiting Payment</h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+                {unpaidTakeaway.length}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
+              {unpaidTakeaway.map(e => <TakeawayCard key={e.tokenNumber} entry={e} onRefresh={load} />)}
+            </div>
+          </section>
         )}
 
         {/* ── Section 2: Settled bills — browseable by date ── */}
@@ -1932,9 +2097,9 @@ export default function BillsPage() {
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No settled bills for this date</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
                 {closed.map(s => <ClosedSessionCard key={s.sessionId} s={s} onRefund={load} />)}
-                {takeaway.map(e => <TakeawayCard key={e.tokenNumber} entry={e} />)}
+                {paidTakeaway.map(e => <TakeawayCard key={e.tokenNumber} entry={e} onRefresh={load} />)}
               </div>
             )}
           </section>

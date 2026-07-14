@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/auth'
 import { useThemeStore } from '@/store/theme'
 import { initBrand, useBrandStore } from '@/store/brand'
 import { requestNotifyPermission, notify } from '@/lib/notify'
+import { subscribeToPush } from '@/lib/push'
 import api from '@/lib/api'
 import { getSocket, disconnectSocket } from '@/lib/socket'
 import { initCrossTabAuth, broadcastLogout, teardownCrossTabAuth } from '@/lib/crossTabAuth'
@@ -62,6 +63,12 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     requestNotifyPermission()
     setReady(true)
   }, [])
+
+  // Register this staff browser for server web-push (alerts even when tab is closed).
+  // Runs when the token appears — covers both page load while logged in AND right after login.
+  useEffect(() => {
+    if (token) subscribeToPush()
+  }, [token])
 
   // Force-logout: socket + cross-tab sync + health-check polling
   useEffect(() => {

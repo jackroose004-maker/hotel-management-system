@@ -5,6 +5,7 @@ import { OrdersGateway } from '../websocket/orders.gateway'
 import { KitchenPrintService } from './kitchen-print.service'
 import { SettingsService } from '../settings/settings.service'
 import { MailService } from '../mail/mail.service'
+import { PushService } from '../push/push.service'
 import { CreateOrderDto, UpdateOrderStatusDto, AddOrderItemsDto } from './dto/create-order.dto'
 import { OrderStatus } from '@prisma/client'
 import { randomUUID } from 'crypto'
@@ -21,6 +22,7 @@ export class OrdersService {
     private kitchenPrint: KitchenPrintService,
     private settings: SettingsService,
     private mail: MailService,
+    private push: PushService,
   ) {}
 
   // Every 5 minutes: fire PRE_ORDER orders to kitchen when within the lead-time window.
@@ -52,7 +54,7 @@ export class OrdersService {
     }
   }
 
-  async create(dto: CreateOrderDto, userId?: string, clientIp?: string) {
+  async create(dto: CreateOrderDto, userId?: string, clientIp?: string, isStaff = false) {
     // Fetch all menu items to calculate prices server-side
     const itemIds = dto.items.map(i => i.menuItemId)
     const menuItems = await this.prisma.menuItem.findMany({ where: { id: { in: itemIds } } })
@@ -68,8 +70,11 @@ export class OrdersService {
       return sum + (price + modExtra) * item.quantity
     }, 0)
 
-    const vatAmount = Math.round(subtotal * VAT_RATE * 100) / 100
-    const total = Math.round((subtotal + vatAmount) * 100) / 100
+    // Flat packing charge on takeaway orders (0 = disabled in settings)
+    const cfgForCharge = await this.settings.get()
+    const packingCharge = dto.type === 'TAKEAWAY' ? Number((cfgForCharge as any).packingCharge ?? 0) : 0
+    const vatAmount = Math.round((subtotal + packingCharge) * VAT_RATE * 100) / 100
+    const total = Math.round((subtotal + packingCharge + vatAmount) * 100) / 100
 
     // Every order gets a sequential daily reference number (used by both dine-in and takeaway)
     const lastOrder = await this.prisma.order.findFirst({
@@ -152,6 +157,23 @@ export class OrdersService {
       }
     }
 
+    // Skip the approval step (PENDING) when:
+    //  - staff places the order (they ARE the approval), or
+    //  - the same session already has an APPROVED order — first order must be
+    //    approved by staff; only then do follow-up orders go straight to kitchen.
+    let skipApproval = isStaff
+    if (!skipApproval && dto.type === 'DINE_IN' && tableSessionId && !isNewTableSession) {
+      const approvedInSession = await this.prisma.order.findFirst({
+        where: {
+          tableSessionId,
+          status: { in: ['ACCEPTED', 'PREPARING', 'READY', 'DELIVERED'] },
+          isVoided: false,
+        },
+        select: { id: true },
+      })
+      skipApproval = !!approvedInSession
+    }
+
     const order = await this.prisma.$transaction(async tx => {
       const created = await tx.order.create({
         data: {
@@ -162,6 +184,7 @@ export class OrdersService {
           tokenNumber,
           subtotal,
           vatAmount,
+          packingCharge,
           total,
           notes: dto.notes,
           clientIp,
@@ -181,13 +204,12 @@ export class OrdersService {
               } : undefined,
             })),
           },
-          // Staff orders and returning guest orders (same session) skip approval and go straight to kitchen
           ...(dto.bookingId
             ? { bookingId: dto.bookingId, status: 'PRE_ORDER' }
-            : (!isNewTableSession || (dto.type === 'DINE_IN' && userId))
+            : skipApproval
               ? { status: 'ACCEPTED' }
               : {}),
-          statusHistory: { create: { fromStatus: null, toStatus: dto.bookingId ? 'PRE_ORDER' : (!isNewTableSession || (dto.type === 'DINE_IN' && userId)) ? 'ACCEPTED' : 'PENDING', changedById: userId } },
+          statusHistory: { create: { fromStatus: null, toStatus: dto.bookingId ? 'PRE_ORDER' : skipApproval ? 'ACCEPTED' : 'PENDING', changedById: userId } },
         },
         include: { items: { include: { menuItem: true, modifiers: true } }, table: true },
       })
@@ -209,6 +231,18 @@ export class OrdersService {
     })
 
     this.gateway.emitNewOrder(order)
+
+    // Web push to staff devices — fires even when the staff tab/browser is closed
+    if (!dto.bookingId) {
+      const where = order.table ? (order.table.name ?? `Table ${order.table.tableNumber}`) : `Takeaway #${tokenNumber}`
+      const itemCount = dto.items.reduce((s, i) => s + i.quantity, 0)
+      this.push.notifyStaff(
+        skipApproval ? '🛎 New Order — In Kitchen' : '🛎 New Order — Needs Approval',
+        `${where} · ${itemCount} item${itemCount !== 1 ? 's' : ''} · AED ${total.toFixed(2)}`,
+        '/staff/orders',
+        `order-${order.id}`,
+      )
+    }
 
     // Customer added a pre-order after booking — send combined email with food items.
     if (dto.bookingId) {
@@ -384,6 +418,17 @@ export class OrdersService {
 
     if (dto.status === 'READY') this.gateway.emitOrderReady(updated)
     else this.gateway.emitOrderUpdated(updated)
+
+    // Push notifications: staff (servers) when food is ready; customer on key status changes
+    if (dto.status === 'READY') {
+      const where = updated.table ? (updated.table.name ?? `Table ${updated.table.tableNumber}`) : `Takeaway #${updated.tokenNumber}`
+      this.push.notifyStaff('✅ Order Ready', `${where} — ready to serve`, '/staff/orders', `ready-${id}`)
+      if (order.userId) this.push.notifyUser(order.userId, '🎉 Your Order is Ready!', 'Please collect or wait for your server')
+    } else if (dto.status === 'PREPARING' && order.userId) {
+      this.push.notifyUser(order.userId, '👨‍🍳 In the Kitchen', 'Chef is preparing your order')
+    } else if (dto.status === 'CANCELLED' && order.userId) {
+      this.push.notifyUser(order.userId, '❌ Order Cancelled', 'Please speak to a staff member')
+    }
 
     if (isAcceptEvent) {
       const cfg = await this.settings.get()
@@ -741,13 +786,14 @@ export class OrdersService {
     const vatAmount   = orders.reduce((s, o) => s + Number(o.vatAmount), 0)
     const discount    = orders.reduce((s, o) => s + Number(o.discountAmount ?? 0), 0)
     const tipAmount   = orders.reduce((s, o) => s + Number(o.tipAmount ?? 0), 0)
+    const packingCharge = orders.reduce((s, o) => s + Number(o.packingCharge ?? 0), 0)
     const total       = orders.reduce((s, o) => s + Number(o.total), 0)
     // Who closed the bill — pick the first settled order's settledBy
     const settledByOrder = orders.find(o => o.settledBy)
     const settledBy = settledByOrder?.settledBy ?? null
     const settledAt = settledByOrder?.settledAt ?? null
     return {
-      subtotal, vatAmount, discount, tipAmount, total,
+      subtotal, vatAmount, discount, tipAmount, packingCharge, total,
       orderCount: orders.length,
       allPaid:   orders.length > 0 && orders.every(o => o.paymentStatus === 'PAID'),
       anyUnpaid: orders.some(o => o.paymentStatus === 'UNPAID'),
@@ -872,10 +918,11 @@ export class OrdersService {
 
   // Orders for a specific session by sessionId
   async getSessionBill(sessionId: string) {
+    // Falls back to a single order id — lets pure takeaways (no table session) use the same receipt template
     const orders = await this.prisma.order.findMany({
-      where: { tableSessionId: sessionId, status: { not: 'CANCELLED' } },
+      where: { OR: [{ tableSessionId: sessionId }, { id: sessionId }], status: { not: 'CANCELLED' } },
       include: {
-        items: { include: { menuItem: true } },
+        items: { include: { menuItem: true, modifiers: true } },
         user: { select: { id: true, name: true } },
         approvedBy: { select: { name: true, role: true } },
         settledBy: { select: { id: true, name: true, role: true } },
@@ -962,10 +1009,13 @@ export class OrdersService {
     return this.getSessionBill(latestOrder.tableSessionId)
   }
 
-  async convertSessionToTakeaway(sessionId: string) {
-    // Find all UNPAID dine-in orders for this session
+  async convertSessionToTakeaway(sessionId: string, onlyOrderIds?: string[]) {
+    // Find UNPAID dine-in orders for this session — optionally restricted to specific orders
     const orders = await this.prisma.order.findMany({
-      where: { tableSessionId: sessionId, type: 'DINE_IN', paymentStatus: 'UNPAID', status: { not: 'CANCELLED' } },
+      where: {
+        tableSessionId: sessionId, type: 'DINE_IN', paymentStatus: 'UNPAID', status: { not: 'CANCELLED' },
+        ...(onlyOrderIds?.length ? { id: { in: onlyOrderIds } } : {}),
+      },
       select: { id: true, tableId: true },
     })
     if (!orders.length) throw new BadRequestException('No active dine-in orders found for this session')
@@ -975,10 +1025,31 @@ export class OrdersService {
     // Only change the type — keep tableId and tableSessionId so the bill stays
     // visible in Active Bills and can be settled normally. Kitchen sees the
     // TAKEAWAY type change immediately via socket.
-    await this.prisma.order.updateMany({
-      where: { id: { in: orderIds } },
-      data: { type: 'TAKEAWAY' },
-    })
+    // Packing charge: applied per converted order (recompute VAT + total).
+    const cfg = await this.settings.get()
+    const packing = Number((cfg as any).packingCharge ?? 0)
+    if (packing > 0) {
+      const fullOrders = await this.prisma.order.findMany({
+        where: { id: { in: orderIds } },
+        select: { id: true, subtotal: true, packingCharge: true },
+      })
+      await this.prisma.$transaction(fullOrders.map(o => {
+        // Don't double-charge if somehow already has one
+        const charge = Number(o.packingCharge) > 0 ? Number(o.packingCharge) : packing
+        const sub = Number(o.subtotal)
+        const vat = Math.round((sub + charge) * VAT_RATE * 100) / 100
+        const tot = Math.round((sub + charge + vat) * 100) / 100
+        return this.prisma.order.update({
+          where: { id: o.id },
+          data: { type: 'TAKEAWAY', packingCharge: charge, vatAmount: vat, total: tot },
+        })
+      }))
+    } else {
+      await this.prisma.order.updateMany({
+        where: { id: { in: orderIds } },
+        data: { type: 'TAKEAWAY' },
+      })
+    }
 
     // Emit socket update for each order so kitchen sees the type change
     const updated = await this.prisma.order.findMany({
@@ -995,9 +1066,11 @@ export class OrdersService {
     const today = dateStr ? new Date(dateStr) : new Date(); today.setHours(0, 0, 0, 0)
     const dayEnd = new Date(today); dayEnd.setHours(23, 59, 59, 999)
     const orders = await this.prisma.order.findMany({
-      where: { type: 'TAKEAWAY', createdAt: { gte: today, lte: dayEnd }, status: { not: 'CANCELLED' } },
+      // tableSessionId: null — converted dine-in→takeaway orders stay on their table's
+      // session bill; only pure walk-in takeaways get their own token card here.
+      where: { type: 'TAKEAWAY', tableSessionId: null, createdAt: { gte: today, lte: dayEnd }, status: { not: 'CANCELLED' } },
       include: {
-        items: { include: { menuItem: true } },
+        items: { include: { menuItem: true, modifiers: true } },
         user: { select: { id: true, name: true, phone: true } },
       },
       orderBy: { tokenNumber: 'asc' },

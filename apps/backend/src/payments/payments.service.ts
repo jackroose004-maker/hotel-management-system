@@ -107,6 +107,18 @@ export class PaymentsService {
     return { received: true }
   }
 
+  // Counter collection: staff marks a single order PAID (takeaway cash/card at counter)
+  async collectOrderPayment(orderId: string, method: 'CASH' | 'CARD' = 'CASH', settledById?: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId }, select: { paymentStatus: true } })
+    if (!order) throw new NotFoundException('Order not found')
+    if (order.paymentStatus === 'PAID') return { ok: true, alreadyPaid: true }
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { paymentStatus: 'PAID', paymentMethod: method, settledById: settledById ?? null, settledAt: new Date() },
+    })
+    return { ok: true }
+  }
+
   // Guest selects "Pay Cash" — marks payment method, staff settles later
   async registerCashOrder(orderId: string) {
     const order = await this.prisma.order.update({

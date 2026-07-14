@@ -1114,7 +1114,7 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                           <Plus size={13} /> Add Items
                         </button>
                         <div className="flex gap-1.5">
-                          <button onClick={() => openBill(table)}
+                          <button onClick={() => router.push('/staff/bills')}
                             className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-xl text-xs font-semibold border transition-colors hover:bg-[var(--muted-bg)]"
                             style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
                             <Receipt size={12} /><span className="hidden sm:inline">Bill</span>

@@ -13,6 +13,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { requestNotifyPermission, notify } from '@/lib/notify'
+import { subscribeToPush } from '@/lib/push'
 import { getSocket } from '@/lib/socket'
 import { useCartStore } from '@/store/cart'
 import { useAuthStore } from '@/store/auth'
@@ -388,6 +389,7 @@ function MenuPageInner() {
   const [qrTableReservationOnly, setQrTableReservationOnly] = useState(false)
   const [reservationPopupDismissed, setReservationPopupDismissed] = useState(false)
   const [bookingsEnabled, setBookingsEnabled] = useState(true)
+  const [packingCharge, setPackingCharge] = useState(0)
 
   // Staff session picker — when staff orders for a table that has multiple guests
   const [tableSessions, setTableSessions] = useState<{ sessionId: string; label: string; orderCount: number; itemCount: number; total: number; itemSummary: string[]; firstOrderAt: string | null }[]>([])
@@ -490,6 +492,8 @@ function MenuPageInner() {
     setMounted(true)
     applyLangDir(lang)
     requestNotifyPermission()
+    // Logged-in customers get server push for order status (silently no-ops for guests)
+    subscribeToPush()
     if (fromBooking || fromQr) {
       cart.setOrderType('DINE_IN')
     } else {
@@ -542,7 +546,10 @@ function MenuPageInner() {
         loadCategoryItems(cats[0].id)
       }
     })
-    api.get('/settings').then(r => setBookingsEnabled(r.data?.bookingsEnabled !== false)).catch(() => {})
+    api.get('/settings').then(r => {
+      setBookingsEnabled(r.data?.bookingsEnabled !== false)
+      setPackingCharge(Number(r.data?.packingCharge ?? 0))
+    }).catch(() => {})
     api.get('/tables').then(r => {
       setAllTables(r.data ?? [])
       // If coming from booking, resolve tableId → tableNumber
@@ -1386,7 +1393,10 @@ function MenuPageInner() {
                 <p className="text-center text-[11px] text-gray-600">{t(lang, 'cart.mostGuestsPay')}</p>
               )}
               {!fromBooking && cart.orderType === 'TAKEAWAY' && (
-                <p className="text-center text-[11px] text-gray-600">Pay securely by card · your order will be ready for pickup</p>
+                <p className="text-center text-[11px] text-gray-600">
+                  Pay securely by card · your order will be ready for pickup
+                  {packingCharge > 0 && <><br />📦 + AED {packingCharge.toFixed(2)} packing charge (added at checkout)</>}
+                </p>
               )}
               {fromBooking && (
                 <p className="text-center text-xs text-gray-600">{t(lang, 'cart.preOrderBooking')}</p>

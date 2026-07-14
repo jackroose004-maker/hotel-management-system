@@ -852,13 +852,33 @@ export default function MenuOrdersPage() {
       notify.info(payload.message, '💬 Staff replied')
     }
 
+    // Staff placed an order for THIS guest's tab (from the admin tables page) —
+    // add it to the tracking board live instead of waiting for a page reload
+    const onNewOrder = (o: Order & { tableSessionId?: string | null; userId?: string | null }) => {
+      // Strictly MY tab: same session token, or (logged in) my own userId.
+      // Never match by table — other guests at the same table have their own tabs.
+      const myToken = sessionStorage.getItem('almanzil_tab_token')
+      let myUserId: string | null = null
+      try { myUserId = JSON.parse(localStorage.getItem('user') || 'null')?.id ?? null } catch {}
+      const mine = (myToken && o.tableSessionId === myToken)
+        || (myUserId && o.userId === myUserId)
+      if (!mine) return
+      setOrders(prev => {
+        if (prev.some(x => x.id === o.id)) return prev
+        notify.info('A new order was added to your tab')
+        return [o, ...prev]
+      })
+    }
+
     socket.on('order:updated', handler)
     socket.on('order:ready', handler)
     socket.on('order:message', onMessage)
+    socket.on('order:new', onNewOrder)
     return () => {
       socket.off('order:updated', handler)
       socket.off('order:ready', handler)
       socket.off('order:message', onMessage)
+      socket.off('order:new', onNewOrder)
     }
   }, [])
 

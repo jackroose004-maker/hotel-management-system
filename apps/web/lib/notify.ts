@@ -1,6 +1,32 @@
 import toast from 'react-hot-toast'
 
 let swReg: ServiceWorkerRegistration | null = null
+let audioCtx: AudioContext | null = null
+
+// Two-tone chime via Web Audio — no asset file needed. Works while any tab of
+// the app is open (background tabs included); closed-browser alerts come from
+// the OS notification sound via web push.
+export function playChime(kind: 'new' | 'ready' = 'new') {
+  if (typeof window === 'undefined') return
+  try {
+    audioCtx = audioCtx ?? new (window.AudioContext || (window as any).webkitAudioContext)()
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {})
+    const notes = kind === 'new' ? [880, 1174.66] : [1046.5, 1318.5]
+    notes.forEach((freq, i) => {
+      const osc = audioCtx!.createOscillator()
+      const gain = audioCtx!.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      const t = audioCtx!.currentTime + i * 0.18
+      gain.gain.setValueAtTime(0.0001, t)
+      gain.gain.exponentialRampToValueAtTime(0.35, t + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.45)
+      osc.connect(gain).connect(audioCtx!.destination)
+      osc.start(t)
+      osc.stop(t + 0.5)
+    })
+  } catch {}
+}
 
 // Register service worker and request permission — call once on mount
 export async function requestNotifyPermission() {
@@ -56,10 +82,12 @@ export const notify = {
     new(label: string) {
       toast.success(`New order — ${label}`)
       push('🛎 New Order', label)
+      playChime('new')
     },
     ready(label: string) {
       toast.success(`Order ready — ${label}`)
       push('✅ Order Ready', `${label} is ready to serve`)
+      playChime('ready')
     },
     accepted(_label: string) {
       toast.success('✅ Your order has been confirmed!')

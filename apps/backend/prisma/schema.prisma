@@ -295,6 +295,7 @@ model Order {
   discountReason   String?        @map("discount_reason")
   splitCashAmount  Decimal?       @db.Decimal(10, 2) @map("split_cash_amount")
   tipAmount        Decimal        @default(0) @db.Decimal(10, 2) @map("tip_amount")
+  packingCharge    Decimal        @default(0) @db.Decimal(10, 2) @map("packing_charge")
   total            Decimal        @db.Decimal(10, 2)
   paymentStatus    PaymentStatus  @default(UNPAID) @map("payment_status")
   paymentMethod    PaymentMethod? @map("payment_method")
@@ -610,6 +611,8 @@ model RestaurantSettings {
   defaultCapacity     Int      @default(4) @map("default_capacity")
   vatRate             Decimal  @default(0.05) @db.Decimal(5, 4) @map("vat_rate")
   serviceChargeRate   Decimal  @default(0) @db.Decimal(5, 4) @map("service_charge_rate")
+  // Takeaway packing charge — flat AED per takeaway order (0 = disabled)
+  packingCharge       Decimal  @default(0) @db.Decimal(10, 2) @map("packing_charge")
   currency            String   @default("AED")
   currencySymbol      String   @default("AED") @map("currency_symbol")
   defaultPrepTimeMins Int      @default(15) @map("default_prep_time_mins")
@@ -690,4 +693,17 @@ model EmailTemplate {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("email_templates")
+}
+
+// Web Push subscriptions — one row per browser/device that opted in
+model PushSubscription {
+  id        String   @id @default(uuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userId    String?  @map("user_id")
+  role      String   @default("STAFF") // STAFF | CUSTOMER — who gets which notification kinds
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("push_subscriptions")
 }

@@ -22,7 +22,7 @@ export class OrdersController {
       (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ??
       req.socket?.remoteAddress ??
       undefined
-    return this.orders.create(dto, isStaff ? undefined : user?.id, clientIp)
+    return this.orders.create(dto, isStaff ? undefined : user?.id, clientIp, !!isStaff)
   }
 
   @UseGuards(JwtAuthGuard)
@@ -129,8 +129,8 @@ export class OrdersController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'STAFF')
   @Post('session/:sessionId/convert-to-takeaway')
-  convertToTakeaway(@Param('sessionId') sessionId: string) {
-    return this.orders.convertSessionToTakeaway(sessionId)
+  convertToTakeaway(@Param('sessionId') sessionId: string, @Body('orderIds') orderIds?: string[]) {
+    return this.orders.convertSessionToTakeaway(sessionId, orderIds)
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -147,7 +147,7 @@ export class OrdersController {
   staffOrder(@Param('tableId') tableId: string, @Body() dto: CreateOrderDto) {
     // Pass undefined userId so the order joins the table's existing customer session,
     // not a new session under the staff member's account
-    return this.orders.create({ ...dto, type: 'DINE_IN', tableId }, undefined)
+    return this.orders.create({ ...dto, type: 'DINE_IN', tableId }, undefined, undefined, true)
   }
 
   // Save a pre-order against a booking (held, not sent to kitchen until guest arrives)

@@ -109,8 +109,17 @@ export default function BillSection({ cfg, set, openPanel, setOpenPanel }: Props
             <Row label="Tips / gratuity" desc="Staff can add a tip before settling the bill">
               <Toggle checked={!!cfg.tipEnabled} onChange={v => set('tipEnabled', v)} />
             </Row>
-            <Row label="Discounts" desc="Managers can apply a percentage or fixed discount" border={false}>
+            <Row label="Discounts" desc="Managers can apply a percentage or fixed discount">
               <Toggle checked={!!cfg.discountEnabled} onChange={v => set('discountEnabled', v)} />
+            </Row>
+            <Row label="Packing charge (AED)" desc="Flat charge added to every takeaway order — 0 disables it" border={false}>
+              <input
+                type="number" min={0} step={0.5}
+                value={cfg.packingCharge ?? 0}
+                onChange={e => set('packingCharge', Math.max(0, Number(e.target.value)))}
+                className="w-20 text-right text-sm px-2 py-1.5 rounded-lg outline-none"
+                style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }}
+              />
             </Row>
           </BillAccordion>
 

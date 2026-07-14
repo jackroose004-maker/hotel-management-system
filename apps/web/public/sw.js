@@ -1,6 +1,9 @@
 // Al Manzil Service Worker — handles push notifications on mobile
 self.addEventListener('push', event => {
-  const data = event.data?.json() ?? {}
+  // Payload may be JSON (our backend) or plain text (DevTools test) — handle both
+  let data = {}
+  try { data = event.data?.json() ?? {} }
+  catch { data = { title: 'Al Manzil', body: event.data?.text() ?? '' } }
   event.waitUntil(
     self.registration.showNotification(data.title ?? 'Al Manzil', {
       body: data.body ?? '',

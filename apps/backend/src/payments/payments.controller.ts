@@ -29,6 +29,14 @@ export class PaymentsController {
     return this.payments.registerCashOrder(orderId)
   }
 
+  // Counter collection: staff marks a single order PAID (takeaway pickup)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post('order/:orderId/collect')
+  collectOrder(@Param('orderId') orderId: string, @Body('method') method: string, @Req() req: any) {
+    return this.payments.collectOrderPayment(orderId, (method === 'CARD' ? 'CARD' : 'CASH'), req.user?.id)
+  }
+
   // Settle ALL unpaid orders for a table
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'STAFF')
