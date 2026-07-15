@@ -73,6 +73,8 @@ export type Cfg = {
   tipEnabled: boolean
   discountEnabled: boolean
   packingCharge?: number
+  refundCoolingMins?: number
+  selfCancelWindowMins?: number
   preOrderEnabled: boolean
   preOrderLeadMins: number
 }
@@ -87,7 +89,7 @@ export const UPDATABLE: (keyof Cfg)[] = [
   'maxBookingDaysAhead','requireLoginToBook','remindersEnabled','reminderMinsBefore',
   'brandColor','showLanguageToggle','loginDesktopImage',
   'kdsEnabled','thermalEnabled','thermalPrinterIp','thermalPrinterPort','kotConfig',
-  'splitPaymentEnabled','tipEnabled','discountEnabled','packingCharge','preOrderEnabled','preOrderLeadMins',
+  'splitPaymentEnabled','tipEnabled','discountEnabled','packingCharge','refundCoolingMins','selfCancelWindowMins','preOrderEnabled','preOrderLeadMins',
 ]
 
 export const TIMEZONES = ['Asia/Dubai','Asia/Riyadh','Asia/Kuwait','Asia/Bahrain','Asia/Qatar','Asia/Muscat']

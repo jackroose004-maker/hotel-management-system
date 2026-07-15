@@ -232,7 +232,9 @@ export default function KitchenPage() {
 
   useEffect(() => {
     const s = getSocket()
-    s.on('order:new', (o: Order) => {
+    s.on('order:new', (o: Order & { heldUntil?: string | null }) => {
+      // Cooling hold: guest can still free-cancel — kitchen sees it only on release
+      if (o.heldUntil && new Date(o.heldUntil) > new Date()) return
       // Thermal mode: show new PENDING orders immediately (no accept step)
       // Non-thermal: only show once staff accepts (ACCEPTED status)
       const isThermal = thermalRef.current

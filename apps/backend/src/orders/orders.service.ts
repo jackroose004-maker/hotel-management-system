@@ -174,6 +174,13 @@ export class OrdersService {
       skipApproval = !!approvedInSession
     }
 
+    // Guest cooling hold (Swiggy-style): guest orders wait selfCancelWindowMins before
+    // reaching the kitchen/approval queue — during this time the guest can cancel free
+    // (card payments auto-refund). Staff orders and booking pre-orders are never held.
+    const holdMins = (!isStaff && !dto.bookingId) ? Math.max(0, Number((cfgForCharge as any).selfCancelWindowMins ?? 0)) : 0
+    const heldUntil = holdMins > 0 ? new Date(Date.now() + holdMins * 60_000) : null
+    if (heldUntil) skipApproval = false // decision re-made at release time
+
     const order = await this.prisma.$transaction(async tx => {
       const created = await tx.order.create({
         data: {
@@ -186,6 +193,7 @@ export class OrdersService {
           vatAmount,
           packingCharge,
           total,
+          heldUntil,
           notes: dto.notes,
           clientIp,
           contactPhone: dto.contactPhone,
@@ -232,8 +240,9 @@ export class OrdersService {
 
     this.gateway.emitNewOrder(order)
 
-    // Web push to staff devices — fires even when the staff tab/browser is closed
-    if (!dto.bookingId) {
+    // Web push to staff devices — fires even when the staff tab/browser is closed.
+    // Held orders alert staff only at release (cooling window may end in a free cancel).
+    if (!dto.bookingId && !heldUntil) {
       const where = order.table ? (order.table.name ?? `Table ${order.table.tableNumber}`) : `Takeaway #${tokenNumber}`
       const itemCount = dto.items.reduce((s, i) => s + i.quantity, 0)
       this.push.notifyStaff(
@@ -529,12 +538,49 @@ export class OrdersService {
   async guestCancel(id: string, cancelReason?: string) {
     const order = await this.getById(id)
     if (order.status !== 'PENDING') throw new BadRequestException('Order can only be cancelled while pending')
+
+    // Swiggy-style self-service refund: card-paid orders cancelled within the cooling
+    // window get an instant automatic Stripe refund — no staff approval needed.
+    // Outside the window (or non-card), the cancel goes through the normal
+    // cooling → staff-approval flow.
+    let selfRefunded = false
+    if (order.paymentStatus === 'PAID' && order.paymentMethod === 'CARD' && (order as any).stripeIntentId) {
+      const cfg = await this.settings.get()
+      const windowMins = Math.max(0, Number((cfg as any).selfCancelWindowMins ?? 5))
+      // Still held = always inside the window; otherwise check elapsed time
+      const stillHeld = (order as any).heldUntil && new Date((order as any).heldUntil) > new Date()
+      const paidRecently = stillHeld || Date.now() - new Date(order.createdAt).getTime() <= windowMins * 60_000
+      if (paidRecently) {
+        try {
+          const Stripe = require('stripe')
+          const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { apiVersion: '2024-06-20' })
+          await stripe.refunds.create({ payment_intent: (order as any).stripeIntentId })
+          selfRefunded = true
+          this.logger.log(`Self-service refund issued for order ${id} (within ${windowMins}min window)`)
+        } catch (err: any) {
+          this.logger.error(`Self-refund failed for order ${id}: ${err?.message} — falling back to approval flow`)
+        }
+      }
+    }
+
     const updated = await this.prisma.order.update({
       where: { id },
-      data: { status: 'CANCELLED', cancelledAt: new Date(), ...(cancelReason ? { cancelReason } : {}) },
+      data: {
+        status: 'CANCELLED', cancelledAt: new Date(),
+        ...(cancelReason ? { cancelReason } : {}),
+        ...(selfRefunded ? {
+          paymentStatus: 'REFUNDED' as any,
+          statusHistory: { create: { fromStatus: 'PENDING', toStatus: 'CANCELLED', note: 'Self-service refund — cancelled within cooling window' } },
+        } : {}),
+      },
       include: { items: { include: { menuItem: true } }, table: true },
     })
     this.gateway.emitOrderUpdated(updated)
+    if (selfRefunded) {
+      this.push.notifyStaff('↩️ Order Self-Cancelled & Refunded',
+        `${updated.table ? (updated.table.name ?? `Table ${updated.table.tableNumber}`) : `Takeaway #${updated.tokenNumber}`} · AED ${Number(updated.total).toFixed(2)} auto-refunded`,
+        '/staff/orders', `selfrefund-${id}`)
+    }
 
     // Email the customer who placed the order
     if (order.userId) {
@@ -544,7 +590,7 @@ export class OrdersService {
       }
     }
 
-    return updated
+    return { ...updated, selfRefunded }
   }
 
   async getPublicReviews(limit = 12) {
@@ -748,11 +794,15 @@ export class OrdersService {
   getActiveOrders() {
     // Include DELIVERED+UNPAID so counter staff can collect cash payment.
     // Exclude PRE_ORDER — those are held and only fire to kitchen on guest arrival.
+    // Exclude cooling-hold orders (heldUntil in the future) — guest can still free-cancel.
     return this.prisma.order.findMany({
       where: {
-        OR: [
-          { status: { notIn: ['PRE_ORDER', 'DELIVERED', 'CANCELLED'] } },
-          { status: 'DELIVERED', paymentStatus: 'UNPAID' },
+        AND: [
+          { OR: [{ heldUntil: null }, { heldUntil: { lte: new Date() } }] },
+          { OR: [
+            { status: { notIn: ['PRE_ORDER', 'DELIVERED', 'CANCELLED'] } },
+            { status: 'DELIVERED', paymentStatus: 'UNPAID' },
+          ] },
         ],
       },
       include: {
@@ -1177,17 +1227,144 @@ export class OrdersService {
     return updated
   }
 
-  async getPendingRefunds() {
-    return this.prisma.order.findMany({
-      where: { paymentStatus: 'REFUND_REQUESTED' },
-      include: {
-        table: { select: { name: true, tableNumber: true } },
-        user: { select: { name: true } },
-        items: { include: { menuItem: { select: { name: true } } } },
-        statusHistory: { orderBy: { changedAt: 'desc' }, take: 1 },
-      },
-      orderBy: { updatedAt: 'desc' },
+  // Every 30s: release guest orders whose cooling hold expired — NOW they reach the
+  // kitchen/approval queue. The approval decision is made here (not at creation) so a
+  // session approved during the hold still fast-tracks the released order.
+  @Cron('*/30 * * * * *')
+  async releaseHeldOrders() {
+    const due = await this.prisma.order.findMany({
+      where: { heldUntil: { not: null, lte: new Date() }, status: 'PENDING' },
+      include: { items: { include: { menuItem: true, modifiers: true } }, table: true },
     })
+    for (const o of due) {
+      // Same rule as create(): follow-up orders skip approval once the session has an approved order
+      let skipApproval = false
+      if (o.type === 'DINE_IN' && o.tableSessionId) {
+        const approved = await this.prisma.order.findFirst({
+          where: { tableSessionId: o.tableSessionId, status: { in: ['ACCEPTED', 'PREPARING', 'READY', 'DELIVERED'] }, isVoided: false },
+          select: { id: true },
+        })
+        skipApproval = !!approved
+      }
+      const updated = await this.prisma.order.update({
+        where: { id: o.id },
+        data: {
+          heldUntil: null,
+          ...(skipApproval ? {
+            status: 'ACCEPTED',
+            statusHistory: { create: { fromStatus: 'PENDING', toStatus: 'ACCEPTED', note: 'Released from cooling hold — session already approved' } },
+          } : {}),
+        },
+        include: { items: { include: { menuItem: true, modifiers: true } }, table: true },
+      }).catch(() => null)
+      if (!updated) continue
+      this.gateway.emitNewOrder(updated)
+      const where = updated.table ? (updated.table.name ?? `Table ${updated.table.tableNumber}`) : `Takeaway #${updated.tokenNumber}`
+      this.push.notifyStaff(
+        skipApproval ? '🛎 New Order — In Kitchen' : '🛎 New Order — Needs Approval',
+        `${where} · AED ${Number(updated.total).toFixed(2)}`,
+        '/staff/orders',
+        `order-${updated.id}`,
+      )
+    }
+    if (due.length) this.logger.log(`Released ${due.length} order(s) from cooling hold`)
+  }
+
+  // Every minute: paid orders that were cancelled and finished their cooling window
+  // get auto-flagged for refund approval. During the window a mistaken cancel can be
+  // sorted out without touching money.
+  @Cron(CronExpression.EVERY_MINUTE)
+  async autoFlagRefundsAfterCooling() {
+    const cfg = await this.settings.get()
+    const mins = Math.max(0, Number((cfg as any).refundCoolingMins ?? 10))
+    const cutoff = new Date(Date.now() - mins * 60_000)
+    const due = await this.prisma.order.findMany({
+      where: { paymentStatus: 'PAID', status: 'CANCELLED', cancelledAt: { not: null, lte: cutoff } },
+      select: { id: true },
+    })
+    for (const o of due) {
+      await this.prisma.order.update({
+        where: { id: o.id },
+        data: {
+          paymentStatus: 'REFUND_REQUESTED',
+          statusHistory: {
+            create: { fromStatus: 'CANCELLED', toStatus: 'CANCELLED', note: `Auto-flagged for refund after ${mins}-minute cooling period` },
+          },
+        },
+      }).catch(() => {})
+      this.push.notifyStaff('💰 Refund Needs Approval', 'A cancelled paid order finished its cooling period', '/staff/bills', `refund-${o.id}`)
+    }
+    if (due.length) this.logger.log(`Auto-flagged ${due.length} order(s) for refund after cooling`)
+  }
+
+  // Manager keeps the money — cancel was a mistake / resolved with the guest
+  async rejectRefund(orderId: string, managerId: string, reason?: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } })
+    if (!order) throw new NotFoundException('Order not found')
+    if (order.paymentStatus !== 'REFUND_REQUESTED') throw new BadRequestException('No pending refund request')
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        paymentStatus: 'PAID',
+        statusHistory: {
+          create: {
+            fromStatus: order.status as any,
+            toStatus: order.status as any,
+            changedById: managerId,
+            note: `Refund rejected${reason ? `: ${reason}` : ''}`,
+          },
+        },
+      },
+      include: { items: { include: { menuItem: true } }, table: true },
+    })
+    await this.prisma.activityLog.create({
+      data: {
+        actorId: managerId,
+        action: 'order.refund_rejected',
+        entityType: 'Order',
+        entityId: orderId,
+        before: { paymentStatus: 'REFUND_REQUESTED' },
+        after: { paymentStatus: 'PAID', reason },
+      },
+    })
+    this.gateway.emitOrderUpdated(updated)
+    return updated
+  }
+
+  async getPendingRefunds() {
+    const [requested, cooling] = await Promise.all([
+      this.prisma.order.findMany({
+        where: { paymentStatus: 'REFUND_REQUESTED' },
+        include: {
+          table: { select: { name: true, tableNumber: true } },
+          user: { select: { name: true } },
+          items: { include: { menuItem: { select: { name: true } } } },
+          statusHistory: { orderBy: { changedAt: 'desc' }, take: 1 },
+        },
+        orderBy: { updatedAt: 'desc' },
+      }),
+      // Orders still in the cooling window — shown with a countdown, no action needed yet
+      this.prisma.order.findMany({
+        where: { paymentStatus: 'PAID', status: 'CANCELLED', cancelledAt: { not: null } },
+        include: {
+          table: { select: { name: true, tableNumber: true } },
+          user: { select: { name: true } },
+          items: { include: { menuItem: { select: { name: true } } } },
+        },
+        orderBy: { cancelledAt: 'desc' },
+      }),
+    ])
+    const cfg = await this.settings.get()
+    const coolingMins = Math.max(0, Number((cfg as any).refundCoolingMins ?? 10))
+    return {
+      requested,
+      cooling: cooling.map(o => ({
+        ...o,
+        coolingEndsAt: new Date(new Date(o.cancelledAt!).getTime() + coolingMins * 60_000),
+      })),
+      coolingMins,
+    }
   }
 
   // ── Pre-order: save items against a booking, held until guest arrives ──────

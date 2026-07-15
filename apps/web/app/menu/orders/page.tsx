@@ -315,6 +315,12 @@ function GuestCancelModal({ order, onConfirm, onClose, busy }: {
         <div className="text-center">
           <p className="text-base font-black text-white mb-0.5">Cancel your order?</p>
           <p className="text-xs text-gray-500">This cannot be undone. Please let us know why.</p>
+          {order.paymentStatus === 'PAID' && order.paymentMethod === 'CARD' && (
+            <p className="text-[11px] mt-1.5 px-3 py-1.5 rounded-lg inline-block"
+              style={{ backgroundColor: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.25)', color: '#4ade80' }}>
+              💳 Cancelling soon after ordering refunds your card automatically
+            </p>
+          )}
         </div>
         <div className="rounded-xl p-3 space-y-1" style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}>
           {order.items.map((item, i) => (
@@ -885,7 +891,7 @@ export default function MenuOrdersPage() {
   const cancelOrder = async (orderId: string, reason: string) => {
     setCancelling(true)
     try {
-      await api.post(`/orders/${orderId}/cancel`, { cancelReason: reason })
+      const { data } = await api.post(`/orders/${orderId}/cancel`, { cancelReason: reason })
       setOrders(prev => {
         const next = prev.filter(o => o.id !== orderId)
         try {
@@ -895,7 +901,11 @@ export default function MenuOrdersPage() {
         if (!next.length) router.replace('/menu')
         return next
       })
-      notify.info(`Order cancelled — ${reason}`)
+      if (data?.selfRefunded) {
+        notify.success('Order cancelled — your refund has been issued to your card 💳 (3–5 business days)')
+      } else {
+        notify.info(`Order cancelled — ${reason}`)
+      }
     } catch {
       notify.error('Could not cancel — please ask a staff member')
     } finally {

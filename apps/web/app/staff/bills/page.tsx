@@ -1799,6 +1799,8 @@ export default function BillsPage() {
   const [closed, setClosed]         = useState<ClosedSession[]>([])
   const [takeaway, setTakeaway]     = useState<TakeawayEntry[]>([])
   const [pendingRefunds, setPendingRefunds] = useState<any[]>([])
+  const [coolingRefunds, setCoolingRefunds] = useState<any[]>([])
+  const [rejectingRefund, setRejectingRefund] = useState<Record<string, boolean>>({})
   const [loading, setLoading]       = useState(true)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [busySession, setBusySession] = useState<Record<string, boolean>>({})
@@ -1841,7 +1843,12 @@ export default function BillsPage() {
         tipEnabled: s.tipEnabled ?? true,
         discountEnabled: s.discountEnabled ?? true,
       })
-      if (refundsRes) setPendingRefunds(refundsRes.data ?? [])
+      if (refundsRes) {
+        // New shape: { requested, cooling, coolingMins }; tolerate old array shape
+        const d = refundsRes.data
+        if (Array.isArray(d)) { setPendingRefunds(d); setCoolingRefunds([]) }
+        else { setPendingRefunds(d?.requested ?? []); setCoolingRefunds(d?.cooling ?? []) }
+      }
     } finally { setLoading(false) }
   }, [isManager, historyDate])
 
@@ -1887,6 +1894,19 @@ export default function BillsPage() {
       notify.error(e?.message ?? 'Failed to approve refund')
     } finally {
       setApprovingRefund(p => ({ ...p, [orderId]: false }))
+    }
+  }
+
+  const rejectRefund = async (orderId: string) => {
+    setRejectingRefund(p => ({ ...p, [orderId]: true }))
+    try {
+      await api.post(`/orders/${orderId}/reject-refund`, {})
+      notify.success('Refund rejected — payment kept')
+      await load()
+    } catch (e: any) {
+      notify.error(e?.message ?? 'Failed to reject refund')
+    } finally {
+      setRejectingRefund(p => ({ ...p, [orderId]: false }))
     }
   }
 
@@ -1974,13 +1994,60 @@ export default function BillsPage() {
                       </p>
                     </div>
                     <button
+                      onClick={() => rejectRefund(o.id)}
+                      disabled={rejectingRefund[o.id] || approvingRefund[o.id]}
+                      className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg font-semibold disabled:opacity-50 transition-colors border flex-shrink-0"
+                      style={{ borderColor: 'var(--card-border)', color: 'var(--text-muted)' }}>
+                      {rejectingRefund[o.id] ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />}
+                      Reject
+                    </button>
+                    <button
                       onClick={() => approveRefund(o.id)}
-                      disabled={approvingRefund[o.id]}
+                      disabled={approvingRefund[o.id] || rejectingRefund[o.id]}
                       className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg font-semibold disabled:opacity-50 transition-colors text-white flex-shrink-0"
                       style={{ backgroundColor: '#f59e0b' }}>
                       {approvingRefund[o.id] ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />}
                       Approve
                     </button>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* ── Cooling: paid orders cancelled recently — refund auto-flags after the window ── */}
+        {!loading && isManager && coolingRefunds.length > 0 && (
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Clock size={14} className="text-blue-400" />
+              <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Refund Cooling</h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: 'rgba(96,165,250,0.15)', color: '#60a5fa' }}>
+                {coolingRefunds.length}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {coolingRefunds.map((o: any) => {
+                const tableName = o.table?.name ?? (o.table ? `Table ${o.table.tableNumber}` : 'Takeaway')
+                const endsAt = new Date(o.coolingEndsAt)
+                const minsLeft = Math.max(0, Math.ceil((endsAt.getTime() - Date.now()) / 60_000))
+                return (
+                  <div key={o.id} className="rounded-xl border p-3 flex items-center gap-3"
+                    style={{ backgroundColor: 'var(--card-bg)', borderColor: 'rgba(96,165,250,0.3)' }}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{tableName}</span>
+                        <span className="text-xs text-gray-400">AED {Number(o.total).toFixed(2)}</span>
+                        {o.cancelReason && <span className="text-[10px] text-gray-400 truncate">"{o.cancelReason}"</span>}
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        {o.items.map((i: any) => `${i.quantity}× ${i.menuItem.name}`).join(', ')}
+                      </p>
+                    </div>
+                    <span className="text-[11px] font-semibold flex items-center gap-1 flex-shrink-0" style={{ color: '#60a5fa' }}>
+                      <Clock size={11} /> {minsLeft > 0 ? `Auto-flags in ${minsLeft} min` : 'Flagging…'}
+                    </span>
                   </div>
                 )
               })}

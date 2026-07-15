@@ -297,4 +297,12 @@ export class OrdersController {
     return this.orders.approveRefund(id, req.user.id)
   }
 
+  // Manager/owner: reject a refund request — money stays collected
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER')
+  @Post(':id/reject-refund')
+  rejectRefund(@Param('id') id: string, @Body('reason') reason: string, @Request() req) {
+    return this.orders.rejectRefund(id, req.user.id, reason)
+  }
+
 }

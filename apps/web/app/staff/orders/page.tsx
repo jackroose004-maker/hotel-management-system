@@ -1225,7 +1225,9 @@ function OrdersPageInner() {
     const onConnect    = () => setSocketConnected(true)
     const onDisconnect = () => setSocketConnected(false)
 
-    const onNew = (o: Order) => {
+    const onNew = (o: Order & { heldUntil?: string | null }) => {
+      // Cooling hold: guest can still free-cancel — this board sees it only on release
+      if (o.heldUntil && new Date(o.heldUntil) > new Date()) return
       // Re-fetch all orders so concurrent orders placed at the same time aren't missed
       load()
       setNewOrderIds(prev => new Set([...prev, o.id]))

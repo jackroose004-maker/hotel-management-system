@@ -307,6 +307,8 @@ model Order {
   approvedAt      DateTime?      @map("approved_at")
   cancelledById   String?        @map("cancelled_by_id")
   cancelledAt     DateTime?      @map("cancelled_at")
+  // Guest cooling hold: order hidden from kitchen/approval until this passes (free-cancel window)
+  heldUntil       DateTime?      @map("held_until")
   cancelReason    String?        @map("cancel_reason")
   isRush          Boolean        @default(false) @map("is_rush")
   isVoided        Boolean        @default(false) @map("is_voided")
@@ -613,6 +615,10 @@ model RestaurantSettings {
   serviceChargeRate   Decimal  @default(0) @db.Decimal(5, 4) @map("service_charge_rate")
   // Takeaway packing charge — flat AED per takeaway order (0 = disabled)
   packingCharge       Decimal  @default(0) @db.Decimal(10, 2) @map("packing_charge")
+  // Minutes a paid+cancelled order waits before being auto-flagged for refund approval
+  refundCoolingMins   Int      @default(10) @map("refund_cooling_mins")
+  // Guest free-cancel window: orders held from kitchen during this time; card refunds automatic. 0 = off
+  selfCancelWindowMins Int     @default(5) @map("self_cancel_window_mins")
   currency            String   @default("AED")
   currencySymbol      String   @default("AED") @map("currency_symbol")
   defaultPrepTimeMins Int      @default(15) @map("default_prep_time_mins")

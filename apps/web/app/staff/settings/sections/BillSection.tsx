@@ -112,6 +112,24 @@ export default function BillSection({ cfg, set, openPanel, setOpenPanel }: Props
             <Row label="Discounts" desc="Managers can apply a percentage or fixed discount">
               <Toggle checked={!!cfg.discountEnabled} onChange={v => set('discountEnabled', v)} />
             </Row>
+            <Row label="Guest free-cancel window (mins)" desc="Orders are held from the kitchen during this time; guest cancels auto-refund the card. 0 = off">
+              <input
+                type="number" min={0} step={1}
+                value={cfg.selfCancelWindowMins ?? 5}
+                onChange={e => set('selfCancelWindowMins', Math.max(0, Math.round(Number(e.target.value))))}
+                className="w-20 text-right text-sm px-2 py-1.5 rounded-lg outline-none"
+                style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }}
+              />
+            </Row>
+            <Row label="Refund cooling period (mins)" desc="How long a cancelled paid order waits before needing refund approval">
+              <input
+                type="number" min={0} step={1}
+                value={cfg.refundCoolingMins ?? 10}
+                onChange={e => set('refundCoolingMins', Math.max(0, Math.round(Number(e.target.value))))}
+                className="w-20 text-right text-sm px-2 py-1.5 rounded-lg outline-none"
+                style={{ backgroundColor: 'var(--muted-bg)', border: '1px solid var(--card-border)', color: 'var(--text-primary)' }}
+              />
+            </Row>
             <Row label="Packing charge (AED)" desc="Flat charge added to every takeaway order — 0 disables it" border={false}>
               <input
                 type="number" min={0} step={0.5}

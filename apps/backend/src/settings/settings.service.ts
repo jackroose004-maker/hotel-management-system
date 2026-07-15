@@ -201,6 +201,8 @@ export class SettingsService {
     tipEnabled: boolean
     discountEnabled: boolean
     packingCharge: number
+    refundCoolingMins: number
+    selfCancelWindowMins: number
     preOrderEnabled: boolean
     // Email config
     smtpHost: string; smtpPort: number; smtpSecure: boolean
