@@ -237,6 +237,35 @@ export class PaymentsService {
     return { settled: unpaid.length, total: finalTotal, tipAmount }
   }
 
+  // Party Mode: pay every unpaid order across every table in a merged group in one
+  // shot, mark all member tables DIRTY, and close the group (the party is done).
+  async settleGroup(groupId: string, method: 'CASH' | 'CARD' = 'CASH', settledById?: string) {
+    const group = await this.prisma.tableGroup.findUnique({ where: { id: groupId }, include: { members: true } })
+    if (!group) throw new NotFoundException('Group not found')
+    if (group.closedAt) throw new BadRequestException('Group is already closed')
+
+    const tableIds = group.members.map(m => m.tableId)
+    const unpaid = await this.prisma.order.findMany({
+      where: { tableId: { in: tableIds }, paymentStatus: 'UNPAID', status: { notIn: ['CANCELLED', 'PRE_ORDER'] } },
+      select: { id: true, total: true },
+    })
+    if (!unpaid.length) throw new BadRequestException('No unpaid orders found for this group')
+
+    const settleNow = new Date()
+    const total = unpaid.reduce((s, o) => s + Number(o.total), 0)
+
+    await this.prisma.$transaction([
+      ...unpaid.map(o => this.prisma.order.update({
+        where: { id: o.id },
+        data: { paymentStatus: 'PAID', paymentMethod: method, settledById: settledById ?? null, settledAt: settleNow },
+      })),
+      this.prisma.restaurantTable.updateMany({ where: { id: { in: tableIds } }, data: { status: 'DIRTY' } }),
+      this.prisma.tableGroup.update({ where: { id: groupId }, data: { closedAt: settleNow } }),
+    ])
+
+    return { settled: unpaid.length, total, tablesCleared: tableIds.length }
+  }
+
   // Settle a single order (legacy endpoint, kept for compatibility)
   async settleCashPayment(orderId: string, settledById?: string) {
     const order = await this.prisma.$transaction(async tx => {

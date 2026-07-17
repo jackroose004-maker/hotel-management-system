@@ -153,9 +153,11 @@ export class OrdersService {
         isNewTableSession = !existing
         tableSessionId = existing?.tableSessionId ?? randomUUID()
       } else {
-        // Staff placing an order — attach to latest active session
+        // Staff placing an order — attach to the table's currently OPEN session only.
+        // A session with no unpaid orders left is closed/settled — never reuse its
+        // token, or old paid orders get pulled back into the new bill's total.
         const existing = await this.prisma.order.findFirst({
-          where: { tableId: dto.tableId, tableSessionId: { not: null } },
+          where: { tableId: dto.tableId, tableSessionId: { not: null }, paymentStatus: 'UNPAID', status: { not: 'CANCELLED' } },
           orderBy: { createdAt: 'desc' },
           select: { tableSessionId: true },
         })
@@ -1111,7 +1113,42 @@ export class OrdersService {
       return { table, tabs: validTabs, combined }
     }))
 
-    return results.filter(Boolean)
+    const valid = results.filter(Boolean) as { table: any; tabs: any[]; combined: any }[]
+
+    // Party Mode: collapse entries whose tables share an open TableGroup into one
+    // combined card. Tables in the same group but with no bills yet don't add an
+    // entry — the merge is still visible on the Tables page via `mergeGroup`.
+    const openGroups = await this.prisma.tableGroup.findMany({
+      where: { closedAt: null },
+      include: { members: true },
+    })
+    const groupIdByTable = new Map<string, string>()
+    for (const g of openGroups) for (const m of g.members) groupIdByTable.set(m.tableId, g.id)
+
+    const byGroup = new Map<string, typeof valid>()
+    const ungrouped: typeof valid = []
+    for (const entry of valid) {
+      const groupId = groupIdByTable.get(entry.table.id)
+      if (!groupId) { ungrouped.push(entry); continue }
+      if (!byGroup.has(groupId)) byGroup.set(groupId, [])
+      byGroup.get(groupId)!.push(entry)
+    }
+
+    const mergedEntries = [...byGroup.entries()].map(([groupId, entries]) => {
+      const group = openGroups.find(g => g.id === groupId)!
+      const allTabs = entries.flatMap(e => e.tabs)
+      const combined = this.buildSessionSummary(allTabs.flatMap((t: any) => t.orders))
+      return {
+        table: entries[0].table, // primary table shown in the header
+        mergedTables: entries.map(e => e.table),
+        groupId,
+        groupLabel: group.label,
+        tabs: allTabs,
+        combined,
+      }
+    })
+
+    return [...ungrouped, ...mergedEntries]
   }
 
   // Today's closed sessions (tables now EMPTY or DIRTY but had orders today)

@@ -45,6 +45,14 @@ export class PaymentsController {
     return this.payments.settleAllCashForTable(tableId, method as 'CASH' | 'CARD' | undefined, req.user?.id)
   }
 
+  // Party Mode: settle every unpaid order across every table in a merged group at once
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post('group/:groupId/settle')
+  settleGroup(@Param('groupId') groupId: string, @Body('method') method: string, @Req() req: any) {
+    return this.payments.settleGroup(groupId, (method === 'CARD' ? 'CARD' : 'CASH'), req.user?.id)
+  }
+
   // Settle a specific session (personal tab) — supports discount + split payment
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER', 'STAFF')

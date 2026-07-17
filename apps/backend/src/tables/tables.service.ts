@@ -42,12 +42,79 @@ export class TablesService {
       byTable[b.tableId].push(b)
     }
 
+    // Attach active merge-group info (Party Mode) so the floor plan can show
+    // "Merged with T3, T5" without a separate call per table
+    const openGroups = await this.prisma.tableGroup.findMany({
+      where: { closedAt: null },
+      include: { members: { include: { table: { select: { id: true, name: true, tableNumber: true } } } } },
+    })
+    const groupByTable: Record<string, { groupId: string; label: string | null; otherTables: { id: string; name: string | null; tableNumber: number }[] }> = {}
+    for (const g of openGroups) {
+      const memberTables = g.members.map(m => m.table)
+      for (const m of g.members) {
+        groupByTable[m.tableId] = {
+          groupId: g.id,
+          label: g.label,
+          otherTables: memberTables.filter(t => t.id !== m.tableId),
+        }
+      }
+    }
+
     return tables.map(t => ({
       ...t,
       // next upcoming booking today (earliest slot time)
       upcomingBooking: (byTable[t.id] ?? [])
         .sort((a, b) => a.slotTime.localeCompare(b.slotTime))[0] ?? null,
+      mergeGroup: groupByTable[t.id] ?? null,
     }))
+  }
+
+  // ── Party Mode: merge 2+ tables into one combined bill ──────────────────
+
+  async mergeTables(tableIds: string[], createdById?: string, label?: string) {
+    const uniqueIds = [...new Set(tableIds)]
+    if (uniqueIds.length < 2) throw new BadRequestException('Select at least 2 tables to merge')
+
+    const tables = await this.prisma.restaurantTable.findMany({ where: { id: { in: uniqueIds } } })
+    if (tables.length !== uniqueIds.length) throw new BadRequestException('One or more tables not found')
+
+    // Block if any selected table is already in an open group
+    const existingMemberships = await this.prisma.tableGroupMember.findMany({
+      where: { tableId: { in: uniqueIds }, group: { closedAt: null } },
+      include: { table: { select: { name: true, tableNumber: true } } },
+    })
+    if (existingMemberships.length > 0) {
+      const names = existingMemberships.map(m => m.table.name ?? `Table ${m.table.tableNumber}`).join(', ')
+      throw new BadRequestException(`${names} ${existingMemberships.length === 1 ? 'is' : 'are'} already in a merged group`)
+    }
+
+    return this.prisma.tableGroup.create({
+      data: {
+        label,
+        createdById,
+        members: { create: uniqueIds.map(tableId => ({ tableId })) },
+      },
+      include: { members: { include: { table: true } } },
+    })
+  }
+
+  async unmergeGroup(groupId: string) {
+    const group = await this.prisma.tableGroup.findUnique({ where: { id: groupId } })
+    if (!group) throw new NotFoundException('Group not found')
+    if (group.closedAt) throw new BadRequestException('Group is already closed')
+    return this.prisma.tableGroup.update({ where: { id: groupId }, data: { closedAt: new Date() } })
+  }
+
+  // All table ids sharing an active group with the given table (including itself).
+  // Returns just [tableId] if it isn't merged with anything.
+  async getGroupTableIds(tableId: string): Promise<string[]> {
+    const membership = await this.prisma.tableGroupMember.findFirst({
+      where: { tableId, group: { closedAt: null } },
+      select: { groupId: true },
+    })
+    if (!membership) return [tableId]
+    const members = await this.prisma.tableGroupMember.findMany({ where: { groupId: membership.groupId }, select: { tableId: true } })
+    return members.map(m => m.tableId)
   }
 
   getAvailable() {

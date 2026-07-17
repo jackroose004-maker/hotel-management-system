@@ -274,10 +274,41 @@ model RestaurantTable {
 
   orders   Order[]
   bookings Booking[]
+  groupMemberships TableGroupMember[]
 
   @@index([status])                    // table status board / cleanup queries
   @@index([isReservable, isActive])    // booking slot capacity count
   @@map("restaurant_tables")
+}
+
+// Party Mode: 2+ tables merged into one combined bill. Open while closedAt is null —
+// at most one open group per table (enforced in service logic, not the DB, since a
+// partial unique index needs raw SQL). Settling the group pays every unpaid order
+// across every member table in one transaction and closes the group.
+model TableGroup {
+  id          String    @id @default(uuid())
+  label       String?   // optional party name, e.g. "Al-Rashid Wedding"
+  createdById String?   @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  closedAt    DateTime? @map("closed_at")
+
+  members TableGroupMember[]
+
+  @@index([closedAt])
+  @@map("table_groups")
+}
+
+model TableGroupMember {
+  id      String @id @default(uuid())
+  groupId String @map("group_id")
+  tableId String @map("table_id")
+
+  group TableGroup      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  table RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, tableId])
+  @@index([tableId])
+  @@map("table_group_members")
 }
 
 // ─────────────────────────────────────────────

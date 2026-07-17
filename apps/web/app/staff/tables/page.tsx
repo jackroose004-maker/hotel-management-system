@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Table2, Check, X, QrCode, Printer, Users, RefreshCw, Clock, Receipt, CreditCard, Banknote, CheckCircle2, Plus, Minus, ShoppingBag, LogIn, Settings, ScanLine, Loader2, Search, Trash2 } from 'lucide-react'
+import { Table2, Check, X, QrCode, Printer, Users, RefreshCw, Clock, Receipt, CreditCard, Banknote, CheckCircle2, Plus, Minus, ShoppingBag, LogIn, Settings, ScanLine, Loader2, Search, Trash2, Link2 } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
 import { notify } from '@/lib/notify'
 import api from '@/lib/api'
@@ -10,7 +10,8 @@ import BillReceipt, { DEFAULT_BILL_CONFIG } from '@/components/ui/BillReceipt'
 import type { BillConfig, ReceiptData } from '@/components/ui/BillReceipt'
 
 interface UpcomingBooking { id: string; slotTime: string; status: string; partySize: number; customer: { name: string } | null }
-interface Table { id: string; tableNumber: number; name: string | null; capacity: number; zone: string; status: string; isActive: boolean; isReservable: boolean; qrCode?: string; updatedAt?: string; upcomingBooking?: UpcomingBooking | null }
+interface MergeGroupInfo { groupId: string; label: string | null; otherTables: { id: string; name: string | null; tableNumber: number }[] }
+interface Table { id: string; tableNumber: number; name: string | null; capacity: number; zone: string; status: string; isActive: boolean; isReservable: boolean; qrCode?: string; updatedAt?: string; upcomingBooking?: UpcomingBooking | null; mergeGroup?: MergeGroupInfo | null }
 
 interface BillOrder {
   id: string; status: string; paymentStatus: string; paymentMethod?: string
@@ -92,6 +93,42 @@ export default function TablesPage() {
   const [tableSessions, setTableSessions] = useState<{ sessionId: string; label: string }[]>([])
   const [selectedSession, setSelectedSession] = useState<string>('') // '' = new session
   const [filter, setFilter]               = useState<Status | 'ALL' | 'RESERVED'>('ALL')
+  // Party Mode: merge 2+ tables into one combined bill
+  const [mergeMode, setMergeMode]         = useState(false)
+  const [selectedForMerge, setSelectedForMerge] = useState<Set<string>>(new Set())
+  const [merging, setMerging]             = useState(false)
+  const [unmerging, setUnmerging]         = useState<Record<string, boolean>>({})
+
+  const toggleMergeSelect = (id: string) => setSelectedForMerge(prev => {
+    const n = new Set(prev)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
+
+  const confirmMerge = async () => {
+    if (selectedForMerge.size < 2) return
+    setMerging(true)
+    try {
+      await api.post('/tables/merge', { tableIds: [...selectedForMerge] })
+      notify.success(`${selectedForMerge.size} tables merged`)
+      setMergeMode(false)
+      setSelectedForMerge(new Set())
+      await load()
+    } catch (e: any) {
+      notify.error(e?.response?.data?.message ?? 'Could not merge tables')
+    } finally { setMerging(false) }
+  }
+
+  const unmergeGroup = async (groupId: string) => {
+    setUnmerging(p => ({ ...p, [groupId]: true }))
+    try {
+      await api.post(`/tables/group/${groupId}/unmerge`, {})
+      notify.success('Tables unmerged')
+      await load()
+    } catch (e: any) {
+      notify.error(e?.response?.data?.message ?? 'Could not unmerge')
+    } finally { setUnmerging(p => ({ ...p, [groupId]: false })) }
+  }
   const [checkingIn, setCheckingIn]        = useState<string | null>(null) // bookingId being checked in
   const now = useNow(30000)
 
@@ -1005,8 +1042,17 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
         <button onClick={load} className="p-1 rounded-lg flex-shrink-0" style={{ color: 'var(--text-muted)' }} title="Refresh">
           <RefreshCw size={12} />
         </button>
+        <button
+          onClick={() => { setMergeMode(v => !v); setSelectedForMerge(new Set()) }}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold flex-shrink-0 transition-all active:scale-95"
+          style={mergeMode
+            ? { background: '#8b5cf6', color: '#fff' }
+            : { background: 'var(--muted-bg)', color: 'var(--text-muted)', border: '1px solid var(--card-border)' }}>
+          <Link2 size={13} />
+          {mergeMode ? 'Cancel Merge' : 'Merge Tables'}
+        </button>
         <button onClick={openScanner}
-          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white flex-shrink-0 transition-all active:scale-95"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white flex-shrink-0 transition-all active:scale-95"
           style={{ background: 'var(--brand)' }}>
           <ScanLine size={13} />
           Scan QR
@@ -1092,10 +1138,27 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
             const modeColor   = isWalkIn ? '#6366f1' : '#10b981'
             const modeLabel   = isWalkIn ? 'Walk-in' : 'Online'
 
+            const isSelectedForMerge = selectedForMerge.has(table.id)
+            const alreadyMerged = !!table.mergeGroup
+
             return (
               <div key={table.id}
-                className="rounded-2xl border overflow-hidden flex flex-col transition-all hover:shadow-md"
-                style={{ borderColor: isWalkIn ? '#6366f133' : 'var(--card-border)', backgroundColor: 'var(--card-bg)', minHeight: '200px' }}>
+                onClick={mergeMode && !alreadyMerged ? () => toggleMergeSelect(table.id) : undefined}
+                className="relative rounded-2xl border overflow-hidden flex flex-col transition-all hover:shadow-md"
+                style={{
+                  borderColor: isSelectedForMerge ? '#8b5cf6' : isWalkIn ? '#6366f133' : 'var(--card-border)',
+                  backgroundColor: 'var(--card-bg)', minHeight: '200px',
+                  cursor: mergeMode && !alreadyMerged ? 'pointer' : undefined,
+                  boxShadow: isSelectedForMerge ? '0 0 0 2px #8b5cf6' : undefined,
+                  opacity: mergeMode && alreadyMerged ? 0.5 : 1,
+                }}>
+
+                {mergeMode && !alreadyMerged && (
+                  <div className="absolute top-2 right-2 z-10 w-5 h-5 rounded-full border-2 flex items-center justify-center"
+                    style={{ borderColor: isSelectedForMerge ? '#8b5cf6' : 'var(--card-border)', backgroundColor: isSelectedForMerge ? '#8b5cf6' : 'var(--card-bg)' }}>
+                    {isSelectedForMerge && <Check size={12} className="text-white" />}
+                  </div>
+                )}
 
                 {/* dual-tone top bar: left = booking mode, right = table status */}
                 <div className="h-1 flex-shrink-0 flex">
@@ -1105,6 +1168,22 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
 
                 {/* Body */}
                 <div className="p-3 flex flex-col flex-1 gap-2">
+
+                  {/* Merged-with badge */}
+                  {table.mergeGroup && (
+                    <div className="flex items-center justify-between gap-1 px-2 py-1 rounded-lg text-[10px] font-bold"
+                      style={{ backgroundColor: 'rgba(139,92,246,0.12)', color: '#8b5cf6' }}>
+                      <span className="flex items-center gap-1 truncate">
+                        <Link2 size={10} className="flex-shrink-0" />
+                        Merged: {table.mergeGroup.otherTables.map(t => t.name ?? `T${t.tableNumber}`).join(', ')}
+                      </span>
+                      <button onClick={e => { e.stopPropagation(); unmergeGroup(table.mergeGroup!.groupId) }}
+                        disabled={unmerging[table.mergeGroup.groupId]}
+                        className="flex-shrink-0 underline disabled:opacity-50">
+                        {unmerging[table.mergeGroup.groupId] ? '…' : 'Unmerge'}
+                      </button>
+                    </div>
+                  )}
 
                   {/* Number + status */}
                   <div className="flex items-center justify-between gap-1.5">
@@ -1276,6 +1355,20 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
           })}
         </div>
       </div>
+
+      {/* Merge confirm bar */}
+      {mergeMode && selectedForMerge.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl"
+          style={{ backgroundColor: '#111', border: '1px solid #8b5cf655' }}>
+          <span className="text-sm font-semibold text-white">{selectedForMerge.size} table{selectedForMerge.size !== 1 ? 's' : ''} selected</span>
+          <button onClick={confirmMerge} disabled={selectedForMerge.size < 2 || merging}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold disabled:opacity-40 transition-all active:scale-95"
+            style={{ backgroundColor: '#8b5cf6', color: '#fff' }}>
+            <Link2 size={14} />
+            {merging ? 'Merging…' : 'Merge'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

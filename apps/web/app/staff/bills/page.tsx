@@ -4,7 +4,7 @@ import {
   Receipt, RefreshCw, Printer, CreditCard, Banknote, Clock,
   CheckCircle2, History, Users, ChevronDown, ChevronRight,
   Package, Phone, Loader2, BadgeCheck, ArrowRight, RotateCcw, AlertTriangle, AlertCircle,
-  ExternalLink, Share2, ArrowLeftRight,
+  ExternalLink, Share2, ArrowLeftRight, Link2, X,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { notify } from '@/lib/notify'
@@ -24,7 +24,7 @@ interface BillOrder {
 }
 interface BillSummary { subtotal: number; vatAmount: number; discount?: number; tipAmount?: number; total: number; allPaid: boolean; anyUnpaid: boolean; orderCount: number; settledBy?: { name: string } | null; settledAt?: string | null }
 interface Tab { sessionId: string; orders: BillOrder[]; summary: BillSummary }
-interface ActiveTableEntry { table: TableRow; tabs: Tab[]; combined: BillSummary }
+interface ActiveTableEntry { table: TableRow; tabs: Tab[]; combined: BillSummary; mergedTables?: TableRow[]; groupId?: string; groupLabel?: string | null }
 interface ClosedSession { table: TableRow; sessionId: string; orders: BillOrder[]; summary: BillSummary; closedAt: string }
 interface TakeawayEntry {
   tokenNumber: number; contactPhone: string | null
@@ -913,10 +913,26 @@ function ActiveTableCard({ entry, onSettle, onTransferDone, busySession, isManag
   discountEnabled?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [settlingGroup, setSettlingGroup] = useState(false)
   const brand = useBrandStore(useShallow(s => ({ name: s.restaurantName, tagline: s.tagline })))
-  const tableName = entry.table.name ?? `Table ${entry.table.tableNumber}`
+  const isMerged = !!entry.groupId && (entry.mergedTables?.length ?? 0) > 1
+  const tableName = isMerged
+    ? entry.mergedTables!.map(t => t.name ?? `Table ${t.tableNumber}`).join(' + ')
+    : (entry.table.name ?? `Table ${entry.table.tableNumber}`)
   const pendingTabs = entry.tabs.filter(t => t.summary.anyUnpaid).length
   const allSettled = pendingTabs === 0
+
+  const settleWholeGroup = async (method: 'CASH' | 'CARD') => {
+    if (!entry.groupId) return
+    setSettlingGroup(true)
+    try {
+      await api.post(`/payments/group/${entry.groupId}/settle`, { method })
+      notify.success('Merged bill settled — all tables cleared')
+      onTransferDone()
+    } catch (e: any) {
+      notify.error(e?.response?.data?.message ?? 'Could not settle group')
+    } finally { setSettlingGroup(false) }
+  }
 
   // One combined receipt: all guests' items on a single printout with the table's combined totals
   const printCombined = () => {
@@ -944,8 +960,13 @@ function ActiveTableCard({ entry, onSettle, onTransferDone, busySession, isManag
         <div className="w-2 h-2 rounded-full flex-shrink-0"
           style={{ backgroundColor: allSettled ? 'var(--c-success-fg)' : 'var(--c-pending-fg)' }} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-extrabold text-gray-900 dark:text-white">{tableName}</span>
+            {isMerged && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5" style={{ backgroundColor: 'rgba(139,92,246,0.15)', color: '#8b5cf6' }}>
+                <Link2 size={9} /> Merged
+              </span>
+            )}
             <span className="text-[10px] text-gray-400 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
               <Users size={9} /> {entry.tabs.length} {entry.tabs.length === 1 ? 'person' : 'people'}
             </span>
@@ -1005,6 +1026,22 @@ function ActiveTableCard({ entry, onSettle, onTransferDone, busySession, isManag
               <Printer size={13} /> Print Combined Bill
             </button>
           </div>
+
+          {/* Party Mode: settle every table in the merged group in one action */}
+          {isMerged && !allSettled && (
+            <div className="px-4 pb-4 flex items-center gap-2">
+              <button onClick={() => settleWholeGroup('CASH')} disabled={settlingGroup}
+                className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold disabled:opacity-50 transition-all active:scale-95"
+                style={{ backgroundColor: '#8b5cf6', color: '#fff' }}>
+                <Banknote size={13} /> {settlingGroup ? 'Settling…' : `Settle Whole Group (Cash) · AED ${Number(entry.combined.total).toFixed(2)}`}
+              </button>
+              <button onClick={() => settleWholeGroup('CARD')} disabled={settlingGroup}
+                className="px-4 py-3 rounded-xl text-xs font-bold border disabled:opacity-50 transition-all active:scale-95"
+                style={{ borderColor: '#8b5cf6', color: '#8b5cf6' }}>
+                <CreditCard size={13} />
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

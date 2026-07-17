@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Delete, Body, Param, Query, UseGuards, HttpCode } from '@nestjs/common'
+import { Controller, Get, Patch, Post, Delete, Body, Param, Query, UseGuards, HttpCode, Request } from '@nestjs/common'
 import { TablesService } from './tables.service'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { RolesGuard } from '../common/guards/roles.guard'
@@ -89,4 +89,19 @@ export class TablesController {
   @Roles('OWNER')
   @Post('seed-names')
   seedNames() { return this.tables.seedDefaultNames() }
+
+  // Party Mode: merge 2+ tables into one combined bill
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post('merge')
+  mergeTables(@Body('tableIds') tableIds: string[], @Body('label') label: string, @Request() req: any) {
+    return this.tables.mergeTables(tableIds, req.user?.id, label)
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'STAFF')
+  @Post('group/:groupId/unmerge')
+  unmergeGroup(@Param('groupId') groupId: string) {
+    return this.tables.unmergeGroup(groupId)
+  }
 }
