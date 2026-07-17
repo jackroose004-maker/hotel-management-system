@@ -356,21 +356,25 @@ function ItemModal({ item, categories, onClose, onSave }: {
                 placeholder="مثال: بريياني دجاج" className={ic} dir="rtl" />
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center justify-between">
-                <span>Price (AED) * {isMarketPrice && <span className="text-gray-400 font-normal">— reference only</span>}</span>
-                <button type="button" onClick={() => setIsMarketPrice(v => !v)}
-                  className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
-                  style={isMarketPrice
-                    ? { backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444' }
-                    : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
-                  {isMarketPrice ? 'ASP · Market Price' : 'Fixed Price'}
-                </button>
+              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">
+                Price (AED) * {isMarketPrice && <span className="text-gray-400 font-normal">— reference only</span>}
               </label>
               <input required type="number" step="0.01" min="0" value={form.price}
                 onChange={e => f('price', e.target.value)} placeholder="0.00" className={ic} />
+              <button type="button" onClick={() => setIsMarketPrice(v => !v)}
+                className="w-full mt-2 flex items-center justify-between gap-2 py-1.5">
+                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                  Market price (ASP) — price varies daily, not fixed
+                </span>
+                <span className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0"
+                  style={{ backgroundColor: isMarketPrice ? 'var(--brand)' : 'var(--card-border)' }}>
+                  <span className="inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform"
+                    style={{ transform: isMarketPrice ? 'translateX(18px)' : 'translateX(3px)' }} />
+                </span>
+              </button>
               {isMarketPrice && (
                 <p className="text-[11px] text-gray-500 mt-1">
-                  Priced daily (e.g. fresh fish). Guests will see "ASP" and can't self-checkout — staff enters today's price when adding it to an order.
+                  Guests will see "ASP" instead of a price and can't self-checkout — staff enters today's rate when adding it to an order.
                 </p>
               )}
             </div>
