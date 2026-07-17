@@ -41,6 +41,10 @@ export class CreateMenuItemDto {
   @IsString()
   @IsOptional()
   specialLabel?: string
+
+  @IsBoolean()
+  @IsOptional()
+  isMarketPrice?: boolean
 }
 
 export class UpdateMenuItemDto {
@@ -87,4 +91,8 @@ export class UpdateMenuItemDto {
   @IsString()
   @IsOptional()
   specialLabel?: string
+
+  @IsBoolean()
+  @IsOptional()
+  isMarketPrice?: boolean
 }

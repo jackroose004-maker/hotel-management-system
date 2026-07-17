@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import {
   Store, Clock, Table2, ShoppingBag, CalendarDays,
   Save, Loader2, CheckCircle2,
-  WifiOff, ChevronRight, Layout, Receipt, ChefHat, Shield, Mail,
+  WifiOff, ChevronRight, Layout, Receipt, ChefHat, Shield, Mail, Tag,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import toast from 'react-hot-toast'
@@ -19,6 +19,7 @@ import BillSection from './sections/BillSection'
 import KitchenSection from './sections/KitchenSection'
 import RolesSection from './sections/RolesSection'
 import EmailSection from './sections/EmailSection'
+import OffersSection from './sections/OffersSection'
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
@@ -28,6 +29,7 @@ const NAV: NavItem[] = [
   { id: 'tables',        label: 'Tables & Orders', icon: Table2,       desc: 'Floor layout, VAT & currency' },
   { id: 'bookings',      label: 'Bookings',        icon: CalendarDays, desc: 'Reservations & slots' },
   { id: 'bill',          label: 'Bill & Receipt',  icon: Receipt,      desc: 'Print layout & PDF design' },
+  { id: 'offers',        label: 'Offers',          icon: Tag,          desc: 'Seasonal discounts & promotions' },
   { id: 'kitchen',       label: 'Kitchen',         icon: ChefHat,      desc: 'KDS screen & thermal printer' },
   { id: 'roles',         label: 'Roles & Access',  icon: Shield,       desc: 'Custom roles & module permissions' },
   { id: 'email',         label: 'Email',           icon: Mail,         desc: 'SMTP, sender identity & templates' },
@@ -256,6 +258,8 @@ export default function SettingsPage() {
               }} />}
 
             {section === 'bill' && <BillSection cfg={cfg} set={set} openPanel={openPanel} setOpenPanel={setOpenPanel} />}
+
+            {section === 'offers' && <OffersSection />}
 
             {section === 'kitchen' && <KitchenSection cfg={cfg} set={set} openPanel={openPanel} setOpenPanel={setOpenPanel} />}
 

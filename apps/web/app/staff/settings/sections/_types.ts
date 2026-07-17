@@ -95,6 +95,6 @@ export const UPDATABLE: (keyof Cfg)[] = [
 export const TIMEZONES = ['Asia/Dubai','Asia/Riyadh','Asia/Kuwait','Asia/Bahrain','Asia/Qatar','Asia/Muscat']
 export const CURRENCIES = ['AED','SAR','KWD','BHD','QAR','OMR']
 
-export type SectionId = 'restaurant' | 'tables' | 'bookings' | 'landing' | 'bill' | 'kitchen' | 'roles' | 'email'
+export type SectionId = 'restaurant' | 'tables' | 'bookings' | 'landing' | 'bill' | 'kitchen' | 'roles' | 'email' | 'offers'
 
 export type NavItem = { id: SectionId; label: string; icon: React.ElementType; desc: string }

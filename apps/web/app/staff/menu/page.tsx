@@ -19,7 +19,7 @@ interface ModifierGroup {
   id: string; name: string; required: boolean; options: ModifierOption[]
 }
 interface MenuItem {
-  id: string; name: string; price: number; isAvailable: boolean
+  id: string; name: string; price: number; isAvailable: boolean; isMarketPrice?: boolean
   prepTimeMins: number; description?: string; imageUrl?: string; videoUrl?: string; categoryId?: string
   modifierGroups?: ModifierGroup[]
 }
@@ -213,6 +213,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
     imageUrl: item?.imageUrl ?? '',
     videoUrl: (item as any)?.videoUrl ?? '',
   })
+  const [isMarketPrice, setIsMarketPrice] = useState(!!(item as any)?.isMarketPrice)
   const [saving, setSaving] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
 
@@ -299,6 +300,7 @@ function ItemModal({ item, categories, onClose, onSave }: {
         categoryId: form.categoryId,
         imageUrl: form.imageUrl || undefined,
         videoUrl: form.videoUrl || undefined,
+        isMarketPrice,
       }
       let saved: MenuItem
       if (isEdit) {
@@ -354,9 +356,23 @@ function ItemModal({ item, categories, onClose, onSave }: {
                 placeholder="مثال: بريياني دجاج" className={ic} dir="rtl" />
             </div>
             <div>
-              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 block">Price (AED) *</label>
+              <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center justify-between">
+                <span>Price (AED) * {isMarketPrice && <span className="text-gray-400 font-normal">— reference only</span>}</span>
+                <button type="button" onClick={() => setIsMarketPrice(v => !v)}
+                  className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors"
+                  style={isMarketPrice
+                    ? { backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444' }
+                    : { backgroundColor: 'var(--muted-bg)', color: 'var(--text-muted)' }}>
+                  {isMarketPrice ? 'ASP · Market Price' : 'Fixed Price'}
+                </button>
+              </label>
               <input required type="number" step="0.01" min="0" value={form.price}
                 onChange={e => f('price', e.target.value)} placeholder="0.00" className={ic} />
+              {isMarketPrice && (
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Priced daily (e.g. fresh fish). Guests will see "ASP" and can't self-checkout — staff enters today's price when adding it to an order.
+                </p>
+              )}
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1.5 flex items-center gap-1">
@@ -644,7 +660,12 @@ function ItemCard({ item, catName, onToggle, onEdit, onDelete }: {
         )}
 
         <div className="flex items-center justify-between mt-auto pt-3">
-          <span className="text-sm font-extrabold" style={{ color: 'var(--brand)' }}>AED {Number(item.price).toFixed(2)}</span>
+          <span className="text-sm font-extrabold flex items-center gap-1.5" style={{ color: 'var(--brand)' }}>
+            AED {Number(item.price).toFixed(2)}
+            {item.isMarketPrice && (
+              <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>ASP</span>
+            )}
+          </span>
           <span className="text-[11px] text-gray-400 flex items-center gap-1"><Clock size={10} />{item.prepTimeMins} min</span>
         </div>
 

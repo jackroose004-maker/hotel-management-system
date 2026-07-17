@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Clock, CheckCircle, ChefHat, BellRing, PackageCheck, UtensilsCrossed, ChevronLeft,
-  MessageCircle, Send, X,
+  MessageCircle, Send, X, Loader2,
 } from 'lucide-react'
 import api from '@/lib/api'
 import { notify } from '@/lib/notify'
@@ -60,8 +60,26 @@ function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: () => v
   const [done, setDone]           = useState(false)
   const brandLogoUrl              = useBrandStore(s => s.logoUrl)
 
+  // Second step: rate the staff member who served the table (only if one is resolvable)
+  const [step, setStep]           = useState<'meal' | 'staff'>('meal')
+  const [servingStaff, setServingStaff] = useState<{ id: string; name: string } | null | undefined>(undefined)
+  const [staffRating, setStaffRating]   = useState(0)
+  const [staffHover, setStaffHover]     = useState(0)
+  const [isComplaint, setIsComplaint]   = useState(false)
+  const [staffComment, setStaffComment] = useState('')
+  const [staffSubmitting, setStaffSubmitting] = useState(false)
+
+  useEffect(() => {
+    api.get(`/orders/${orderId}/serving-staff`).then(r => setServingStaff(r.data ?? null)).catch(() => setServingStaff(null))
+  }, [orderId])
+
   const activeRating = hover || rating
+  const activeStaffRating = staffHover || staffRating
   const suggestedTags = rating >= 4 ? FEEDBACK_TAGS_POSITIVE : rating > 0 && rating <= 2 ? FEEDBACK_TAGS_NEGATIVE : []
+
+  const goToStaffOrClose = () => {
+    if (servingStaff) { setStep('staff') } else { setDone(true); setTimeout(onClose, 2200) }
+  }
 
   const submit = async () => {
     if (!rating) return
@@ -72,10 +90,26 @@ function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: () => v
         comment: comment.trim() || undefined,
         tags: tags.join(',') || undefined,
       })
-      setDone(true)
-      setTimeout(onClose, 2200)
+      goToStaffOrClose()
     } catch { onClose() }
     finally { setSubmitting(false) }
+  }
+
+  const submitStaffRating = async () => {
+    if (!staffRating) { setDone(true); setTimeout(onClose, 2200); return }
+    setStaffSubmitting(true)
+    try {
+      await api.post(`/orders/${orderId}/staff-feedback`, {
+        rating: staffRating,
+        isComplaint,
+        comment: staffComment.trim() || undefined,
+      })
+    } catch {}
+    finally {
+      setStaffSubmitting(false)
+      setDone(true)
+      setTimeout(onClose, 2200)
+    }
   }
 
   return (
@@ -125,6 +159,94 @@ function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: () => v
             <p style={{ fontSize: 13, color: '#666' }}>We&apos;ll make it even better</p>
             <style>{`@keyframes fbCheckScale { from { transform: scale(0); opacity: 0 } to { transform: scale(1); opacity: 1 } }`}</style>
           </div>
+        ) : step === 'staff' ? (
+          <>
+            {/* ── Rate Your Server ── */}
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1.25rem' }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%',
+                background: 'rgba(var(--brand-rgb),0.12)',
+                border: '1px solid rgba(var(--brand-rgb),0.2)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 18,
+              }}>
+                🙋
+              </div>
+            </div>
+
+            <p style={{ fontSize: 22, fontWeight: 700, color: '#fff', textAlign: 'center', marginBottom: 6 }}>
+              How was {servingStaff?.name?.split(' ')[0] ?? 'your server'}?
+            </p>
+            <p style={{ fontSize: 12, color: '#666', textAlign: 'center', marginBottom: '1.5rem' }}>
+              Rate the staff member who served you
+            </p>
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+              {[1, 2, 3, 4, 5].map(s => (
+                <button
+                  key={s}
+                  onMouseEnter={() => setStaffHover(s)}
+                  onMouseLeave={() => setStaffHover(0)}
+                  onClick={() => setStaffRating(s)}
+                  style={{
+                    fontSize: 40, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0',
+                    transition: 'transform 0.15s ease, filter 0.15s ease',
+                    transform: activeStaffRating >= s ? 'scale(1.15)' : 'scale(1)',
+                    filter: activeStaffRating >= s ? 'none' : 'grayscale(1) opacity(0.3)',
+                  }}
+                >
+                  ⭐
+                </button>
+              ))}
+            </div>
+
+            <div style={{ textAlign: 'center', height: 22, marginBottom: '1rem', transition: 'opacity 0.2s', opacity: staffRating > 0 ? 1 : 0 }}>
+              <span style={{ fontSize: 13, color: 'var(--brand)', fontWeight: 600 }}>{MOOD_LABELS[staffRating] ?? ''}</span>
+            </div>
+
+            {staffRating > 0 && staffRating <= 3 && (
+              <button
+                onClick={() => setIsComplaint(v => !v)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  width: '100%', padding: '10px 12px', borderRadius: 12, marginBottom: '1rem',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  border: isComplaint ? '1px solid #ef4444' : '1px solid #1e1e1e',
+                  background: isComplaint ? 'rgba(239,68,68,0.1)' : 'transparent',
+                  color: isComplaint ? '#ef4444' : '#888',
+                }}
+              >
+                {isComplaint ? '✓ ' : ''}⚠️ Flag this as a complaint for the owner
+              </button>
+            )}
+
+            {staffRating > 0 && (
+              <textarea
+                rows={2}
+                placeholder="Anything you'd like to add? (optional)"
+                value={staffComment}
+                onChange={e => setStaffComment(e.target.value)}
+                style={{
+                  width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid #1e1e1e',
+                  outline: 'none', color: '#fff', fontSize: 13, resize: 'none', padding: '8px 0',
+                  marginBottom: '1.25rem', boxSizing: 'border-box',
+                }}
+              />
+            )}
+            {staffRating === 0 && <div style={{ height: '1.25rem', marginBottom: '1.25rem' }} />}
+
+            <button
+              onClick={submitStaffRating}
+              disabled={staffSubmitting}
+              style={{
+                width: '100%', height: 52, background: 'var(--brand)', color: '#000', borderRadius: 14,
+                fontSize: 14, fontWeight: 700, border: 'none', cursor: 'pointer',
+                opacity: staffSubmitting ? 0.6 : 1, transition: 'opacity 0.2s', marginBottom: 12,
+              }}
+            >
+              {staffSubmitting ? 'Sending…' : staffRating ? 'Submit Rating' : 'Skip'}
+            </button>
+          </>
         ) : (
           <>
             {/* Brand icon */}
@@ -273,7 +395,7 @@ function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: () => v
 
             {/* Skip link */}
             <button
-              onClick={onClose}
+              onClick={goToStaffOrClose}
               style={{
                 display: 'block',
                 width: '100%',
@@ -287,6 +409,101 @@ function FeedbackModal({ orderId, onClose }: { orderId: string; onClose: () => v
             >
               Skip
             </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Live Complaint Modal — report an issue mid-meal, guest picks who served ──
+function LiveComplaintModal({ orderId, onClose, onOpenChat }: { orderId: string; onClose: () => void; onOpenChat: () => void }) {
+  const [staff, setStaff] = useState<{ id: string; name: string }[] | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [comment, setComment] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [done, setDone] = useState(false)
+
+  useEffect(() => {
+    api.get('/orders/on-duty-staff').then(r => setStaff(r.data ?? [])).catch(() => setStaff([]))
+  }, [])
+
+  const submit = async () => {
+    if (!selectedId) return
+    setSubmitting(true)
+    try {
+      await api.post(`/orders/${orderId}/live-complaint`, { staffId: selectedId, comment: comment.trim() || undefined })
+      setDone(true)
+      setTimeout(onClose, 2000)
+    } catch {
+      onClose()
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(6px)' }} onClick={onClose}>
+      <div className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6"
+        style={{ backgroundColor: '#111', border: '1px solid #1e1e1e' }} onClick={e => e.stopPropagation()}>
+        {done ? (
+          <div className="text-center py-6">
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3"
+              style={{ backgroundColor: 'rgba(239,68,68,0.12)', border: '2px solid #ef4444' }}>
+              <span className="text-2xl">✓</span>
+            </div>
+            <p className="text-base font-black text-white mb-1">Report sent</p>
+            <p className="text-xs text-gray-500">Our team has been notified and will follow up</p>
+          </div>
+        ) : (
+          <>
+            <div className="text-center mb-4">
+              <p className="text-base font-black text-white mb-0.5">🚩 Report an issue</p>
+              <p className="text-xs text-gray-500">Tell us who served you so we can follow up right away</p>
+            </div>
+
+            {staff === null ? (
+              <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-gray-500" /></div>
+            ) : staff.length === 0 ? (
+              <div className="text-center py-4">
+                <p className="text-xs text-gray-500 mb-3">No staff are showing as on duty right now.</p>
+                <button onClick={onOpenChat}
+                  className="w-full py-3 rounded-xl text-sm font-bold" style={{ backgroundColor: 'var(--brand)', color: '#000' }}>
+                  Message staff instead
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2 mb-3 max-h-48 overflow-y-auto">
+                  {staff.map(s => (
+                    <button key={s.id} onClick={() => setSelectedId(s.id)}
+                      className="px-3 py-2.5 rounded-xl text-sm font-semibold text-left transition-all"
+                      style={selectedId === s.id
+                        ? { backgroundColor: 'rgba(239,68,68,0.12)', border: '1.5px solid #ef4444', color: '#ef4444' }
+                        : { backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e', color: '#888' }}>
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  rows={3}
+                  placeholder="What happened? (optional but helps us fix it)"
+                  value={comment}
+                  onChange={e => setComment(e.target.value)}
+                  className="w-full text-sm text-white placeholder-gray-600 rounded-xl px-3 py-2.5 mb-3 focus:outline-none"
+                  style={{ backgroundColor: '#0d0d0d', border: '1px solid #1e1e1e' }}
+                />
+                <button onClick={submit} disabled={!selectedId || submitting}
+                  className="w-full py-3.5 rounded-2xl font-black text-sm disabled:opacity-40 transition-all active:scale-95"
+                  style={{ backgroundColor: '#ef4444', color: '#fff' }}>
+                  {submitting ? 'Sending…' : 'Submit Report'}
+                </button>
+                <button onClick={onOpenChat} className="w-full py-2.5 mt-1 text-xs text-gray-500 text-center">
+                  Can't find their name? Message staff instead
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
@@ -426,9 +643,10 @@ const THERMAL_SUB_KEY: Record<string, { dine: string; take: string }> = {
   CANCELLED: { dine: 'menu.speakStaff',       take: 'menu.speakStaff'       },
 }
 
-function OrderTrackCard({ o, lang, thermalMode, onCancel, onOpenChat, hasUnread }: {
+function OrderTrackCard({ o, lang, thermalMode, onCancel, onOpenChat, onReportIssue, hasUnread }: {
   o: Order; lang: Lang; thermalMode: boolean; onCancel: (reason: string) => void
   onOpenChat: (orderId: string) => void
+  onReportIssue: (orderId: string) => void
   hasUnread: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -635,6 +853,17 @@ function OrderTrackCard({ o, lang, thermalMode, onCancel, onOpenChat, hasUnread 
             </div>
           )}
 
+          {/* Report an issue — always available while the order is active, not
+              gated to bill settlement, so guests can flag bad service in the moment */}
+          <div className="px-3 pb-2">
+            <button
+              onClick={() => onReportIssue(o.id)}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-[10px] font-semibold transition-all active:scale-[0.98]"
+              style={{ background: 'transparent', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444' }}>
+              🚩 Report an issue with your server
+            </button>
+          </div>
+
           {/* Dashed divider (boarding pass tear line) */}
           <div className="relative flex items-center px-3" style={{ marginTop: -2 }}>
             <div className="flex-1" style={{ borderTop: '1px dashed #222' }} />
@@ -734,6 +963,7 @@ export default function MenuOrdersPage() {
   // Chat
   const [thermalMode, setThermalMode]   = useState(false)
   const [chatOrderId, setChatOrderId]   = useState<string | null>(null)
+  const [complaintOrderId, setComplaintOrderId] = useState<string | null>(null)
   const [chatMessages, setChatMessages] = useState<Record<string, { from: 'guest' | 'staff'; text: string }[]>>({})
   const [chatText, setChatText]         = useState('')
   const [chatBusy, setChatBusy]         = useState(false)
@@ -1005,6 +1235,7 @@ export default function MenuOrdersPage() {
             <OrderTrackCard key={o.id} o={o} lang={lang} thermalMode={thermalMode}
               onCancel={reason => cancelOrder(o.id, reason)}
               onOpenChat={id => { setChatOrderId(id); setUnread(u => { const n = new Set(u); n.delete(id); return n }) }}
+              onReportIssue={id => setComplaintOrderId(id)}
               hasUnread={unread.has(o.id)} />
           ))}
 
@@ -1041,6 +1272,19 @@ export default function MenuOrdersPage() {
 
       {feedbackOrderId && (
         <FeedbackModal orderId={feedbackOrderId} onClose={() => setFeedback(null)} />
+      )}
+
+      {complaintOrderId && (
+        <LiveComplaintModal
+          orderId={complaintOrderId}
+          onClose={() => setComplaintOrderId(null)}
+          onOpenChat={() => {
+            const id = complaintOrderId
+            setComplaintOrderId(null)
+            setChatOrderId(id)
+            setUnread(u => { const n = new Set(u); n.delete(id); return n })
+          }}
+        />
       )}
 
       {/* ── Chat bottom sheet ── */}

@@ -48,9 +48,32 @@ interface ModifierGroup {
 interface MenuItem {
   id: string; name: string; description?: string; categoryId?: string
   price: number; prepTimeMins: number; isAvailable: boolean; imageUrl?: string; videoUrl?: string
+  isMarketPrice?: boolean
   modifierGroups?: ModifierGroup[]
 }
 interface Category { id: string; name: string; nameAr?: string; itemCount: number; items: MenuItem[] }
+interface ActiveOffer {
+  id: string; name: string; nameAr?: string
+  scope: 'ALL' | 'CATEGORY' | 'ITEM'; categoryIds: string[]; itemIds: string[]
+  type: 'PERCENT' | 'FIXED'; value: number
+  bannerText?: string; bannerTextAr?: string
+}
+// Mirrors backend OffersService.pickBestOffer — greatest discount wins, ties broken by specificity
+function pickBestOffer(offers: ActiveOffer[], itemId: string, categoryId: string | undefined, price: number) {
+  const specificity = (s: string) => (s === 'ITEM' ? 3 : s === 'CATEGORY' ? 2 : 1)
+  const matching = offers.filter(o =>
+    o.scope === 'ALL' ||
+    (o.scope === 'CATEGORY' && categoryId && o.categoryIds.includes(categoryId)) ||
+    (o.scope === 'ITEM' && o.itemIds.includes(itemId))
+  )
+  if (!matching.length) return null
+  const withAmount = matching.map(o => {
+    const amount = o.type === 'PERCENT' ? Math.round(price * (Number(o.value) / 100) * 100) / 100 : Math.min(Number(o.value), price)
+    return { offer: o, amount }
+  })
+  withAmount.sort((a, b) => b.amount - a.amount || specificity(b.offer.scope) - specificity(a.offer.scope))
+  return withAmount[0]
+}
 interface CategoryPageState {
   nextCursor: string | null
   hasMore: boolean
@@ -207,8 +230,9 @@ function VideoModal({ item, onClose }: { item: MenuItem; onClose: () => void }) 
   )
 }
 
-function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, lang, onToggleFav, onOpen }: {
+function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, lang, offer, onToggleFav, onOpen }: {
   item: MenuItem; index: number; qty: number; isFav: boolean; isLoggedIn: boolean; lang: 'en' | 'ar'
+  offer?: { offer: ActiveOffer; amount: number } | null
   onToggleFav: () => void; onOpen: () => void
 }) {
   const cardRef = useRef<HTMLDivElement>(null)
@@ -225,6 +249,7 @@ function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, lang, onToggl
   }, [])
 
   const vatInclusivePrice = Number(item.price) * 1.05
+  const discountedVatPrice = offer ? Math.max(0, (Number(item.price) - offer.amount)) * 1.05 : null
   return (
     <>
     <div
@@ -280,15 +305,30 @@ function FoodCard({ item, index, qty, isFav, isLoggedIn: loggedIn, lang, onToggl
         )}
         <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent pt-6 pb-2 px-3">
           <div className="flex items-end justify-between">
-            <span className="font-black text-base" style={{ color: 'var(--brand)' }}>
-              AED {vatInclusivePrice.toFixed(2)}
-              <span className="text-[9px] text-amber-300/70 font-normal ml-1">{t(lang, 'menu.inclVat')}</span>
-            </span>
+            {item.isMarketPrice ? (
+              <span className="font-black text-base" style={{ color: 'var(--brand)' }}>
+                ASP <span className="text-[9px] text-white/60 font-normal">ask your server</span>
+              </span>
+            ) : (
+              <span className="font-black text-base flex items-baseline gap-1.5 flex-wrap" style={{ color: discountedVatPrice !== null ? '#ef4444' : 'var(--brand)' }}>
+                {discountedVatPrice !== null && (
+                  <span className="text-[11px] text-gray-400 line-through font-normal">AED {vatInclusivePrice.toFixed(2)}</span>
+                )}
+                AED {(discountedVatPrice ?? vatInclusivePrice).toFixed(2)}
+                <span className="text-[9px] text-amber-300/70 font-normal">{t(lang, 'menu.inclVat')}</span>
+              </span>
+            )}
             <span className="text-white/60 text-[10px] flex items-center gap-0.5">
               <Clock size={9} /> {item.prepTimeMins}m
             </span>
           </div>
         </div>
+        {offer && qty === 0 && !item.videoUrl && (
+          <div className="absolute top-2 right-2 text-[9px] font-black px-2 py-0.5 rounded-full shadow-lg"
+            style={{ backgroundColor: '#ef4444', color: '#fff' }}>
+            {offer.offer.type === 'PERCENT' ? `${offer.offer.value}% OFF` : `AED ${Number(offer.offer.value).toFixed(0)} OFF`}
+          </div>
+        )}
       </div>
       <div className="p-3 flex flex-col flex-1">
         <div className="font-bold text-white text-sm leading-snug mb-1">
@@ -390,6 +430,7 @@ function MenuPageInner() {
   const [reservationPopupDismissed, setReservationPopupDismissed] = useState(false)
   const [bookingsEnabled, setBookingsEnabled] = useState(true)
   const [packingCharge, setPackingCharge] = useState(0)
+  const [activeOffers, setActiveOffers] = useState<ActiveOffer[]>([])
 
   // Staff session picker — when staff orders for a table that has multiple guests
   const [tableSessions, setTableSessions] = useState<{ sessionId: string; label: string; orderCount: number; itemCount: number; total: number; itemSummary: string[]; firstOrderAt: string | null }[]>([])
@@ -550,6 +591,7 @@ function MenuPageInner() {
       setBookingsEnabled(r.data?.bookingsEnabled !== false)
       setPackingCharge(Number(r.data?.packingCharge ?? 0))
     }).catch(() => {})
+    api.get('/offers/active').then(r => setActiveOffers(r.data ?? [])).catch(() => {})
     api.get('/tables').then(r => {
       setAllTables(r.data ?? [])
       // If coming from booking, resolve tableId → tableNumber
@@ -1493,9 +1535,15 @@ function MenuPageInner() {
         return opt ? [{ optionId: opt.id, groupName: g.name, name: opt.name, priceAdd: Number(opt.priceAdd) }] : []
       })
     : []
-  const drawerBasePrice = drawerItem ? Number(drawerItem.price) : 0
+  const drawerFullPrice = drawerItem ? Number(drawerItem.price) : 0
+  const drawerOffer = drawerItem && activeOffers.length
+    ? pickBestOffer(activeOffers, drawerItem.id, drawerItem.categoryId, drawerFullPrice)
+    : null
+  // basePrice used for cart math is already net of the discount, matching backend pricing
+  const drawerBasePrice = Math.max(0, drawerFullPrice - (drawerOffer?.amount ?? 0))
   const drawerModExtra = drawerModifiers.reduce((s, m) => s + m.priceAdd, 0)
   const drawerVatPrice = Math.round((drawerBasePrice + drawerModExtra) * 1.05 * 100) / 100
+  const drawerFullVatPrice = Math.round((drawerFullPrice + drawerModExtra) * 1.05 * 100) / 100
   // Check required groups satisfied
   const requiredUnsatisfied = drawerItem
     ? (drawerItem.modifierGroups ?? []).filter(g => g.required && !selectedOptions[g.id])
@@ -1539,8 +1587,22 @@ function MenuPageInner() {
         <div className="px-4 pb-6">
           {/* Base price row */}
           <div className="flex justify-between items-center mb-4 pb-3" style={{ borderBottom: '1px solid #1e1e1e' }}>
-            <div className="text-xs text-gray-500">{t(lang, 'menu.basePrice')}</div>
-            <div className="text-sm font-bold" style={{ color: 'var(--brand)' }}>AED {(drawerBasePrice * 1.05).toFixed(2)} <span className="text-[10px] text-gray-600 font-normal">{t(lang, 'menu.inclVat')}</span></div>
+            <div className="text-xs text-gray-500 flex items-center gap-1.5">
+              {t(lang, 'menu.basePrice')}
+              {drawerOffer && (
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full" style={{ backgroundColor: '#ef4444', color: '#fff' }}>
+                  {drawerOffer.offer.type === 'PERCENT' ? `${drawerOffer.offer.value}% OFF` : `AED ${Number(drawerOffer.offer.value).toFixed(0)} OFF`}
+                </span>
+              )}
+            </div>
+            {drawerItem.isMarketPrice ? (
+              <div className="text-sm font-bold" style={{ color: 'var(--brand)' }}>ASP</div>
+            ) : (
+            <div className="text-sm font-bold flex items-baseline gap-1.5" style={{ color: drawerOffer ? '#ef4444' : 'var(--brand)' }}>
+              {drawerOffer && <span className="text-[11px] text-gray-500 line-through font-normal">AED {drawerFullVatPrice.toFixed(2)}</span>}
+              AED {(drawerBasePrice * 1.05).toFixed(2)} <span className="text-[10px] text-gray-600 font-normal">{t(lang, 'menu.inclVat')}</span>
+            </div>
+            )}
           </div>
 
           {/* Modifier groups */}
@@ -1596,7 +1658,13 @@ function MenuPageInner() {
           </div>
 
           {/* Add button */}
-          {requiredUnsatisfied.length > 0 ? (
+          {drawerItem.isMarketPrice ? (
+            <div className="w-full py-4 rounded-2xl text-center text-sm font-semibold flex flex-col items-center gap-0.5"
+              style={{ backgroundColor: '#0d0d0d', color: '#888' }}>
+              <span>🐟 Priced per today's market rate (ASP)</span>
+              <span className="text-xs text-gray-500">Please ask your server to add this for you</span>
+            </div>
+          ) : requiredUnsatisfied.length > 0 ? (
             <div className="w-full py-4 rounded-2xl text-center text-sm font-semibold" style={{ backgroundColor: '#0d0d0d', color: '#888' }}>
               {t(lang, 'menu.pleaseChoose')} {requiredUnsatisfied.map(g => ar && (g as any).nameAr ? (g as any).nameAr : g.name).join(', ')}
             </div>
@@ -1750,6 +1818,19 @@ function MenuPageInner() {
         </div>
       </div>
 
+      {/* Seasonal offer banner — shows the first active offer that has banner text set */}
+      {(() => {
+        const bannered = activeOffers.find(o => o.bannerText || o.bannerTextAr)
+        if (!bannered) return null
+        const text = ar && bannered.bannerTextAr ? bannered.bannerTextAr : (bannered.bannerText ?? bannered.name)
+        return (
+          <div className="px-5 py-2.5 text-xs font-bold flex items-center gap-2 text-center justify-center"
+            style={{ backgroundColor: '#ef4444', color: '#fff' }}>
+            <span>🎉</span>{text}
+          </div>
+        )
+      })()}
+
       {/* Table notice */}
       {fromQr && !qrTableReservationOnly && (qrTableStatus === 'DIRTY' || qrTableStatus === 'BILL_PENDING') && (
         <div className="px-5 py-2.5 text-xs font-semibold flex items-center gap-2"
@@ -1784,6 +1865,7 @@ function MenuPageInner() {
                 <FoodCard key={item.id} item={item} index={i} lang={lang}
                   qty={cart.items.filter(ci => ci.menuItemId === item.id).reduce((s, ci) => s + ci.quantity, 0)}
                   isFav={favs.includes(item.id)} isLoggedIn={isLoggedIn}
+                  offer={activeOffers.length ? pickBestOffer(activeOffers, item.id, item.categoryId, Number(item.price)) : null}
                   onToggleFav={() => { setFavs(prev => prev.includes(item.id) ? prev.filter(f => f !== item.id) : [...prev, item.id]); toggleFavOnServer(item.id) }}
                   onOpen={() => { if (!item.isAvailable) return; const d: Record<string,string> = {}; item.modifierGroups?.forEach(g => { const o = g.options.find(x => x.isDefault) ?? g.options[0]; if (o) d[g.id] = o.id }); setDrawerItem(item); setSelectedOptions(d); setDrawerNotes('') }}
                 />
@@ -1812,6 +1894,7 @@ function MenuPageInner() {
                 <FoodCard key={item.id} item={item} index={i} lang={lang}
                   qty={cart.items.filter(ci => ci.menuItemId === item.id).reduce((s, ci) => s + ci.quantity, 0)}
                   isFav={favs.includes(item.id)} isLoggedIn={isLoggedIn}
+                  offer={activeOffers.length ? pickBestOffer(activeOffers, item.id, item.categoryId, Number(item.price)) : null}
                   onToggleFav={() => { setFavs(prev => prev.includes(item.id) ? prev.filter(f => f !== item.id) : [...prev, item.id]); toggleFavOnServer(item.id) }}
                   onOpen={() => { if (!item.isAvailable) return; const d: Record<string,string> = {}; item.modifierGroups?.forEach(g => { const o = g.options.find(x => x.isDefault) ?? g.options[0]; if (o) d[g.id] = o.id }); setDrawerItem(item); setSelectedOptions(d); setDrawerNotes('') }}
                 />
@@ -1843,6 +1926,7 @@ function MenuPageInner() {
                 <FoodCard key={item.id} item={item} index={i} lang={lang}
                   qty={cart.items.filter(ci => ci.menuItemId === item.id).reduce((s, ci) => s + ci.quantity, 0)}
                   isFav={favs.includes(item.id)} isLoggedIn={isLoggedIn}
+                  offer={activeOffers.length ? pickBestOffer(activeOffers, item.id, item.categoryId, Number(item.price)) : null}
                   onToggleFav={() => { setFavs(prev => prev.includes(item.id) ? prev.filter(f => f !== item.id) : [...prev, item.id]); toggleFavOnServer(item.id) }}
                   onOpen={() => { if (!item.isAvailable) return; const d: Record<string,string> = {}; item.modifierGroups?.forEach(g => { const o = g.options.find(x => x.isDefault) ?? g.options[0]; if (o) d[g.id] = o.id }); setDrawerItem(item); setSelectedOptions(d); setDrawerNotes('') }}
                 />

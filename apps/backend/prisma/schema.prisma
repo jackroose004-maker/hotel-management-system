@@ -142,6 +142,7 @@ model User {
   createdPromos   Promo[]         @relation("CreatedPromos")
   promoUsages     PromoUsage[]
   shifts          Shift[]
+  staffFeedback   StaffFeedback[] @relation("RatedStaff")
 
   @@map("users")
 }
@@ -205,6 +206,10 @@ model MenuItem {
   prepTimeMins Int      @default(15) @map("prep_time_mins")
   isSpecialDay Boolean  @default(false) @map("is_special_day")
   specialLabel String?  @map("special_label")
+  // ASP — "As per Season/Market Price": price varies daily (fresh fish etc).
+  // `price` still holds a reference/last-known value for admin display; guests
+  // can't self-checkout it — only staff can add it to an order with a live quote.
+  isMarketPrice Boolean @default(false) @map("is_market_price")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -331,6 +336,7 @@ model Order {
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
   feedback      Feedback?
+  staffFeedback StaffFeedback[]
   promoUsage    PromoUsage?
 
   @@index([tableSessionId])
@@ -351,6 +357,9 @@ model OrderItem {
   quantity   Int
   unitPrice  Decimal @db.Decimal(10, 2) @map("unit_price")
   notes      String?
+  // Offer discount snapshot — offerName/offerAmount kept even if the Offer is later deleted
+  offerName   String? @map("offer_name")
+  offerAmount Decimal @default(0) @db.Decimal(10, 2) @map("offer_amount") // total AED discount for this line (qty included)
 
   order     Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItem  MenuItem           @relation(fields: [menuItemId], references: [id])
@@ -518,6 +527,30 @@ model Feedback {
 
   @@index([createdAt])    // reports date-range scan
   @@map("feedback")
+}
+
+// Guest rates the staff member who served their table — separate from the
+// overall meal Feedback above. One per order; staffId is resolved server-side
+// (whoever settled the bill, falling back to whoever approved the order).
+model StaffFeedback {
+  id          String   @id @default(uuid())
+  orderId     String   @map("order_id")
+  staffId     String   @map("staff_id")
+  rating      Int      // 1–5 stars
+  isComplaint Boolean  @default(false) @map("is_complaint")
+  // 'LIVE' = guest-reported mid-meal (guest picked the staff themselves);
+  // 'SETTLE' = post-payment rating (staff resolved automatically from who served)
+  source      String   @default("SETTLE") @map("source")
+  comment     String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  staff User  @relation("RatedStaff", fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+  @@index([createdAt])
+  @@index([orderId])
+  @@map("staff_feedback")
 }
 
 // ─────────────────────────────────────────────
@@ -699,6 +732,30 @@ model EmailTemplate {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("email_templates")
+}
+
+// Seasonal / promotional offers — time-boxed discounts applied automatically at order time.
+// scope: 'ALL' (whole menu), 'CATEGORY' (categoryIds), or 'ITEM' (itemIds)
+// type: 'PERCENT' (value = % off, e.g. 20) or 'FIXED' (value = flat AED off per matching item)
+model Offer {
+  id           String   @id @default(uuid())
+  name         String
+  nameAr       String?  @map("name_ar")
+  scope        String   @default("ALL") // ALL | CATEGORY | ITEM
+  categoryIds  String[] @default([]) @map("category_ids")
+  itemIds      String[] @default([]) @map("item_ids")
+  type         String   @default("PERCENT") // PERCENT | FIXED
+  value        Decimal  @db.Decimal(10, 2)
+  startsAt     DateTime @map("starts_at")
+  endsAt       DateTime @map("ends_at")
+  isActive     Boolean  @default(true) @map("is_active")
+  bannerText   String?  @map("banner_text")
+  bannerTextAr String?  @map("banner_text_ar")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive, startsAt, endsAt])
+  @@map("offers")
 }
 
 // Web Push subscriptions — one row per browser/device that opted in

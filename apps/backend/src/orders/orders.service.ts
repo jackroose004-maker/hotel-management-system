@@ -6,6 +6,7 @@ import { KitchenPrintService } from './kitchen-print.service'
 import { SettingsService } from '../settings/settings.service'
 import { MailService } from '../mail/mail.service'
 import { PushService } from '../push/push.service'
+import { OffersService } from '../offers/offers.service'
 import { CreateOrderDto, UpdateOrderStatusDto, AddOrderItemsDto } from './dto/create-order.dto'
 import { OrderStatus } from '@prisma/client'
 import { randomUUID } from 'crypto'
@@ -23,6 +24,7 @@ export class OrdersService {
     private settings: SettingsService,
     private mail: MailService,
     private push: PushService,
+    private offers: OffersService,
   ) {}
 
   // Every 5 minutes: fire PRE_ORDER orders to kitchen when within the lead-time window.
@@ -64,10 +66,37 @@ export class OrdersService {
 
     const menuMap = new Map(menuItems.map(m => [m.id, m]))
 
+    // ASP (market-price) items: guests can't self-checkout them; staff must supply a live quote.
+    for (const item of dto.items) {
+      const menuItem = menuMap.get(item.menuItemId)!
+      if (menuItem.isMarketPrice) {
+        if (!isStaff) throw new BadRequestException(`${menuItem.name} is priced per market rate — please ask a staff member to add it for you.`)
+        if (!item.customPrice || item.customPrice <= 0) throw new BadRequestException(`Enter today's price for ${menuItem.name}`)
+      }
+    }
+    const priceFor = (item: typeof dto.items[number]) => {
+      const menuItem = menuMap.get(item.menuItemId)!
+      return menuItem.isMarketPrice ? Number(item.customPrice) : Number(menuItem.price)
+    }
+
+    // Seasonal offers: best matching discount per line item (base price only, not modifiers).
+    // ASP items are excluded — daily market pricing and promo discounts don't mix.
+    const activeOffers = await this.offers.getActiveNow()
+    const offerByItem = new Map<string, { name: string; amount: number }>()
+    if (activeOffers.length) {
+      for (const item of dto.items) {
+        const menuItem = menuMap.get(item.menuItemId)!
+        if (menuItem.isMarketPrice) continue
+        const best = OffersService.pickBestOffer(activeOffers as any, item.menuItemId, menuItem.categoryId, priceFor(item))
+        if (best) offerByItem.set(item.menuItemId, { name: best.offer.name, amount: Math.round(best.amount * item.quantity * 100) / 100 })
+      }
+    }
+
     const subtotal = dto.items.reduce((sum, item) => {
-      const price = Number(menuMap.get(item.menuItemId)!.price)
+      const price = priceFor(item)
       const modExtra = (item.modifiers ?? []).reduce((ms, m) => ms + Number(m.priceAdd ?? 0), 0)
-      return sum + (price + modExtra) * item.quantity
+      const discount = offerByItem.get(item.menuItemId)?.amount ?? 0
+      return sum + (price + modExtra) * item.quantity - discount
     }, 0)
 
     // Flat packing charge on takeaway orders (0 = disabled in settings)
@@ -198,19 +227,23 @@ export class OrdersService {
           clientIp,
           contactPhone: dto.contactPhone,
           items: {
-            create: dto.items.map(item => ({
-              menuItemId: item.menuItemId,
-              quantity: item.quantity,
-              unitPrice: menuMap.get(item.menuItemId)!.price,
-              notes: item.notes,
-              modifiers: item.modifiers?.length ? {
-                create: item.modifiers.map(m => ({
-                  optionId: m.optionId,
-                  name: m.name,
-                  priceAdd: m.priceAdd,
-                }))
-              } : undefined,
-            })),
+            create: dto.items.map(item => {
+              const offer = offerByItem.get(item.menuItemId)
+              return {
+                menuItemId: item.menuItemId,
+                quantity: item.quantity,
+                unitPrice: priceFor(item),
+                notes: item.notes,
+                ...(offer ? { offerName: offer.name, offerAmount: offer.amount } : {}),
+                modifiers: item.modifiers?.length ? {
+                  create: item.modifiers.map(m => ({
+                    optionId: m.optionId,
+                    name: m.name,
+                    priceAdd: m.priceAdd,
+                  }))
+                } : undefined,
+              }
+            }),
           },
           ...(dto.bookingId
             ? { bookingId: dto.bookingId, status: 'PRE_ORDER' }
@@ -279,10 +312,35 @@ export class OrdersService {
     if (menuItems.length !== itemIds.length) throw new BadRequestException('One or more menu items not found')
     const menuMap = new Map(menuItems.map(m => [m.id, m]))
 
+    const activeOffers = await this.offers.getActiveNow()
+    // addItems is staff-only (route guarded by @Roles('OWNER','STAFF')) — ASP items
+    // require a live customPrice quote, same as the main create() flow.
+    for (const item of dto.items) {
+      const menuItem = menuMap.get(item.menuItemId)!
+      if (menuItem.isMarketPrice && (!item.customPrice || item.customPrice <= 0)) {
+        throw new BadRequestException(`Enter today's price for ${menuItem.name}`)
+      }
+    }
+    const priceFor = (item: typeof dto.items[number]) => {
+      const menuItem = menuMap.get(item.menuItemId)!
+      return menuItem.isMarketPrice ? Number(item.customPrice) : Number(menuItem.price)
+    }
+
+    const offerByItem = new Map<string, { name: string; amount: number }>()
+    if (activeOffers.length) {
+      for (const item of dto.items) {
+        const menuItem = menuMap.get(item.menuItemId)!
+        if (menuItem.isMarketPrice) continue
+        const best = OffersService.pickBestOffer(activeOffers as any, item.menuItemId, menuItem.categoryId, priceFor(item))
+        if (best) offerByItem.set(item.menuItemId, { name: best.offer.name, amount: Math.round(best.amount * item.quantity * 100) / 100 })
+      }
+    }
+
     const addedSubtotal = dto.items.reduce((sum, item) => {
-      const price = Number(menuMap.get(item.menuItemId)!.price)
+      const price = priceFor(item)
       const modExtra = (item.modifiers ?? []).reduce((ms, m) => ms + Number(m.priceAdd ?? 0), 0)
-      return sum + (price + modExtra) * item.quantity
+      const discount = offerByItem.get(item.menuItemId)?.amount ?? 0
+      return sum + (price + modExtra) * item.quantity - discount
     }, 0)
 
     const newSubtotal  = Math.round((Number(order.subtotal) + addedSubtotal) * 100) / 100
@@ -305,8 +363,9 @@ export class OrdersService {
           create: dto.items.map(item => ({
             menuItemId: item.menuItemId,
             quantity: item.quantity,
-            unitPrice: menuMap.get(item.menuItemId)!.price,
+            unitPrice: priceFor(item),
             notes: item.notes,
+            ...(offerByItem.get(item.menuItemId) ? { offerName: offerByItem.get(item.menuItemId)!.name, offerAmount: offerByItem.get(item.menuItemId)!.amount } : {}),
             modifiers: item.modifiers?.length ? {
               create: item.modifiers.map(m => ({ optionId: m.optionId, name: m.name, priceAdd: m.priceAdd }))
             } : undefined,
@@ -616,6 +675,134 @@ export class OrdersService {
       update: { rating: data.rating, comment: data.comment ?? null, tags: data.tags ?? null },
       create: { orderId, userId: userId ?? null, rating: data.rating, comment: data.comment ?? null, tags: data.tags ?? null },
     })
+  }
+
+  // Who actually served this table: prefer whoever settled the bill (the closing
+  // interaction guests remember most), falling back to whoever approved the order
+  // into the kitchen (the one who greeted/took it). Session-wide, not just this order.
+  private async resolveServingStaff(order: { id: string; tableSessionId: string | null; approvedById: string | null; settledById: string | null }) {
+    if (order.settledById) return order.settledById
+    if (order.approvedById) return order.approvedById
+    if (!order.tableSessionId) return null
+    const sessionOrder = await this.prisma.order.findFirst({
+      where: { tableSessionId: order.tableSessionId, OR: [{ settledById: { not: null } }, { approvedById: { not: null } }] },
+      orderBy: { createdAt: 'desc' },
+      select: { settledById: true, approvedById: true },
+    })
+    return sessionOrder?.settledById ?? sessionOrder?.approvedById ?? null
+  }
+
+  // Who to show on the "Rate your server" screen — name + role, or null if nobody staffed it
+  async getServingStaffForOrder(orderId: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, tableSessionId: true, approvedById: true, settledById: true },
+    })
+    if (!order) throw new NotFoundException('Order not found')
+    const staffId = await this.resolveServingStaff(order)
+    if (!staffId) return null
+    return this.prisma.user.findUnique({ where: { id: staffId }, select: { id: true, name: true } })
+  }
+
+  async submitStaffFeedback(orderId: string, data: { rating: number; isComplaint?: boolean; comment?: string }) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, tableSessionId: true, approvedById: true, settledById: true, tableId: true, table: { select: { name: true, tableNumber: true } } },
+    })
+    if (!order) throw new NotFoundException('Order not found')
+    const staffId = await this.resolveServingStaff(order)
+    if (!staffId) throw new BadRequestException('No staff member found to rate for this order')
+
+    const record = await this.prisma.staffFeedback.create({
+      data: { orderId, staffId, rating: data.rating, isComplaint: data.isComplaint ?? false, comment: data.comment ?? null, source: 'SETTLE' },
+    })
+
+    if (data.isComplaint) {
+      const staff = await this.prisma.user.findUnique({ where: { id: staffId }, select: { name: true } })
+      const where = order.table ? (order.table.name ?? `Table ${order.table.tableNumber}`) : 'a takeaway order'
+      this.push.notifyStaff(
+        '⚠️ Guest Complaint',
+        `${staff?.name ?? 'A staff member'} — ${where}${data.comment ? `: "${data.comment}"` : ''}`,
+        '/staff/analytics', `complaint-${record.id}`,
+      )
+    }
+    return record
+  }
+
+  // Public: staff currently clocked in — lets the guest pick who served them for
+  // a live complaint without needing any staff-assignment feature.
+  async getOnDutyStaff() {
+    const shifts = await this.prisma.shift.findMany({
+      where: { clockOut: null },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: { clockIn: 'asc' },
+    })
+    return shifts.map(s => ({ id: s.user.id, name: s.user.name }))
+  }
+
+  // Real-time complaint: guest picks who served them from the on-duty list — no
+  // waiting for the bill to settle. Always treated as a complaint (rating defaults
+  // to 1 if the guest doesn't pick stars) so it surfaces immediately for the owner.
+  async submitLiveComplaint(orderId: string, staffId: string, data: { rating?: number; comment?: string }) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, tableId: true, tokenNumber: true, table: { select: { name: true, tableNumber: true } } },
+    })
+    if (!order) throw new NotFoundException('Order not found')
+    const staff = await this.prisma.user.findUnique({ where: { id: staffId }, select: { id: true, name: true } })
+    if (!staff) throw new BadRequestException('Staff member not found')
+
+    const record = await this.prisma.staffFeedback.create({
+      data: { orderId, staffId, rating: data.rating && data.rating >= 1 ? data.rating : 1, isComplaint: true, comment: data.comment ?? null, source: 'LIVE' },
+    })
+
+    const where = order.table ? (order.table.name ?? `Table ${order.table.tableNumber}`) : `Takeaway #${order.tokenNumber}`
+    this.push.notifyStaff(
+      '🚨 Live Guest Complaint',
+      `${staff.name} — ${where}${data.comment ? `: "${data.comment}"` : ''}`,
+      '/staff/analytics', `live-complaint-${record.id}`,
+    )
+    return record
+  }
+
+  // Per-staff rating leaderboard for the owner Analytics page
+  async getStaffRatings(period: string) {
+    const now = new Date()
+    const days = period === 'today' ? 1 : period === '30d' ? 30 : period === '90d' ? 90 : 7
+    const since = new Date(now)
+    since.setDate(since.getDate() - (days - 1))
+    since.setHours(0, 0, 0, 0)
+
+    const rows = await this.prisma.staffFeedback.findMany({
+      where: { createdAt: { gte: since } },
+      include: { staff: { select: { id: true, name: true, role: true } } },
+    })
+
+    const byStaff = new Map<string, { staffId: string; name: string; role: string; ratings: number[]; complaints: number; comments: { rating: number; comment: string; isComplaint: boolean; createdAt: Date }[] }>()
+    for (const r of rows) {
+      let entry = byStaff.get(r.staffId)
+      if (!entry) {
+        entry = { staffId: r.staffId, name: r.staff.name, role: r.staff.role, ratings: [], complaints: 0, comments: [] }
+        byStaff.set(r.staffId, entry)
+      }
+      entry.ratings.push(r.rating)
+      if (r.isComplaint) entry.complaints++
+      if (r.comment) entry.comments.push({ rating: r.rating, comment: r.comment, isComplaint: r.isComplaint, createdAt: r.createdAt })
+    }
+
+    const leaderboard = [...byStaff.values()]
+      .map(e => ({
+        staffId: e.staffId,
+        name: e.name,
+        role: e.role,
+        avgRating: Math.round((e.ratings.reduce((s, v) => s + v, 0) / e.ratings.length) * 10) / 10,
+        ratingCount: e.ratings.length,
+        complaints: e.complaints,
+        recentComments: e.comments.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 5),
+      }))
+      .sort((a, b) => b.avgRating - a.avgRating)
+
+    return { period, leaderboard, totalRatings: rows.length, totalComplaints: rows.filter(r => r.isComplaint).length }
   }
 
   async getAnalytics(period: string) {

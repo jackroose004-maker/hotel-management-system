@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import {
   TrendingUp, ShoppingBag, CreditCard, Banknote, Utensils, ArrowUpRight,
-  Printer, RefreshCw, ChevronLeft, ChevronRight, Scissors, Download,
+  Printer, RefreshCw, ChevronLeft, ChevronRight, Scissors, Download, Star, AlertTriangle,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { useBrandStore } from '@/store/brand'
@@ -21,6 +21,15 @@ interface AnalyticsData {
   byDay: { date: string; revenue: number; orders: number }[]
   hourly: { hour: number; count: number }[]
   topItems: { name: string; qty: number; revenue: number }[]
+}
+
+interface StaffRatingEntry {
+  staffId: string; name: string; role: string
+  avgRating: number; ratingCount: number; complaints: number
+  recentComments: { rating: number; comment: string; isComplaint: boolean; createdAt: string }[]
+}
+interface StaffRatingsData {
+  period: string; leaderboard: StaffRatingEntry[]; totalRatings: number; totalComplaints: number
 }
 
 interface EodData {
@@ -529,11 +538,14 @@ function Skeleton() {
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 export default function AnalyticsPage() {
-  const { token } = useAuthStore()
-  const [tab, setTab] = useState<'analytics' | 'eod'>('analytics')
+  const { token, user } = useAuthStore()
+  const [tab, setTab] = useState<'analytics' | 'eod' | 'staff'>('analytics')
   const [period, setPeriod] = useState('7d')
   const [data, setData] = useState<AnalyticsData | null>(null)
   const [loading, setLoading] = useState(true)
+
+  const [staffData, setStaffData] = useState<StaffRatingsData | null>(null)
+  const [staffLoading, setStaffLoading] = useState(true)
 
   const todayStr = new Date().toISOString().split('T')[0]
   const [eodDate, setEodDate] = useState(todayStr)
@@ -546,6 +558,13 @@ export default function AnalyticsPage() {
     apiFetch<AnalyticsData>(`/orders/analytics?period=${period}`, { token })
       .then(setData).catch(console.error).finally(() => setLoading(false))
   }, [period, token, tab])
+
+  useEffect(() => {
+    if (tab !== 'staff' || !token || user?.role !== 'OWNER') return
+    setStaffLoading(true)
+    apiFetch<StaffRatingsData>(`/orders/analytics/staff-ratings?period=${period}`, { token })
+      .then(setStaffData).catch(console.error).finally(() => setStaffLoading(false))
+  }, [period, token, tab, user])
 
   const loadEod = useCallback(async () => {
     if (!token) return
@@ -594,6 +613,15 @@ export default function AnalyticsPage() {
               : { color: 'var(--text-muted)' }}>
             <Scissors size={11} /> Shift Close
           </button>
+          {user?.role === 'OWNER' && (
+            <button onClick={() => setTab('staff')}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              style={tab === 'staff'
+                ? { backgroundColor: 'var(--card-bg)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }
+                : { color: 'var(--text-muted)' }}>
+              <Star size={11} /> Staff Ratings
+            </button>
+          )}
         </div>
       </div>
 
@@ -670,6 +698,88 @@ export default function AnalyticsPage() {
               onRefresh={loadEod}
             />
           </div>
+        )}
+
+        {/* ── Staff Ratings tab ── */}
+        {tab === 'staff' && (
+          <>
+            <div className="flex items-center justify-end px-4 sm:px-6 py-2 border-b"
+              style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--header-bg)' }}>
+              <div className="flex rounded-xl p-1 border" style={{ backgroundColor: 'var(--muted-bg)', borderColor: 'var(--card-border)' }}>
+                {PERIODS.map(p => (
+                  <button key={p.key} onClick={() => setPeriod(p.key)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                    style={period === p.key
+                      ? { backgroundColor: 'var(--card-bg)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.15)' }
+                      : { color: 'var(--text-muted)' }}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="p-4 sm:p-6">
+              {staffLoading ? <Skeleton /> : !staffData || staffData.leaderboard.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-2 rounded-2xl border border-dashed" style={{ borderColor: 'var(--card-border)' }}>
+                  <Star size={20} style={{ color: 'var(--text-muted)' }} />
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No staff ratings yet for this period</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white dark:bg-[var(--card-bg)] rounded-2xl border border-gray-200 dark:border-white/[0.06] p-4">
+                      <div className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight leading-none">{staffData.totalRatings}</div>
+                      <div className="text-xs font-semibold mt-1" style={{ color: 'var(--text-muted)' }}>Total ratings</div>
+                    </div>
+                    <div className="bg-white dark:bg-[var(--card-bg)] rounded-2xl border border-gray-200 dark:border-white/[0.06] p-4">
+                      <div className="text-2xl font-extrabold tracking-tight leading-none" style={{ color: staffData.totalComplaints > 0 ? '#ef4444' : undefined }}>
+                        {staffData.totalComplaints}
+                      </div>
+                      <div className="text-xs font-semibold mt-1" style={{ color: 'var(--text-muted)' }}>Complaints flagged</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {staffData.leaderboard.map((s, i) => (
+                      <div key={s.staffId} className="rounded-2xl border p-4" style={{ backgroundColor: 'var(--card-bg)', borderColor: 'var(--card-border)' }}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black flex-shrink-0"
+                              style={{ backgroundColor: i === 0 ? 'rgba(245,158,11,0.15)' : 'var(--muted-bg)', color: i === 0 ? '#f59e0b' : 'var(--text-muted)' }}>
+                              {i === 0 ? '👑' : `#${i + 1}`}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>{s.name}</div>
+                              <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{s.ratingCount} rating{s.ratingCount !== 1 ? 's' : ''}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            {s.complaints > 0 && (
+                              <span className="flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full" style={{ backgroundColor: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
+                                <AlertTriangle size={11} /> {s.complaints}
+                              </span>
+                            )}
+                            <span className="flex items-center gap-1 text-sm font-black" style={{ color: 'var(--brand)' }}>
+                              <Star size={14} className="fill-current" /> {s.avgRating.toFixed(1)}
+                            </span>
+                          </div>
+                        </div>
+                        {s.recentComments.length > 0 && (
+                          <div className="mt-3 pt-3 space-y-1.5 border-t" style={{ borderColor: 'var(--card-border)' }}>
+                            {s.recentComments.map((c, ci) => (
+                              <div key={ci} className="text-[11px] flex items-start gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                                {c.isComplaint && <AlertTriangle size={10} className="flex-shrink-0 mt-0.5" style={{ color: '#ef4444' }} />}
+                                <span className="italic">"{c.comment}"</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
     </div>

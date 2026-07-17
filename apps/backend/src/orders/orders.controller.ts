@@ -48,6 +48,14 @@ export class OrdersController {
     return this.orders.getAnalytics(period)
   }
 
+  // Owner-only: per-staff rating leaderboard + complaint counts
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER')
+  @Get('analytics/staff-ratings')
+  getStaffRatings(@Query('period') period: string = '7d') {
+    return this.orders.getStaffRatings(period)
+  }
+
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('OWNER')
   @Get('eod-report')
@@ -212,6 +220,42 @@ export class OrdersController {
     @Request() req?: any,
   ) {
     return this.orders.submitFeedback(orderId, { rating, comment, tags }, req?.user?.id)
+  }
+
+  // Who served this table — shown on the "Rate your server" screen after settling
+  @Get(':id/serving-staff')
+  getServingStaff(@Param('id') orderId: string) {
+    return this.orders.getServingStaffForOrder(orderId)
+  }
+
+  // Public: staff currently on shift — populates the "who served you" picker
+  // for a live, mid-meal complaint (before any bill is settled)
+  @Get('on-duty-staff')
+  getOnDutyStaff() {
+    return this.orders.getOnDutyStaff()
+  }
+
+  // Guest reports an issue in real time — always available, no auth required
+  @Post(':id/live-complaint')
+  submitLiveComplaint(
+    @Param('id') orderId: string,
+    @Body('staffId') staffId: string,
+    @Body('rating') rating?: number,
+    @Body('comment') comment?: string,
+  ) {
+    return this.orders.submitLiveComplaint(orderId, staffId, { rating, comment })
+  }
+
+  // Guest rates the staff member who served them; complaint flag alerts the owner
+  @UseGuards(OptionalJwtAuthGuard)
+  @Post(':id/staff-feedback')
+  submitStaffFeedback(
+    @Param('id') orderId: string,
+    @Body('rating') rating: number,
+    @Body('isComplaint') isComplaint?: boolean,
+    @Body('comment') comment?: string,
+  ) {
+    return this.orders.submitStaffFeedback(orderId, { rating, isComplaint, comment })
   }
 
   // Manager/owner: list all pending refund requests (must be before :id wildcard)

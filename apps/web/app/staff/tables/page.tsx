@@ -25,8 +25,8 @@ interface TableBill {
 }
 interface ModOption { id: string; name: string; priceAdd: number; isDefault: boolean }
 interface ModGroup { id: string; name: string; required: boolean; minSelect: number; maxSelect: number; options: ModOption[] }
-interface MenuItem { id: string; name: string; price: number; categoryId?: string; category?: { name: string }; isAvailable: boolean; modifierGroups?: ModGroup[] }
-interface CartEntry { menuItemId: string; quantity: number; optionIds: string[]; label: string }
+interface MenuItem { id: string; name: string; price: number; categoryId?: string; category?: { name: string }; isAvailable: boolean; isMarketPrice?: boolean; modifierGroups?: ModGroup[] }
+interface CartEntry { menuItemId: string; quantity: number; optionIds: string[]; label: string; customPrice?: number }
 
 function useNow(intervalMs = 30000) {
   const [now, setNow] = useState(() => Date.now())
@@ -85,6 +85,9 @@ export default function TablesPage() {
   const [menuSearch, setMenuSearch]       = useState('')
   const [activeCatId, setActiveCatId]     = useState<string | null>(null)
   const [modSheet, setModSheet]           = useState<{ item: MenuItem; selections: Record<string, string[]> } | null>(null)
+  // ASP (market-price) items: staff must quote today's price before adding
+  const [askPriceItem, setAskPriceItem]   = useState<MenuItem | null>(null)
+  const [askPriceValue, setAskPriceValue] = useState('')
   const [addingOrder, setAddingOrder]     = useState(false)
   const [tableSessions, setTableSessions] = useState<{ sessionId: string; label: string }[]>([])
   const [selectedSession, setSelectedSession] = useState<string>('') // '' = new session
@@ -220,12 +223,22 @@ export default function TablesPage() {
   const cartTotal = cart.reduce((s, e) => {
     const item = menuItems.find(i => i.id === e.menuItemId)
     if (!item) return s
+    const price = e.customPrice ?? Number(item.price)
     const modExtra = (item.modifierGroups ?? []).flatMap(g => g.options).filter(o => e.optionIds.includes(o.id)).reduce((a, o) => a + Number(o.priceAdd), 0)
-    return s + (Number(item.price) + modExtra) * e.quantity
+    return s + (price + modExtra) * e.quantity
   }, 0)
 
   function cartAddSimple(item: MenuItem) {
+    if (item.isMarketPrice) { setAskPriceItem(item); setAskPriceValue(''); return }
     setCart(c => [...c, { menuItemId: item.id, quantity: 1, optionIds: [], label: '' }])
+  }
+  function confirmAskPrice() {
+    if (!askPriceItem) return
+    const price = parseFloat(askPriceValue)
+    if (!price || price <= 0) { notify.error("Enter today's price"); return }
+    setCart(c => [...c, { menuItemId: askPriceItem.id, quantity: 1, optionIds: [], label: '', customPrice: price }])
+    setAskPriceItem(null)
+    setAskPriceValue('')
   }
   function cartRemoveEntry(idx: number) {
     setCart(c => { const n = [...c]; if (n[idx].quantity > 1) { n[idx] = { ...n[idx], quantity: n[idx].quantity - 1 }; return n } n.splice(idx, 1); return n })
@@ -267,7 +280,7 @@ export default function TablesPage() {
         const item = menuItems.find(i => i.id === e.menuItemId)!
         const allOpts = (item.modifierGroups ?? []).flatMap(g => g.options)
         const modifiers = e.optionIds.map(oid => { const opt = allOpts.find(o => o.id === oid)!; return { optionId: oid, name: opt.name, priceAdd: Number(opt.priceAdd) } })
-        return { menuItemId: e.menuItemId, quantity: e.quantity, ...(modifiers.length ? { modifiers } : {}) }
+        return { menuItemId: e.menuItemId, quantity: e.quantity, ...(modifiers.length ? { modifiers } : {}), ...(e.customPrice ? { customPrice: e.customPrice } : {}) }
       })
       await api.post(`/orders/table/${addOrderModal.id}/staff-order`, {
         type: 'DINE_IN', tableId: addOrderModal.id, items,
@@ -789,16 +802,22 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                           <div key={item.id}
                             className="rounded-xl overflow-hidden cursor-pointer active:opacity-80 transition-opacity border"
                             style={{ borderColor: totalQty > 0 ? 'rgba(var(--brand-rgb),0.4)' : undefined }}
-                            onClick={() => hasModifiers ? openModSheet(item) : cartAddSimple(item)}>
+                            onClick={() => item.isMarketPrice ? cartAddSimple(item) : hasModifiers ? openModSheet(item) : cartAddSimple(item)}>
                             <div className="flex items-center gap-3 px-3 py-3 bg-white dark:bg-[var(--card-bg)]">
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-semibold truncate text-gray-900 dark:text-white">{item.name}</p>
                                 <p className="text-xs mt-0.5 text-gray-400">
-                                  AED {Number(item.price).toFixed(2)}{hasModifiers && <span className="ml-1 opacity-60">· customisable</span>}
+                                  {item.isMarketPrice
+                                    ? <span className="font-bold" style={{ color: '#ef4444' }}>ASP · Market Price</span>
+                                    : <>AED {Number(item.price).toFixed(2)}{hasModifiers && <span className="ml-1 opacity-60">· customisable</span>}</>}
                                 </p>
                               </div>
                               <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                                {hasModifiers ? (
+                                {item.isMarketPrice ? (
+                                  <button type="button" onClick={() => cartAddSimple(item)}
+                                    className="px-3 h-7 rounded-full text-xs font-semibold text-white"
+                                    style={{ backgroundColor: '#ef4444' }}>+ Quote Price</button>
+                                ) : hasModifiers ? (
                                   <button type="button" onClick={() => openModSheet(item)}
                                     className="px-3 h-7 rounded-full text-xs font-semibold text-white"
                                     style={{ backgroundColor: 'var(--brand)' }}>+ Add</button>
@@ -818,15 +837,17 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                                 )}
                               </div>
                             </div>
-                            {hasModifiers && itemEntries.length > 0 && (
+                            {(hasModifiers || item.isMarketPrice) && itemEntries.length > 0 && (
                               <div className="px-3 pb-2 space-y-1 bg-white dark:bg-[var(--card-bg)]">
                                 {itemEntries.map((e, idx) => {
                                   const globalIdx = cart.indexOf(e)
                                   return (
                                     <div key={idx} className="flex items-center gap-2 text-xs text-gray-400">
-                                      <span className="flex-1 truncate">{e.label || 'No extras'} ×{e.quantity}</span>
+                                      <span className="flex-1 truncate">
+                                        {e.customPrice ? `Quoted AED ${e.customPrice.toFixed(2)}` : (e.label || 'No extras')} ×{e.quantity}
+                                      </span>
                                       <button type="button" onClick={() => cartRemoveEntry(globalIdx)} className="text-red-400"><Trash2 size={11} /></button>
-                                      <button type="button" onClick={() => cartAddEntry(globalIdx)} className="font-bold" style={{ color: 'var(--brand)' }}>+1</button>
+                                      {!item.isMarketPrice && <button type="button" onClick={() => cartAddEntry(globalIdx)} className="font-bold" style={{ color: 'var(--brand)' }}>+1</button>}
                                     </div>
                                   )
                                 })}
@@ -886,6 +907,36 @@ img{width:200px;height:200px;margin:0 auto 16px;display:block}.n{font-size:22px;
                     : <><ShoppingBag size={15} /> Add to Bill · {cartCount} item{cartCount !== 1 ? 's' : ''}</>
                   }
                 </button>
+              </div>
+            )}
+
+            {/* ASP price quote sheet */}
+            {askPriceItem && (
+              <div className="absolute inset-0 z-20 flex flex-col justify-end bg-black/50 rounded-3xl"
+                onClick={e => { if (e.target === e.currentTarget) setAskPriceItem(null) }}>
+                <div className="rounded-t-2xl overflow-hidden bg-white dark:bg-[var(--card-bg)] border border-gray-200 dark:border-[var(--card-border)] p-5 space-y-3">
+                  <div>
+                    <p className="font-bold text-sm text-gray-900 dark:text-white">{askPriceItem.name}</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#ef4444' }}>ASP · Market Price — enter today's rate</p>
+                  </div>
+                  <input
+                    autoFocus type="number" min="0" step="0.5" value={askPriceValue}
+                    onChange={e => setAskPriceValue(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && confirmAskPrice()}
+                    placeholder="Price in AED"
+                    className="w-full text-lg font-bold px-3 py-2.5 rounded-xl outline-none border border-gray-200 dark:border-[var(--card-border)] bg-white dark:bg-transparent text-gray-900 dark:text-white"
+                  />
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setAskPriceItem(null)}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 dark:border-[var(--card-border)] text-gray-500">
+                      Cancel
+                    </button>
+                    <button type="button" onClick={confirmAskPrice}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white" style={{ backgroundColor: '#ef4444' }}>
+                      Add to Order
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 

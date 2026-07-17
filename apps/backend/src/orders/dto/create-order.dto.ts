@@ -34,6 +34,11 @@ export class OrderItemDto {
   @Type(() => OrderItemModifierDto)
   @IsOptional()
   modifiers?: OrderItemModifierDto[]
+
+  /** Staff-only: live quote for ASP (market-price) items, e.g. today's fish rate. Ignored for guest orders. */
+  @IsNumber()
+  @IsOptional()
+  customPrice?: number
 }
 
 export class AddOrderItemsDto {
