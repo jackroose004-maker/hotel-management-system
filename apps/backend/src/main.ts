@@ -1,4 +1,3 @@
-// Deploy-key push test — 2026-07-18, via github-hotel-deploy alias
 import { NestFactory } from '@nestjs/core'
 import { ValidationPipe, VersioningType } from '@nestjs/common'
 import { AppModule } from './app.module'
