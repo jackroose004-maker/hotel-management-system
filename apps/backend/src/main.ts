@@ -1,3 +1,4 @@
+// Vercel deploy test — public repo, 2026-07-18
 import { NestFactory } from '@nestjs/core'
 import { ValidationPipe, VersioningType } from '@nestjs/common'
 import { AppModule } from './app.module'
