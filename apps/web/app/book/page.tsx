@@ -13,6 +13,9 @@ import Link from 'next/link'
 import { QRCodeCanvas } from 'qrcode.react'
 import ForceDark from '@/components/ForceDark'
 
+// Temporary: reservations under maintenance. Flip back to false to restore booking flow.
+const BOOKINGS_UNDER_MAINTENANCE = true
+
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1'
 
 interface Slot { time: string; available: number; total: number; isPast: boolean; isFull: boolean; isPeak?: boolean }
@@ -214,6 +217,7 @@ export default function BookPage() {
   const [preOrder, setPreOrder] = useState<any>(null)
 
   useEffect(() => {
+    if (BOOKINGS_UNDER_MAINTENANCE) return
     setSelectedTime(null)
     setSlotsLoading(true)
     fetch(`${API}/bookings/availability?date=${formatDate(date)}`)
@@ -228,6 +232,7 @@ export default function BookPage() {
   }, [date])
 
   useEffect(() => {
+    if (BOOKINGS_UNDER_MAINTENANCE) return
     if (!token) return
     setSelectedTableId(null)
     setZoneFilter('All')
@@ -501,6 +506,49 @@ export default function BookPage() {
             style={{ background: `linear-gradient(135deg, ${brandColor}, ${brandColor}dd)`, boxShadow: `0 8px 28px ${brandColor}40`, display: 'flex' }}>
             {submitting ? <><Loader2 size={16} className="animate-spin" /> {t(lang, 'book.reserving')}</> : `${t(lang, 'book.confirmBtn')} ${partySize} ${t(lang, partySize === 1 ? 'book.guest' : 'book.guests')}`}
           </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── UNDER MAINTENANCE ────────────────────────────────────────────────────
+  if (BOOKINGS_UNDER_MAINTENANCE) {
+    return (
+      <div className="min-h-screen bg-[#080808] flex flex-col">
+        <ForceDark />
+        <div className="sticky top-0 z-10 bg-[#080808]/95 backdrop-blur border-b border-white/[0.05]">
+          <div className="flex items-center gap-3 px-4 h-14">
+            <Link href="/" className="w-9 h-9 rounded-full bg-white/[0.05] flex items-center justify-center flex-shrink-0 hover:bg-white/10 transition-colors">
+              <ArrowLeft size={16} className="text-white" />
+            </Link>
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              {logoUrl
+                ? <img src={logoUrl} alt={brandName} className="w-7 h-7 rounded-lg object-cover flex-shrink-0" />
+                : <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: `linear-gradient(135deg, ${brandColor}, ${brandColor}99)` }}>
+                    <UtensilsCrossed size={13} className="text-white" />
+                  </div>
+              }
+              <div className="min-w-0">
+                <p className="text-[13px] font-black text-white truncate leading-tight">{brandName || t(lang, 'book.hotelName')}</p>
+                <p className="text-[10px] text-white/25 flex items-center gap-1 leading-tight"><MapPin size={8} /> {t(lang, 'book.location')}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center gap-5">
+          <span className="text-6xl">🧑‍🍳🔧</span>
+          <div className="space-y-2">
+            <p className="text-xl font-black text-white">Our Booking Book Fell in the Curry</p>
+            <p className="text-sm text-white/35 max-w-xs mx-auto leading-relaxed">
+              The chef is fishing it out as we speak. Online table reservations are taking a short break —
+              but the kitchen never stops.
+            </p>
+          </div>
+          <Link href="/menu" className="mt-2 px-6 py-3 rounded-2xl text-sm font-black transition-all hover:opacity-90"
+            style={{ background: `linear-gradient(135deg, ${brandColor}, ${brandColor}dd)`, color: '#000', boxShadow: `0 8px 28px ${brandColor}40` }}>
+            Order Food Instead →
+          </Link>
+          <p className="text-[11px] text-white/15">Walk-ins always welcome, no reservation required.</p>
         </div>
       </div>
     )
