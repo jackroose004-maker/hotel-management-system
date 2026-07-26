@@ -1,0 +1,630 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digital Presence, Phased — A Proposal for UAE Hospitality</title>
+<style>
+  :root {
+    --ink: #17140f;
+    --ink-soft: #2a251d;
+    --paper: #f4efe3;
+    --paper-soft: #eae2d0;
+    --line: rgba(23,20,15,0.14);
+    --brass: #a8763a;
+    --brass-deep: #7d5423;
+    --good: #3f6b4e;
+    --card-bg: #ffffff;
+    --shadow: 0 1px 2px rgba(23,20,15,0.06), 0 8px 24px rgba(23,20,15,0.06);
+  }
+  :root[data-theme="dark"] {
+    --ink: #f2ece0;
+    --ink-soft: #cfc6b3;
+    --paper: #141210;
+    --paper-soft: #1c1915;
+    --line: rgba(242,236,224,0.14);
+    --brass: #cc9a52;
+    --brass-deep: #e0b06a;
+    --good: #6ea884;
+    --card-bg: #1b1815;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.35);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #f2ece0;
+      --ink-soft: #cfc6b3;
+      --paper: #141210;
+      --paper-soft: #1c1915;
+      --line: rgba(242,236,224,0.14);
+      --brass: #cc9a52;
+      --brass-deep: #e0b06a;
+      --good: #6ea884;
+      --card-bg: #1b1815;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, .display {
+    font-family: Iowan Old Style, Palatino Linotype, Palatino, Georgia, serif;
+    font-weight: 600;
+    text-wrap: balance;
+    letter-spacing: 0.01em;
+    margin: 0;
+  }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--brass);
+  }
+  a { color: inherit; }
+
+  .print-btn {
+    position: fixed; top: 18px; right: 18px; z-index: 50;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--ink); color: var(--paper);
+    border: none; border-radius: 999px;
+    padding: 10px 18px; font-size: 13px; font-weight: 600;
+    cursor: pointer; box-shadow: var(--shadow);
+  }
+  .print-btn:hover { opacity: 0.9; }
+  .print-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+  @media (max-width: 640px) {
+    .print-btn { top: 10px; right: 10px; padding: 7px 12px; font-size: 11.5px; gap: 5px; }
+  }
+
+  /* ── Cover ───────────────────────────────────────────── */
+  .cover {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 88px 32px 56px;
+    text-align: center;
+  }
+  .cover .mark {
+    width: 46px; height: 46px; margin: 0 auto 26px;
+    border: 1.5px solid var(--brass);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: Iowan Old Style, Georgia, serif;
+    font-size: 19px; color: var(--brass); font-weight: 600;
+  }
+  .cover h1 {
+    font-size: clamp(32px, 5vw, 50px);
+    line-height: 1.1;
+    max-width: 760px; margin: 0 auto;
+  }
+  .cover h1 em { font-style: italic; color: var(--brass-deep); }
+  .cover p.sub {
+    max-width: 540px; margin: 18px auto 0;
+    color: var(--ink-soft); font-size: 16px;
+  }
+  .cover .meta {
+    margin-top: 30px;
+    display: flex; gap: 26px; justify-content: center; flex-wrap: wrap;
+    font-size: 12.5px; color: var(--ink-soft);
+  }
+  .cover .meta b { color: var(--ink); font-weight: 700; }
+  .rule { max-width: 900px; margin: 0 auto; height: 1px; background: var(--line); }
+
+  /* ── Intro triptych ─────────────────────────────────── */
+  .intro {
+    max-width: 900px; margin: 0 auto; padding: 44px 32px;
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 26px;
+  }
+  .intro .item { display: flex; flex-direction: column; gap: 6px; }
+  .intro .item .k { font-family: Iowan Old Style, Georgia, serif; font-size: 24px; color: var(--brass); }
+  .intro .item .t { font-weight: 700; font-size: 14px; }
+  .intro .item .d { color: var(--ink-soft); font-size: 13px; }
+
+  /* ── Phase pages ─────────────────────────────────────── */
+  .phase {
+    max-width: 900px; margin: 0 auto; padding: 52px 32px 40px;
+    page-break-before: always;
+  }
+  .phase-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; margin-bottom: 6px; flex-wrap: wrap;
+  }
+  .phase-head h2 { font-size: 28px; }
+  .phase-tag {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 5px 12px; border-radius: 999px; white-space: nowrap;
+  }
+  .tag-start { background: rgba(63,107,78,0.12); color: var(--good); }
+  .tag-grow { background: rgba(168,118,58,0.14); color: var(--brass-deep); }
+  .tag-elite { background: var(--ink); color: var(--paper); }
+  .phase-desc { color: var(--ink-soft); font-size: 14.5px; max-width: 660px; margin-top: 8px; }
+
+  .phase-totals {
+    margin-top: 18px; display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  .phase-totals .pt {
+    flex: 1; min-width: 180px; background: var(--paper-soft); border-radius: 12px;
+    padding: 12px 16px; display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .phase-totals .pt .l { font-size: 11px; color: var(--ink-soft); }
+  .phase-totals .pt .v { font-size: 18px; font-weight: 700; }
+  .phase-totals .pt.hi { background: var(--ink); color: var(--paper); }
+  .phase-totals .pt.hi .l { color: var(--paper); opacity: 0.65; }
+
+  .stage {
+    margin-top: 26px; border-radius: 18px;
+    border: 1px solid var(--line); background: var(--card-bg);
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .stage-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 18px 22px; border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .stage-head .letter {
+    font-family: Iowan Old Style, Georgia, serif; font-size: 16px; color: var(--brass);
+    margin-right: 9px;
+  }
+  .stage-head h3 { font-size: 16.5px; display: inline; }
+  .stage-head .sub { display: block; font-size: 12px; color: var(--ink-soft); font-weight: 400; margin-top: 3px; }
+  .stage-body { padding: 18px 22px 22px; display: grid; grid-template-columns: 1.5fr 1fr; gap: 26px; }
+  @media (max-width: 640px) { .stage-body { grid-template-columns: 1fr; } }
+
+  .includes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .includes li { display: flex; gap: 10px; font-size: 13.5px; align-items: flex-start; }
+  .includes li::before {
+    content: "＋"; color: var(--brass); font-weight: 700; flex-shrink: 0;
+    font-family: Iowan Old Style, Georgia, serif; line-height: 1.4;
+  }
+  .includes li b { font-variant-numeric: tabular-nums; }
+
+  .price-box {
+    background: var(--paper-soft); border-radius: 14px; padding: 16px 18px;
+    display: flex; flex-direction: column; gap: 12px; align-self: start;
+  }
+  .price-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .price-row .label { font-size: 11.5px; color: var(--ink-soft); }
+  .price-row .value { font-size: 19px; font-weight: 700; white-space: nowrap; }
+  .price-row .value .cur { font-size: 11.5px; font-weight: 600; color: var(--ink-soft); margin-right: 3px; }
+  .price-note { font-size: 11px; color: var(--ink-soft); border-top: 1px dashed var(--line); padding-top: 9px; }
+
+  .flow-note {
+    margin: 0 22px 22px; padding: 13px 17px; border-left: 2px solid var(--brass);
+    background: var(--paper-soft); border-radius: 0 10px 10px 0;
+    font-size: 13px; color: var(--ink-soft);
+  }
+  .flow-note b { color: var(--ink); }
+
+  /* ── AWS breakdown table ─────────────────────────────── */
+  .infra-block { margin: 22px; margin-top: 0; }
+  .infra-block .infra-title {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--ink-soft); margin-bottom: 8px;
+  }
+  table.infra { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.infra th, table.infra td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+  table.infra th { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
+  table.infra td.amt, table.infra th.amt { text-align: right; }
+  table.infra tr.total td { font-weight: 700; border-top: 1.5px solid var(--ink); border-bottom: none; }
+  table.infra tr.total td.amt { color: var(--brass-deep); }
+
+  /* ── Domain choice cards ─────────────────────────────── */
+  .domain-choice { display: flex; gap: 14px; margin: 22px; margin-top: 0; flex-wrap: wrap; }
+  .dcard { flex: 1; min-width: 220px; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .dcard.rec { border-color: var(--brass); background: rgba(168,118,58,0.05); }
+  .dcard .dtitle { font-weight: 700; font-size: 13.5px; display: flex; justify-content: space-between; align-items: center; }
+  .dcard .dtitle .pill { font-size: 9.5px; background: var(--brass); color: #fff; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+  .dcard .dprice { font-size: 20px; font-weight: 700; margin-top: 6px; }
+  .dcard .dnote { font-size: 11.5px; color: var(--ink-soft); margin-top: 4px; }
+
+  /* ── Comparison table ───────────────────────────────── */
+  .compare-wrap { max-width: 900px; margin: 0 auto; padding: 40px 32px; }
+  .compare-scroll { overflow-x: auto; border-radius: 16px; border: 1px solid var(--line); }
+  table.compare { width: 100%; border-collapse: collapse; min-width: 760px; background: var(--card-bg); }
+  table.compare th, table.compare td {
+    padding: 12px 15px; text-align: left; font-size: 12.5px; border-bottom: 1px solid var(--line);
+  }
+  table.compare thead th {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft);
+    background: var(--paper-soft);
+  }
+  table.compare tbody tr:last-child td { border-bottom: none; }
+  table.compare td.yes { color: var(--good); font-weight: 700; }
+  table.compare td.dim { color: var(--line); }
+  table.compare th.stagecol, table.compare td.stagecol { color: var(--ink); font-weight: 700; }
+
+  /* ── Footer ──────────────────────────────────────────── */
+  .footer {
+    max-width: 900px; margin: 0 auto; padding: 32px 32px 64px;
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap;
+  }
+  .footer .fnote { max-width: 480px; font-size: 12px; color: var(--ink-soft); }
+  .footer .fnote b { color: var(--ink); }
+  .footer h3 { font-size: 20px; margin-bottom: 6px; }
+
+  /* ── POS comparison ─────────────────────────────────── */
+  .pos-compare { max-width: 900px; margin: 0 auto; padding: 8px 32px 44px; }
+  .pos-compare .pc-head { text-align: center; margin-bottom: 22px; }
+  .pos-compare .pc-head h3 { font-size: 19px; }
+  .pos-compare .pc-head p { color: var(--ink-soft); font-size: 13.5px; max-width: 560px; margin: 8px auto 0; }
+  .pc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 640px) { .pc-grid { grid-template-columns: 1fr; } }
+  .pc-card { border-radius: 16px; padding: 20px 22px; border: 1px solid var(--line); }
+  .pc-card.them { background: var(--paper-soft); }
+  .pc-card.us { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .pc-card .pc-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.7; }
+  .pc-card .pc-title { font-family: Iowan Old Style, Georgia, serif; font-size: 20px; margin-top: 4px; }
+  .pc-card ul { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+  .pc-card.us .pc-label { color: var(--brass-deep); opacity: 1; }
+  .pc-card ul li span.amt { font-weight: 700; }
+
+  /* ── Ongoing / beyond setup ──────────────────────────── */
+  .ongoing { max-width: 900px; margin: 0 auto; padding: 8px 32px 44px; }
+  .ongoing .og-head { margin-bottom: 20px; }
+  .ongoing .og-head h3 { font-size: 19px; }
+  .ongoing .og-head p { color: var(--ink-soft); font-size: 13.5px; margin-top: 6px; max-width: 620px; }
+  .og-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  @media (max-width: 640px) { .og-grid { grid-template-columns: 1fr; } }
+  .og-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
+  .og-card .og-title { font-weight: 700; font-size: 13.5px; }
+  .og-card .og-price { font-size: 17px; font-weight: 700; margin-top: 6px; color: var(--brass-deep); }
+  .og-card .og-desc { font-size: 12px; color: var(--ink-soft); margin-top: 6px; }
+  .og-card.deal { border-color: var(--brass); background: rgba(168,118,58,0.05); }
+  .og-card .og-badge { display: inline-block; font-size: 9.5px; font-weight: 700; background: var(--brass); color: #fff; padding: 2px 8px; border-radius: 999px; margin-top: 8px; }
+
+  @media print {
+    body { background: #fff !important; color: #17140f !important; }
+    .print-btn { display: none !important; }
+    .stage, table.compare { box-shadow: none !important; }
+    .phase { page-break-before: always; padding-top: 8px; }
+    .cover { padding-top: 24px; }
+  }
+</style>
+
+<button class="print-btn" onclick="window.print()">🖨️ Save as PDF</button>
+
+<!-- ══════════════════ PAGE 1 — COVER + PHASE 1 ══════════════════ -->
+<section class="cover">
+  <div class="mark">AM</div>
+  <p class="eyebrow">A Proposal in Three Phases</p>
+  <h1>Grow your digital presence <em>at your own pace</em> — never faster than your trust in it.</h1>
+  <p class="sub">A phased roadmap for hospitality brands in the UAE: start with a beautiful front door, add ordering and payments only when ready, and go all the way to a full guest platform — without ever touching your POS.</p>
+  <div class="meta">
+    <span><b>3</b> phases · <b>7</b> stages</span>
+    <span>Secure cloud hosting, sized to your traffic</span>
+    <span>Your POS, <b>untouched</b> until you say so</span>
+  </div>
+</section>
+
+<section class="pos-compare">
+  <div class="pc-head">
+    <h3>Where this sits alongside your POS</h3>
+    <p>Your kitchen still needs a POS to run day-to-day — we don't change that. What we add is the guest-facing side, and it doesn't come with a second set of hardware or a second monthly software bill just to exist.</p>
+  </div>
+  <div class="pc-grid">
+    <div class="pc-card them">
+      <div class="pc-label">A typical restaurant POS, for reference</div>
+      <div class="pc-title">AED 5,500–18,000 <span style="font-size:13px;font-weight:400;">to start</span></div>
+      <ul>
+        <li>Hardware (terminal, printer, kitchen display) — <span class="amt num">AED 5,000–15,000</span></li>
+        <li>Setup &amp; onboarding fee — <span class="amt num">AED 500–3,000</span></li>
+        <li>Software subscription, every month — <span class="amt num">AED 350–700</span></li>
+        <li>Per-order transaction fee on top — <span class="amt num">0–2.5%</span></li>
+      </ul>
+    </div>
+    <div class="pc-card us">
+      <div class="pc-label">Phase 1 with us — in addition, not instead</div>
+      <div class="pc-title">AED 2,800 <span style="font-size:13px;font-weight:400;opacity:0.75;">one-time</span></div>
+      <ul>
+        <li>No hardware to buy — runs on the phone your guests already carry</li>
+        <li>No monthly fee at this stage — <span class="amt num">AED 0</span>/mo</li>
+        <li>Your POS keeps running exactly as it does today</li>
+        <li>You only pay more when <i>you</i> choose to add the next stage</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<div class="rule" style="margin-top:8px;"></div>
+
+<section class="intro">
+  <div class="item">
+    <div class="k">I</div>
+    <div class="t">Nothing is forced</div>
+    <div class="d">Every stage stands on its own. Stop at 1a forever if that's all you need — there's no upsell built into the software.</div>
+  </div>
+  <div class="item">
+    <div class="k">II</div>
+    <div class="t">Trust decides the pace</div>
+    <div class="d">Payments, ordering, and reservations only arrive once you're comfortable — each is priced on top, never bundled by force.</div>
+  </div>
+  <div class="item">
+    <div class="k">III</div>
+    <div class="t">We wrap, we don't replace</div>
+    <div class="d">Through Phase 2, your kitchen still runs on the POS you already trust. We only touch the guest-facing side.</div>
+  </div>
+</section>
+
+<section class="phase" style="page-break-before: auto;">
+  <div class="phase-head">
+    <h2>Phase 1 — Foundation</h2>
+    <span class="phase-tag tag-start">Get found online</span>
+  </div>
+  <p class="phase-desc">A proper front door for the restaurant: story, full menu, social links, and a direct line to WhatsApp. Nothing to maintain, nothing that can break — hosted free.</p>
+
+  <div class="stage">
+    <div class="stage-head">
+      <div><span class="letter">a</span><h3>Digital brochure site<span class="sub">A single, complete site — no database, no login, no moving parts</span></h3></div>
+    </div>
+    <div class="stage-body">
+      <ul class="includes">
+        <li>Home, story, full menu (up to <b>80</b> items across <b>10</b> categories), gallery, hours &amp; location</li>
+        <li>Instagram, Facebook, TikTok and WhatsApp — all linked, one tap each</li>
+        <li>WhatsApp click-to-chat button, pre-filled with "Hi, I'd like to ask about..."</li>
+        <li>Mobile-first build, hosted free on Vercel's global network under our subdomain</li>
+        <li>Content is set once at handover from your menu/photos; further text edits are billed per request</li>
+      </ul>
+      <div class="price-box">
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>2,800</span></div>
+        <div class="price-row"><span class="label">Monthly</span><span class="value num"><span class="cur">AED</span>0</span></div>
+        <div class="price-note">Vercel's free tier covers this comfortably at restaurant-website traffic levels. No domain, no database — nothing recurring.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="stage-head">
+      <div><span class="letter">b</span><h3>+ Your own domain &amp; enquiry inbox<span class="sub">The site now lives at your address, and messages reach you directly</span></h3></div>
+    </div>
+    <div class="stage-body">
+      <ul class="includes">
+        <li>The full 1a site, moved off our subdomain onto a domain in <b>your own name</b></li>
+        <li>An enquiry form (name, phone, message) that emails straight to your inbox — no portal to check</li>
+        <li>Business email forwarding set up on the new domain if you'd like (e.g. <span class="num">hello@yourrestaurant.ae</span>)</li>
+      </ul>
+      <div class="price-box">
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>1,200</span></div>
+        <div class="price-row"><span class="label">On top of 1a</span><span class="value num" style="color:var(--brass-deep)">Cumulative <span class="cur">AED</span>4,000</span></div>
+        <div class="price-note">Domain is billed separately below, at cost, registered in your name — you own it, not us.</div>
+      </div>
+    </div>
+    <div class="domain-choice">
+      <div class="dcard rec">
+        <div class="dtitle">.com domain <span class="pill">Recommended</span></div>
+        <div class="dprice num">AED 49 <span style="font-size:12px;font-weight:500;color:var(--ink-soft)">first year</span></div>
+        <div class="dnote">Renews at ~AED 65/year after. The easy, low-friction default — most guests never notice the extension.</div>
+      </div>
+      <div class="dcard">
+        <div class="dtitle">.ae domain</div>
+        <div class="dprice num">AED 150–200 <span style="font-size:12px;font-weight:500;color:var(--ink-soft)">per year</span></div>
+        <div class="dnote">Optional upgrade for brands that want a distinctly local UAE address. Priced at registrar cost, no markup.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ PAGE 2 — PHASE 2 ══════════════════ -->
+<section class="phase">
+  <div class="phase-head">
+    <h2>Phase 2 — Grow</h2>
+    <span class="phase-tag tag-grow">Update it yourself, then start selling</span>
+  </div>
+  <p class="phase-desc">The site becomes a real product: you get a dashboard to edit your own menu and content, and — only when you're ready — guests can pay for takeaway online, with the order landing in your own WhatsApp like a message from a regular customer.</p>
+
+  <div class="phase-totals">
+    <div class="pt"><span class="l">New in Phase 2 (2a→2c)</span><span class="v num">AED 7,500</span></div>
+    <div class="pt hi"><span class="l">Cumulative after 2c</span><span class="v num">AED 11,500</span></div>
+  </div>
+
+  <div class="stage">
+    <div class="stage-head">
+      <div><span class="letter">a</span><h3>Your own admin dashboard<span class="sub">Real database, real backend — content only, still no ordering</span></h3></div>
+    </div>
+    <div class="stage-body">
+      <ul class="includes">
+        <li>A login-protected dashboard: edit menu items, prices, photos, categories and hours yourself, live</li>
+        <li>Up to <b>3</b> staff logins (e.g. Owner, Manager, Editor) with different edit permissions</li>
+        <li>A proper database and backend behind the scenes — nothing for you to manage or maintain</li>
+        <li>Still no guest ordering or reservations at this stage — purely a content upgrade</li>
+      </ul>
+      <div class="price-box">
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>4,000</span></div>
+        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>8,000</span></div>
+        <div class="price-note">Monthly hosting cost is broken down below — it's separate from the one-time build fee.</div>
+      </div>
+    </div>
+    <div class="infra-block">
+      <div class="infra-title">Monthly hosting — small scale</div>
+      <table class="infra">
+        <thead><tr><th>Line item</th><th>What it covers</th><th class="amt">AED / mo</th></tr></thead>
+        <tbody>
+          <tr><td>Server</td><td>Runs your backend around the clock</td><td class="amt num">58</td></tr>
+          <tr><td>Database</td><td>Stores your menu, orders and settings</td><td class="amt num">82</td></tr>
+          <tr><td>Photo storage</td><td>Menu images and gallery photos</td><td class="amt num">8</td></tr>
+          <tr><td>Data &amp; bandwidth</td><td>Guests loading pages and images</td><td class="amt num">20</td></tr>
+          <tr><td>Backups &amp; monitoring</td><td>Daily backups, uptime alerts</td><td class="amt num">15</td></tr>
+          <tr class="total"><td colspan="2">Monthly hosting total</td><td class="amt num">AED 183</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="stage-head">
+      <div><span class="letter">b</span><h3>+ Takeaway payments, straight to your WhatsApp<span class="sub">Cart → Stripe checkout → a WhatsApp message to your hotel number</span></h3></div>
+    </div>
+    <div class="stage-body">
+      <ul class="includes">
+        <li>Guest browses the menu, builds a cart, and pays by card through Stripe checkout</li>
+        <li>The moment payment clears, a message lands in your hotel's WhatsApp: items ordered, amount received, and the Stripe transaction ID</li>
+        <li>Your staff reply "ready for pickup" in that same chat — that's the entire loop, no new app to open</li>
+        <li>Up to <b>150</b> orders/month included in support; higher volumes discussed separately</li>
+      </ul>
+      <div class="price-box">
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>2,000</span></div>
+        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>10,000</span></div>
+        <div class="price-note">Stripe takes ~2.9% + AED 1 per card charge, deducted automatically from your payout — that's Stripe's fee, not ours.</div>
+      </div>
+    </div>
+    <div class="flow-note">
+      <b>Why not the WhatsApp Business API:</b> that route needs Meta or Twilio approval and a verified business profile — real friction for a first rollout, and an ongoing per-message cost on top. Instead we use WhatsApp's own <b>click-to-chat link</b> (<span class="num">wa.me</span>): the order details are pre-written into a message that opens directly in your existing WhatsApp number. Nothing to apply for, nothing to pay Meta, works from day one.
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="stage-head">
+      <div><span class="letter">c</span><h3>+ "Order now, pay at pickup"<span class="sub">For the regulars you already trust</span></h3></div>
+    </div>
+    <div class="stage-body">
+      <ul class="includes">
+        <li>Guest can request a pickup order without paying upfront</li>
+        <li>These arrive in a visually distinct WhatsApp template — one tap to Approve or Decline, right in the chat</li>
+        <li>Once approved, the bill is still raised on your own POS as normal — we hand you the lead, you close it your way</li>
+      </ul>
+      <div class="price-box">
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>1,500</span></div>
+        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>11,500</span></div>
+        <div class="price-note">A trust decision, not a technical one — worth adding once you know your regular pickup guests.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ PAGE 3 — PHASE 3 + COMPARISON ══════════════════ -->
+<section class="phase">
+  <div class="phase-head">
+    <h2>Phase 3 — Elite</h2>
+    <span class="phase-tag tag-elite">Become the platform</span>
+  </div>
+  <p class="phase-desc">Everything above, matured into a full guest platform: live order tracking, kitchen and staff tools, complete ownership of the guest experience end to end — with table reservations as the final, optional piece.</p>
+
+  <div class="phase-totals">
+    <div class="pt"><span class="l">New in Phase 3 (3a + 3b)</span><span class="v num">AED 11,000</span></div>
+    <div class="pt hi"><span class="l">Cumulative after 3b</span><span class="v num">AED 22,500</span></div>
+  </div>
+
+  <div class="stage">
+    <div class="stage-head">
+      <div><span class="letter">a</span><h3>Full guest platform<span class="sub">Live status, kitchen and billing tools — reservations intentionally excluded (see 3b)</span></h3></div>
+    </div>
+    <div class="stage-body">
+      <ul class="includes">
+        <li>Live order status for guests: <b>Received → Accepted → Preparing → Ready</b>, updating in real time</li>
+        <li>Staff-side order board, kitchen display, and table/bill management for up to <b>20</b> tables</li>
+        <li>Role-based staff logins: Owner, Manager, Staff, Chef — each seeing only what they need</li>
+        <li>Cash and card settlement tools, seasonal offers/discounts, split-bill support</li>
+      </ul>
+      <div class="price-box">
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>8,000</span></div>
+        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>19,500</span></div>
+        <div class="price-note">Monthly hosting at this scale is broken down below.</div>
+      </div>
+    </div>
+    <div class="infra-block">
+      <div class="infra-title">Monthly hosting — full platform scale</div>
+      <table class="infra">
+        <thead><tr><th>Line item</th><th>What it covers</th><th class="amt">AED / mo</th></tr></thead>
+        <tbody>
+          <tr><td>Servers</td><td>Two, for reliability if one has an issue</td><td class="amt num">220</td></tr>
+          <tr><td>Database</td><td>Live orders, tables and bills, with automatic failover</td><td class="amt num">320</td></tr>
+          <tr><td>Traffic routing</td><td>Balances load across the two servers</td><td class="amt num">70</td></tr>
+          <tr><td>File storage</td><td>Menu photos, receipts</td><td class="amt num">20</td></tr>
+          <tr><td>Data &amp; bandwidth</td><td>Higher guest traffic at this stage</td><td class="amt num">55</td></tr>
+          <tr><td>Backups &amp; monitoring</td><td>Redundant backups, uptime alerts</td><td class="amt num">40</td></tr>
+          <tr class="total"><td colspan="2">Monthly hosting total</td><td class="amt num">AED 725</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="stage">
+    <div class="stage-head">
+      <div><span class="letter">b</span><h3>+ Table reservations, fully configurable<span class="sub">The one thing we hold back until you're ready for it</span></h3></div>
+    </div>
+    <div class="stage-body">
+      <ul class="includes">
+        <li>Guests book a table online against your real availability</li>
+        <li>Full settings control: opening hours, slot length, peak-hour rules, same-day cutoff, no-show grace period</li>
+        <li>Table merging for larger parties, zone/section filtering (indoor, outdoor, etc.)</li>
+      </ul>
+      <div class="price-box">
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>3,000</span></div>
+        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>22,500</span></div>
+        <div class="price-note">Runs on the same hosting as 3a — no separate line to add.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════ COMPARISON + FOOTER ══════════════════ -->
+<section class="compare-wrap">
+  <p class="eyebrow">At a glance</p>
+  <h2 style="font-size:24px; margin-top:8px; margin-bottom:20px;">What each stage gives you, cumulatively</h2>
+  <div class="compare-scroll">
+    <table class="compare">
+      <thead>
+        <tr>
+          <th class="stagecol">Stage</th>
+          <th>Site &amp; socials</th>
+          <th>Own domain</th>
+          <th>Self-edit content</th>
+          <th>Online payment</th>
+          <th>Pay-at-pickup</th>
+          <th>Order tracking</th>
+          <th>Reservations</th>
+          <th>One-time (cumulative)</th>
+          <th>Monthly</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="stagecol">1a</td><td class="yes">✓</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="num">AED 2,800</td><td class="num">AED 0</td></tr>
+        <tr><td class="stagecol">1b</td><td class="yes">✓</td><td class="yes">✓</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="num">AED 4,000</td><td class="num">AED 0</td></tr>
+        <tr><td class="stagecol">2a</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="num">AED 8,000</td><td class="num">AED 183</td></tr>
+        <tr><td class="stagecol">2b</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="num">AED 10,000</td><td class="num">AED 183</td></tr>
+        <tr><td class="stagecol">2c</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="dim">—</td><td class="dim">—</td><td class="num">AED 11,500</td><td class="num">AED 183</td></tr>
+        <tr><td class="stagecol">3a</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="dim">—</td><td class="num">AED 19,500</td><td class="num">AED 725</td></tr>
+        <tr><td class="stagecol">3b</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="num">AED 22,500</td><td class="num">AED 725</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="ongoing">
+  <div class="og-head">
+    <h3>What's included in setup, and what's billed separately</h3>
+    <p>The one-time fee on each stage covers that stage's build, end to end. It does <b>not</b> include future feature requests, redesigns, or new integrations — those are always scoped and quoted separately, so you never pay for changes you didn't ask for.</p>
+  </div>
+  <div class="og-grid">
+    <div class="og-card">
+      <div class="og-title">Monthly infrastructure</div>
+      <div class="og-price num">As itemized per phase</div>
+      <div class="og-desc">Server, database and storage costs — billed monthly from 2a onward, at cost. This is what keeps the platform running, nothing more.</div>
+    </div>
+    <div class="og-card deal">
+      <div class="og-title">Annual Care Plan <span class="og-badge">Optional</span></div>
+      <div class="og-price num">AED 900 / year</div>
+      <div class="og-desc">Domain renewal handled for you, up to 4 content updates (menu, photos, hours), and priority support. <b>Renew for Year 2 onward at AED 750/year</b> — a loyalty rate for staying with us.</div>
+    </div>
+    <div class="og-card">
+      <div class="og-title">Further enhancements</div>
+      <div class="og-price num">Quoted per request</div>
+      <div class="og-desc">New features, extra integrations, or design changes beyond the original scope — always a fixed quote up front before any work starts, never an open tab.</div>
+    </div>
+  </div>
+</section>
+
+<div class="rule"></div>
+
+<section class="footer">
+  <div>
+    <h3>Start wherever feels right.</h3>
+    <p class="fnote">Every figure above is a starting-from estimate for the UAE market: local agency rates for the build fees, and real hosting, Stripe and domain-registrar pricing for the recurring costs. Final scope is confirmed before any invoice.</p>
+  </div>
+  <div class="fnote">
+    <b>What we never touch:</b> your POS, your kitchen operations, your staff's existing workflow — through all of Phase 2, and by default in Phase 3a. We are a wrap around your business, not a replacement for it, until you decide otherwise.
+  </div>
+</section>
