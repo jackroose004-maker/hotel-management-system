@@ -54,8 +54,8 @@
       "expo-video"
     ],
     "extra": {
-      "apiUrl": "http://10.30.55.251:3001/api/v1",
-      "wsUrl": "http://10.30.55.251:3001",
+      "apiUrl": "http://172.20.10.5:3001/api/v1",
+      "wsUrl": "http://172.20.10.5:3001",
       "router": {},
       "eas": {
         "projectId": "9c8cb222-811c-42fd-8043-c3d5f59081ac"

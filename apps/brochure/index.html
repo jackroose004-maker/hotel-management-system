@@ -68,20 +68,6 @@
   }
   a { color: inherit; }
 
-  .print-btn {
-    position: fixed; top: 18px; right: 18px; z-index: 50;
-    display: flex; align-items: center; gap: 8px;
-    background: var(--ink); color: var(--paper);
-    border: none; border-radius: 999px;
-    padding: 10px 18px; font-size: 13px; font-weight: 600;
-    cursor: pointer; box-shadow: var(--shadow);
-  }
-  .print-btn:hover { opacity: 0.9; }
-  .print-btn:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
-  @media (max-width: 640px) {
-    .print-btn { top: 10px; right: 10px; padding: 7px 12px; font-size: 11.5px; gap: 5px; }
-  }
-
   /* ── Cover ───────────────────────────────────────────── */
   .cover {
     max-width: 900px;
@@ -200,19 +186,6 @@
   }
   .flow-note b { color: var(--ink); }
 
-  /* ── AWS breakdown table ─────────────────────────────── */
-  .infra-block { margin: 22px; margin-top: 0; }
-  .infra-block .infra-title {
-    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
-    color: var(--ink-soft); margin-bottom: 8px;
-  }
-  table.infra { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  table.infra th, table.infra td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); }
-  table.infra th { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
-  table.infra td.amt, table.infra th.amt { text-align: right; }
-  table.infra tr.total td { font-weight: 700; border-top: 1.5px solid var(--ink); border-bottom: none; }
-  table.infra tr.total td.amt { color: var(--brass-deep); }
-
   /* ── Domain choice cards ─────────────────────────────── */
   .domain-choice { display: flex; gap: 14px; margin: 22px; margin-top: 0; flex-wrap: wrap; }
   .dcard { flex: 1; min-width: 220px; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; }
@@ -221,22 +194,6 @@
   .dcard .dtitle .pill { font-size: 9.5px; background: var(--brass); color: #fff; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
   .dcard .dprice { font-size: 20px; font-weight: 700; margin-top: 6px; }
   .dcard .dnote { font-size: 11.5px; color: var(--ink-soft); margin-top: 4px; }
-
-  /* ── Comparison table ───────────────────────────────── */
-  .compare-wrap { max-width: 900px; margin: 0 auto; padding: 40px 32px; }
-  .compare-scroll { overflow-x: auto; border-radius: 16px; border: 1px solid var(--line); }
-  table.compare { width: 100%; border-collapse: collapse; min-width: 760px; background: var(--card-bg); }
-  table.compare th, table.compare td {
-    padding: 12px 15px; text-align: left; font-size: 12.5px; border-bottom: 1px solid var(--line);
-  }
-  table.compare thead th {
-    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft);
-    background: var(--paper-soft);
-  }
-  table.compare tbody tr:last-child td { border-bottom: none; }
-  table.compare td.yes { color: var(--good); font-weight: 700; }
-  table.compare td.dim { color: var(--line); }
-  table.compare th.stagecol, table.compare td.stagecol { color: var(--ink); font-weight: 700; }
 
   /* ── Footer ──────────────────────────────────────────── */
   .footer {
@@ -279,14 +236,11 @@
 
   @media print {
     body { background: #fff !important; color: #17140f !important; }
-    .print-btn { display: none !important; }
-    .stage, table.compare { box-shadow: none !important; }
+    .stage { box-shadow: none !important; }
     .phase { page-break-before: always; padding-top: 8px; }
     .cover { padding-top: 24px; }
   }
 </style>
-
-<button class="print-btn" onclick="window.print()">🖨️ Save as PDF</button>
 
 <!-- ══════════════════ PAGE 1 — COVER + PHASE 1 ══════════════════ -->
 <section class="cover">
@@ -319,7 +273,7 @@
     </div>
     <div class="pc-card us">
       <div class="pc-label">Phase 1 with us — in addition, not instead</div>
-      <div class="pc-title">AED 2,800 <span style="font-size:13px;font-weight:400;opacity:0.75;">one-time</span></div>
+      <div class="pc-title">AED 1,200 <span style="font-size:13px;font-weight:400;opacity:0.75;">one-time</span></div>
       <ul>
         <li>No hardware to buy — runs on the phone your guests already carry</li>
         <li>No monthly fee at this stage — <span class="amt num">AED 0</span>/mo</li>
@@ -370,7 +324,7 @@
         <li>Content is set once at handover from your menu/photos; further text edits are billed per request</li>
       </ul>
       <div class="price-box">
-        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>2,800</span></div>
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>1,200</span></div>
         <div class="price-row"><span class="label">Monthly</span><span class="value num"><span class="cur">AED</span>0</span></div>
         <div class="price-note">Vercel's free tier covers this comfortably at restaurant-website traffic levels. No domain, no database — nothing recurring.</div>
       </div>
@@ -388,8 +342,8 @@
         <li>Business email forwarding set up on the new domain if you'd like (e.g. <span class="num">hello@yourrestaurant.ae</span>)</li>
       </ul>
       <div class="price-box">
-        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>1,200</span></div>
-        <div class="price-row"><span class="label">On top of 1a</span><span class="value num" style="color:var(--brass-deep)">Cumulative <span class="cur">AED</span>4,000</span></div>
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>900</span></div>
+        <div class="price-row"><span class="label">On top of 1a</span><span class="value num" style="color:var(--brass-deep)">Cumulative <span class="cur">AED</span>2,100</span></div>
         <div class="price-note">Domain is billed separately below, at cost, registered in your name — you own it, not us.</div>
       </div>
     </div>
@@ -417,8 +371,8 @@
   <p class="phase-desc">The site becomes a real product: you get a dashboard to edit your own menu and content, and — only when you're ready — guests can pay for takeaway online, with the order landing in your own WhatsApp like a message from a regular customer.</p>
 
   <div class="phase-totals">
-    <div class="pt"><span class="l">New in Phase 2 (2a→2c)</span><span class="v num">AED 7,500</span></div>
-    <div class="pt hi"><span class="l">Cumulative after 2c</span><span class="v num">AED 11,500</span></div>
+    <div class="pt"><span class="l">New in Phase 2 (2a→2c)</span><span class="v num">AED 8,000</span></div>
+    <div class="pt hi"><span class="l">Cumulative after 2c</span><span class="v num">AED 10,100</span></div>
   </div>
 
   <div class="stage">
@@ -433,24 +387,10 @@
         <li>Still no guest ordering or reservations at this stage — purely a content upgrade</li>
       </ul>
       <div class="price-box">
-        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>4,000</span></div>
-        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>8,000</span></div>
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>4,500</span></div>
+        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>6,600</span></div>
         <div class="price-note">Monthly hosting cost is broken down below — it's separate from the one-time build fee.</div>
       </div>
-    </div>
-    <div class="infra-block">
-      <div class="infra-title">Monthly hosting — small scale</div>
-      <table class="infra">
-        <thead><tr><th>Line item</th><th>What it covers</th><th class="amt">AED / mo</th></tr></thead>
-        <tbody>
-          <tr><td>Server</td><td>Runs your backend around the clock</td><td class="amt num">58</td></tr>
-          <tr><td>Database</td><td>Stores your menu, orders and settings</td><td class="amt num">82</td></tr>
-          <tr><td>Photo storage</td><td>Menu images and gallery photos</td><td class="amt num">8</td></tr>
-          <tr><td>Data &amp; bandwidth</td><td>Guests loading pages and images</td><td class="amt num">20</td></tr>
-          <tr><td>Backups &amp; monitoring</td><td>Daily backups, uptime alerts</td><td class="amt num">15</td></tr>
-          <tr class="total"><td colspan="2">Monthly hosting total</td><td class="amt num">AED 183</td></tr>
-        </tbody>
-      </table>
     </div>
   </div>
 
@@ -466,8 +406,8 @@
         <li>Up to <b>150</b> orders/month included in support; higher volumes discussed separately</li>
       </ul>
       <div class="price-box">
-        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>2,000</span></div>
-        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>10,000</span></div>
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>2,200</span></div>
+        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>8,800</span></div>
         <div class="price-note">Stripe takes ~2.9% + AED 1 per card charge, deducted automatically from your payout — that's Stripe's fee, not ours.</div>
       </div>
     </div>
@@ -487,8 +427,8 @@
         <li>Once approved, the bill is still raised on your own POS as normal — we hand you the lead, you close it your way</li>
       </ul>
       <div class="price-box">
-        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>1,500</span></div>
-        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>11,500</span></div>
+        <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>1,300</span></div>
+        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>10,100</span></div>
         <div class="price-note">A trust decision, not a technical one — worth adding once you know your regular pickup guests.</div>
       </div>
     </div>
@@ -505,7 +445,7 @@
 
   <div class="phase-totals">
     <div class="pt"><span class="l">New in Phase 3 (3a + 3b)</span><span class="v num">AED 11,000</span></div>
-    <div class="pt hi"><span class="l">Cumulative after 3b</span><span class="v num">AED 22,500</span></div>
+    <div class="pt hi"><span class="l">Cumulative after 3b</span><span class="v num">AED 21,100</span></div>
   </div>
 
   <div class="stage">
@@ -521,24 +461,9 @@
       </ul>
       <div class="price-box">
         <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>8,000</span></div>
-        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>19,500</span></div>
+        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>18,100</span></div>
         <div class="price-note">Monthly hosting at this scale is broken down below.</div>
       </div>
-    </div>
-    <div class="infra-block">
-      <div class="infra-title">Monthly hosting — full platform scale</div>
-      <table class="infra">
-        <thead><tr><th>Line item</th><th>What it covers</th><th class="amt">AED / mo</th></tr></thead>
-        <tbody>
-          <tr><td>Servers</td><td>Two, for reliability if one has an issue</td><td class="amt num">220</td></tr>
-          <tr><td>Database</td><td>Live orders, tables and bills, with automatic failover</td><td class="amt num">320</td></tr>
-          <tr><td>Traffic routing</td><td>Balances load across the two servers</td><td class="amt num">70</td></tr>
-          <tr><td>File storage</td><td>Menu photos, receipts</td><td class="amt num">20</td></tr>
-          <tr><td>Data &amp; bandwidth</td><td>Higher guest traffic at this stage</td><td class="amt num">55</td></tr>
-          <tr><td>Backups &amp; monitoring</td><td>Redundant backups, uptime alerts</td><td class="amt num">40</td></tr>
-          <tr class="total"><td colspan="2">Monthly hosting total</td><td class="amt num">AED 725</td></tr>
-        </tbody>
-      </table>
     </div>
   </div>
 
@@ -554,46 +479,14 @@
       </ul>
       <div class="price-box">
         <div class="price-row"><span class="label">Setup, one-time</span><span class="value num"><span class="cur">AED</span>3,000</span></div>
-        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>22,500</span></div>
+        <div class="price-row"><span class="label">Cumulative total</span><span class="value num" style="color:var(--brass-deep)"><span class="cur">AED</span>21,100</span></div>
         <div class="price-note">Runs on the same hosting as 3a — no separate line to add.</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ══════════════════ COMPARISON + FOOTER ══════════════════ -->
-<section class="compare-wrap">
-  <p class="eyebrow">At a glance</p>
-  <h2 style="font-size:24px; margin-top:8px; margin-bottom:20px;">What each stage gives you, cumulatively</h2>
-  <div class="compare-scroll">
-    <table class="compare">
-      <thead>
-        <tr>
-          <th class="stagecol">Stage</th>
-          <th>Site &amp; socials</th>
-          <th>Own domain</th>
-          <th>Self-edit content</th>
-          <th>Online payment</th>
-          <th>Pay-at-pickup</th>
-          <th>Order tracking</th>
-          <th>Reservations</th>
-          <th>One-time (cumulative)</th>
-          <th>Monthly</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td class="stagecol">1a</td><td class="yes">✓</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="num">AED 2,800</td><td class="num">AED 0</td></tr>
-        <tr><td class="stagecol">1b</td><td class="yes">✓</td><td class="yes">✓</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="num">AED 4,000</td><td class="num">AED 0</td></tr>
-        <tr><td class="stagecol">2a</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="num">AED 8,000</td><td class="num">AED 183</td></tr>
-        <tr><td class="stagecol">2b</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="num">AED 10,000</td><td class="num">AED 183</td></tr>
-        <tr><td class="stagecol">2c</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="dim">—</td><td class="dim">—</td><td class="num">AED 11,500</td><td class="num">AED 183</td></tr>
-        <tr><td class="stagecol">3a</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="dim">—</td><td class="num">AED 19,500</td><td class="num">AED 725</td></tr>
-        <tr><td class="stagecol">3b</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="num">AED 22,500</td><td class="num">AED 725</td></tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
+<!-- ══════════════════ ONGOING + FOOTER ══════════════════ -->
 <section class="ongoing">
   <div class="og-head">
     <h3>What's included in setup, and what's billed separately</h3>
